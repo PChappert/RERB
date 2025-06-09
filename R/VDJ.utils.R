@@ -624,22 +624,22 @@ runAb1QC <- function(Ab1_folder,
 #'
 #' @param db    a data frame directly imported from SevenBridges (BD) or CellRanger (10X).
 #' @param tech  name of the scRNA-seq technology used (one of 10X or BD)
-#' @param cell_id
-#' @param locus
-#' @param heavy
-#' @param productive
-#' @param complete_vdj
-#' @param sequence_id
-#' @param umi_count
-#' @param consensus_count
-#' @param junction
-#' @param junction_aa
-#' @param sequence
-#' @param v_call
-#' @param d_call
-#' @param j_call
-#' @param c_call
-#' @param remove_columns
+#' @param cell_id.  name of the column containing cell_ids
+#' @param locus     name of the column containing locus informations
+#' @param heavy     which vlue to use in locus to identify heavy chains [default: IGH for BCR]
+#' @param productive  name of the column containing contig productiveness informations
+#' @param complete_vdj  name of the column containing contig completness informations
+#' @param sequence_id   name of the column containing sequence_ids
+#' @param umi_count name of the column containing umi_count informations
+#' @param consensus_count name of the column containing consensus_count informations
+#' @param junction  name of the column containing identified junctions (nucleotide format)
+#' @param junction_aa name of the column containing identified junctions (amino-acid format)
+#' @param sequence  name of the column containing full sequences
+#' @param v_call  name of the column containing v_call informations
+#' @param d_call  name of the column containing d_call informations
+#' @param j_call  name of the column containing j_call informations
+#' @param c_call  name of the column containing c_call informations
+#' @param remove_columns  name of collumns to remove from original 10X or BD data frames
 #'
 #' @return a reformatted dataframe with same name for both 10X or BD technologies. Re-running igblast is however advised to get a full AIRR formatted dataframe.
 #'
@@ -650,7 +650,7 @@ runAb1QC <- function(Ab1_folder,
 #' "sequence_alignment_aa"; "sequence_alignment_aa_length"; "cdr3_length"; "fwr1_aa";"fwr2_aa"; "fwr3_aa"; "fwr4_aa"; "cdr1_aa"; "cdr2_aa"; "cdr3_aa"
 #' "germline_alignment_aa"; "v_germline_alignment"; "v_germline_alignment_aa"; "d_germline_alignment"; "d_germline_alignment_aa"; "j_germline_alignment";"j_germline_alignment_aa"
 #' some will be added or modified at the CreateGermline() step later after clone inference (current germline alignment is no gapped so not usable in observedMutations)
-#' https://bd-rhapsody-bioinfo-docs.genomics.bd.com/outputs/outputs_vdj_contigs.html
+#' https://bd-rhapsody-bioinfo-docs.genomics.bd.com/outputs/outputs_vdj_contigs.htm
 #'
 #' the following columns are named differently or unique to the 10x pipeline from BD:
 #' barcode, is_cell,	contig_id,	high_confidence,	length,	chain,	v_gene,	d_gene,	j_gene,	c_gene,
@@ -658,7 +658,6 @@ runAb1QC <- function(Ab1_folder,
 #' reads,	umis,	raw_clonotype_id,	raw_consensus_id,	exact_subclonotype_id,
 #'
 #' @export
-
 
 reformatVDJinput <- function(db, tech,
                              cell_id = "cell_id", locus = "locus", heavy = "IGH", productive = "productive", complete_vdj = "complete_vdj",
@@ -813,13 +812,12 @@ binContigs <- function(data,
 #' @param j_call        name of the column containing J-segment allele assignments. All
 #'                      entries in this column should be identical to the gene level.
 #' @param nproc         number of processor(s) to use (passed to scoper::hierarchicalClones()).
-#' @param tech
-#' @param second_columns
-#' @param locus
-#' @param c_call
-#' @param junction
-#' @param dominant
-#' @param complete_vdj
+#' @param second_columns which columns info to keep for secondary contigs of interest
+#' @param locus         name of the column containing locus informations
+#' @param c_call        name of the column containing c_call informations
+#' @param junction      name of the column containing junction informations (nucleotide format)
+#' @param dominant      name of the column containing BD SevenBridges contig dominance informations
+#' @param complete_vdj  name of the column containing contig completness informations
 #'
 #' @return   a data frame containing the filtered chain for all cells as well as all initial columns and rows not related to that chain (or pair of chains) in the provided dataframe.
 #' the following columns are added: unfiltered_bin, filtered_bin (outputs of binContigs pre and post filtering), pct_of_reads (% of total read in a given cell for each contig).
@@ -1515,29 +1513,33 @@ resolveLightChains2 <- function(data, nproc=1, minseq=1,locus="locus",heavy="IGH
 #'
 #' \code{vdjQCplot} plot QC graph
 #'
+#' @param db            a data table
 #' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
-#' @param high_cutoff   cut_off for high probability heavy chain doublets.
 #' @param plot_cutoff   whether to plot cut_off on graph
 #' @param analysis_name suffix for final plot(s) name
 #' @param na_name       name to use for NA values in colour.by
 #' @param colour.by     parameter to use for coloring of dots
 #' @param colour_code   colors to use for coloring of dots
-#' @param db
-#' @param use_chain
-#' @param split.by
-#' @param type
-#' @param variable_cutoff
-#' @param low_cutfoff
-#' @param locus
-#' @param heavy
-#' @param cell_id
-#' @param umi_count
-#' @param second_umi_count
-#' @param export
+#' @param use_chain     which chain(s) to use
+#' @param split.by      name of the column to use to group cells and learn dataset-specific distributions
+#' @param type          whether to plot graphs related to B/B doublets or B/non-B doublets
+#' @param variable_cutoff   whether to use dataset-specific cut-offs
+#' @param high_cutoff   if fixed cutoffs, value to use to mark high probability heavy chain doublets.
+#' @param low_cutfoff   if fixed cutoffs, value to use to mark low-probability doublets
+#' @param locus         name of the column containing locus informations
+#' @param heavy         locus value to use for heavy chain identification
+#' @param cell_id       name of the column containing cell_ids
+#' @param umi_count     name of the column containing umi_count informations
+#' @param second_umi_count name of the column containing second_umi_count informations
+#' @param export        what to export: graph (return the ggplot2 object) or pdf (save)
 #'
 #' @return   a pdf plot in the output folder if export = "pdf" and/or a ggplot object if export = "graph"
 #'
 #' @keywords internal
+#'
+#' @import dplyr
+#' @import ggplot2
+#' @import patchwork
 
 vdjQCplot <- function(db,
                       use_chain = "all",
@@ -1561,9 +1563,9 @@ vdjQCplot <- function(db,
                       second_umi_count = "second_umi_count",
                       export = c("graph", "pdf")){
 
-  suppressMessages(library(dplyr))
-  suppressMessages(library(ggplot2))
-  suppressMessages(library(patchwork))
+  #suppressMessages(library(dplyr))
+  #suppressMessages(library(ggplot2))
+  #suppressMessages(library(patchwork))
 
   if(use_chain == "all"){
     chains = levels(as.factor(db[[locus]]))
@@ -2173,27 +2175,27 @@ flagNonBdoublets <- function(db,
 #' @param cell_id       name of the column containing cell identifier.
 #' @param locus         name of column containing locus values.
 #' @param umi_count     name of the column containing the number of unique molecules (UMI) for this contig. Previously called "duplicate_count" in an earlier AIRR standard
-#' @param heavy
-#' @param split.by
-#' @param variable_cutoff
-#' @param low_cutoff
-#' @param high_cutoff
-#' @param azimuth.ref
-#' @param azimuth.column
-#' @param azimuth.Bcelltypes
-#' @param scRNAseq.tech
-#' @param assay
-#' @param productive
-#' @param complete_vdj
-#' @param sequence_id
-#' @param consensus_count
-#' @param junction
-#' @param junction_aa
-#' @param sequence
-#' @param v_call
-#' @param d_call
-#' @param j_call
-#' @param c_call
+#' @param heavy         which locus value to use as heavy chain [default: IGH]
+#' @param split.by      which column to use to group cells when learning dataset-specific distributions
+#' @param variable_cutoff whether to use variable cutoffs between datasets
+#' @param low_cutoff    if fixed cutoffs, cutoff to use to define low-probability doublets
+#' @param high_cutoff   if fixed cutoffs, cutoff to use to define high-probability doublets
+#' @param azimuth.ref   reference used when running azimuth
+#' @param azimuth.column name of the column where azimuth calls are stored
+#' @param azimuth.Bcelltypes name of the B cell populations in the used azimuth reference (default for pbmc.ref, tonsil.ref and bonemarrow.ref are provided)
+#' @param scRNAseq.tech scRNA-seq technology used (one of 10X or BD)
+#' @param assay         name of the column containing assay information.
+#' @param productive    name of the column containing sequence productivity information.
+#' @param complete_vdj  name of the column containing sequence completeness information.
+#' @param sequence_id   name of the column containing the sequence_id.
+#' @param consensus_count name of the column containing consensus count.
+#' @param junction      name of the column containing junction (nucleotide format).
+#' @param junction_aa   name of the column containing junction (amino-acid format).
+#' @param sequence      name of the column containing the full sequence.
+#' @param v_call        name of the column containing the v_call.
+#' @param d_call        name of the column containing the d_call.
+#' @param j_call        name of the column containing the j_call.
+#' @param c_call        name of the column containing the c_call.
 #'
 #' @export
 

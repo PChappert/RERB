@@ -1,7 +1,6 @@
 syntax: glob
 .*
 *.Rproj
-man/*.Rd
 inst/doc
 vignettes/*.R
 vignettes/*.html
