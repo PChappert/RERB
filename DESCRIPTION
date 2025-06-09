@@ -10,20 +10,18 @@ Authors@R: c(
       role = c("aut", "cre")
     )
   )
-Description: RERB is an R-based wrappER for the analysis of BCR repertoires 
+Description: RERB is an R-based wrappER for the analysis of BCR repertoires. 
     Uses core function from the Immcantation pipeline (https://immcantation.readthedocs.io/en/stable/).
     Adds dedicated functions to interface with mixed data from 10X/Rhapsody or plate-based Sanger VDJ sequencing.
     Designed to interface with index-sorting data (Flow-JO, BD and SONY) and seurat objects.
-    Provides: 
+Provides: 
     1) wrapper functions to quickly run basic VDJ analysis on mix datasets;
     2) functions to highlight potential homotypic and heterotypic VDJ doublets in scRNA-seq datasets;
     3) functions to directly import and QC .Ab1 Sanger sequencing files (currently tailored to Eurofins data).
     4) tools to interface with index-sorting data (both BD and SONY cell sorters). 
     5) dedicated plotting functions to complement those already available as part of the Immcantation pipeline. 
     Workflow examples available at documentation site (see URL).
-    Citations:
-    TO ADD
-
+Citations: TO ADD
 License: AGPL-3
 URL: https://RERB.readthedocs.io
 BugReports: https://github.com/Institut-Necker-Enfants-Malades/RERB/issues
@@ -43,10 +41,13 @@ Imports:
     circlize (>= 0.4.16),
     dplyr (>= 1.0),
     ggtree,
+    ggforce,
+    scales,
     graphics,
     gridExtra,
     markdown,
     methods,
+    packcircles,
     phangorn (>= 2.7.1),
     phylotate,
     RColorBrewer,
@@ -56,6 +57,7 @@ Imports:
     stringr,
     tidyselect,
     tidyr,
+    tibble,
     utils
 Suggests:
     knitr,

@@ -1,8 +1,8 @@
 ## Version 0.9.6: June 9, 2025
 
 -   Initial release as a github R package
--   run_Igblast is renamed runAssignGenes 
--   Added a beta version of runIgblastn to directly export an AIRR format table from igblast add IMGT gap to V sequences. 
+-   run_Igblast is renamed runAssignGenes
+-   Added a beta version of runIgblastn to directly export an AIRR format table from igblast add IMGT gap to V sequences.
 -   Added option to switch from runAssignGenes [default] to runIgblastn in most wrapper functions
 -   runAssignGenes and runIgblastn now work with TCR and mouse/rat/rabbit/rhesus-monkey datasets
 -   Added importFJGates function to import results from FlowJO gating on index-sorting data
