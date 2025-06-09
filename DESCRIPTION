@@ -1,0 +1,70 @@
+Package: RERB
+Type: Package
+Title: Provides wrapper functions to run repertoire analysis on single-cell datasets using the Immcantation pipeline
+Version: 0.9.6
+Date: 2025-06-09
+Authors@R: c(
+    person(
+      "Pascal", "Chappert",
+      email = "pascal.chappert@inserm.fr",
+      role = c("aut", "cre")
+    )
+  )
+Description: RERB is an R-based wrappER for the analysis of BCR repertoires 
+    Uses core function from the Immcantation pipeline (https://immcantation.readthedocs.io/en/stable/).
+    Adds dedicated functions to interface with mixed data from 10X/Rhapsody or plate-based Sanger VDJ sequencing.
+    Designed to interface with index-sorting data (Flow-JO, BD and SONY) and seurat objects.
+    Provides: 
+    1) wrapper functions to quickly run basic VDJ analysis on mix datasets;
+    2) functions to highlight potential homotypic and heterotypic VDJ doublets in scRNA-seq datasets;
+    3) functions to directly import and QC .Ab1 Sanger sequencing files (currently tailored to Eurofins data).
+    4) tools to interface with index-sorting data (both BD and SONY cell sorters). 
+    5) dedicated plotting functions to complement those already available as part of the Immcantation pipeline. 
+    Workflow examples available at documentation site (see URL).
+    Citations:
+    TO ADD
+
+License: AGPL-3
+URL: https://RERB.readthedocs.io
+BugReports: https://github.com/Institut-Necker-Enfants-Malades/RERB/issues
+LazyData: true
+BuildVignettes: true
+VignetteBuilder: knitr
+Encoding: UTF-8
+Depends:
+    R (>= 4.0),
+    ggplot2 (>= 3.4.0)
+biocViews:
+Imports:
+    airr,
+    alakazam (>= 1.1.0),
+    ape (>= 5.6),
+    Biostrings,
+    circlize (>= 0.4.16),
+    dplyr (>= 1.0),
+    ggtree,
+    graphics,
+    gridExtra,
+    markdown,
+    methods,
+    phangorn (>= 2.7.1),
+    phylotate,
+    RColorBrewer,
+    rlang,
+    shazam (>= 1.1.1),
+    stats,
+    stringr,
+    tidyselect,
+    tidyr,
+    utils
+Suggests:
+    knitr,
+    rmarkdown,
+    testthat,
+    pwalign
+RoxygenNote: 7.3.2
+Collate:
+    'VDJ.utils.R'
+    'VDJ.plots.R'
+    'FlowJo.utils.R'
+    
