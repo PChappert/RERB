@@ -9,7 +9,7 @@ runAssignGenes(
   type = c("nt", "aa"),
   seq_type = c("Ig", "TCR"),
   organism = c("human", "mouse", "rabbit", "rat", "rhesus_monkey"),
-  igblast_dir = "~/share/igblast",
+  igblast_dir = "~/share/igblast/",
   imgt_dir = "~/share/germlines/imgt/",
   sequence = "sequence",
   sequence_id = "sequence_id",

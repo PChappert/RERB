@@ -24,6 +24,14 @@
 #' All QC analysis plots, intermediate tsv files with sequences passing and failing igblast and an excel worksheet containing sheets with AIRR formatted data table for sequences failing initial QC, failing igblast, non-productive and passing all three steps.
 #'
 #' @export
+#'
+#' @import dplyr
+#' @import openxlsx
+#' @import fs
+#' @import stringr
+#' @import shazam
+#' @importFrom dowser createGermlines
+#' @importFrom dowser readIMGT
 
 Ab1toAIRR <- function(files,
                       primers = c("IgG", "IgM", "IgL", "IgK", "Mix"),
@@ -62,8 +70,8 @@ Ab1toAIRR <- function(files,
   }
 
   # Load necessary libraries
-  library(stringr)
-  library(fs)
+  #library(stringr)
+  #library(fs)
 
   # Check each filepath, remove missing one and send a warning
   file_exists <- file.exists(files)
@@ -76,6 +84,20 @@ Ab1toAIRR <- function(files,
   }
   if(length(missing_files)>0){
     warning("the following files could not be found: ", paste0(missing_files, collapse = "; "))
+  }
+
+  with_log_capture <- function(log_file, expr, open_mode = "a") {
+    log_con <- file(log_file, open = open_mode)
+    sink(log_con)
+    sink(log_con, type = "message")
+
+    on.exit({
+      sink(type = "message")
+      sink()
+      close(log_con)
+    }, add = TRUE)
+
+    eval(substitute(expr), envir = parent.frame())
   }
 
   airr.list <- lapply(files, function(filepath){
@@ -96,30 +118,24 @@ Ab1toAIRR <- function(files,
     }
     if(QC){
       # Step1: unzip to 'temp_folder' and redirect output to log file
-      if(verbose){cat("\nunzipping", paste0(filename, ".zip"), "\n")}
-      unzip_output <- capture.output(
-        unzip(filepath, exdir = "temp_folder"),
-        type = "output"
-      )
-      writeLines(unzip_output, log_file)
+      if(verbose){cat("unzipping", paste0(filename, ".zip"), "\n")}
+      with_log_capture(log_file, {
+        unzip_output <- capture.output(
+          unzip(filepath, exdir = "temp_folder"),
+          type = "output"
+        )
+      }, open_mode = "wt")
 
       # Step2: run QC:
       if(verbose){cat("starting QC", "\n")}
-      log_con <- file(log_file, open = "wt")
-      sink(log_con)
-      sink(log_con, type = "message")
-      QC_results <- runAb1QC(Ab1_folder = "temp_folder",
-                             outfolder = outfolder,
-                             primers = primers,
-                             trim_cutoff = trim_cutoff,
-                             save = save,
-                             nproc = nproc)
-      sink(type = "message")
-      sink()
-      close(log_con)
-
-      #print(QC_output)
-      #writeLines(QC_output, log_file)
+      with_log_capture(log_file, {
+        QC_results <- runAb1QC(Ab1_folder = "temp_folder",
+                               outfolder = outfolder,
+                               primers = primers,
+                               trim_cutoff = trim_cutoff,
+                               save = save,
+                               nproc = nproc)
+      }, open_mode = "a")
 
       VDJ_db <- QC_results[["pass"]]
       QC_failed <- QC_results[["fail"]]
@@ -151,42 +167,39 @@ Ab1toAIRR <- function(files,
       if(igblast){
         if(verbose){cat("running Igblast using", igblast_method, "\n")}
         if(igblast_method == "AssignGenes"){
-          log_con <- file(log_file, open = "a")
-          sink(log_con)
-          sink(log_con, type = "message")
-          igblast_output <- capture.output(igblast_results <- runAssignGenes(VDJ_db,
-                                                                             sequence = "sequence",
-                                                                             sequence_id = "well_id",
-                                                                             organism = organism,
-                                                                             seq_type = seq_type,
-                                                                             igblast_dir = igblast_dir,
-                                                                             imgt_dir = imgt_dir,
-                                                                             log = igblast_log), type = "output")
-
-          cat(paste(igblast_output, collapse = "\n"))
-          sink(type = "message")
-          sink()
-          close(log_con)
-
+          with_log_capture(log_file, {
+            tryCatch({
+              igblast_output <- capture.output(igblast_results <- runAssignGenes(VDJ_db,
+                                                                                 sequence = "sequence",
+                                                                                 sequence_id = "well_id",
+                                                                                 organism = organism,
+                                                                                 seq_type = seq_type,
+                                                                                 igblast_dir = igblast_dir,
+                                                                                 imgt_dir = imgt_dir,
+                                                                                 log = igblast_log), type = "output")
+              cat(paste(igblast_output, collapse = "\n"))
+            }, error = function(e) {
+              message("Error occurred: ", e$message)
+            })
+          }, open_mode = "a")
         }
+
         if(igblast_method == "runIgblastn"){
-          log_con <- file(log_file, open = "a")
-          sink(log_con)
-          sink(log_con, type = "message")
-          igblast_output <- capture.output(igblast_results <- runIgblastn(VDJ_db,
-                                                                          sequence = "sequence",
-                                                                          sequence_id = "well_id",
-                                                                          organism = organism,
-                                                                          seq_type = seq_type,
-                                                                          igblast_dir = igblast_dir,
-                                                                          imgt_dir = imgt_dir), type = "output")
-          cat(paste(igblast_output, collapse = "\n"))
-          sink(type = "message")
-          sink()
-          close(log_con)
+          with_log_capture(log_file, {
+            tryCatch({
+              igblast_output <- capture.output(igblast_results <- runIgblastn(VDJ_db,
+                                                                              sequence = "sequence",
+                                                                              sequence_id = "well_id",
+                                                                              organism = organism,
+                                                                              seq_type = seq_type,
+                                                                              igblast_dir = igblast_dir,
+                                                                              imgt_dir = imgt_dir), type = "output")
+              cat(paste(igblast_output, collapse = "\n"))
+            }, error = function(e) {
+              message("Error occurred: ", e$message)
+            })
+          }, open_mode = "a")
         }
-
-        #writeLines(igblast_output, log_file)
 
         VDJ_db <- igblast_results[["pass"]]
         VDJ_db$c_call_igblast <- VDJ_db$c_call
@@ -219,20 +232,19 @@ Ab1toAIRR <- function(files,
       if(SHM){
         if(verbose){cat("adding germline alignments and observed mutations \n")}
         #run first createGermlines() to add proper germline_d_mask collumn
-        log_con <- file(log_file, open = "a")
-        sink(log_con)
-        sink(log_con, type = "message")
-        reference_dir <- paste0(imgt_dir, organism, "/vdj/")
-        reference <- dowser::readIMGT(reference_dir)
-        VDJ_db <- dowser::createGermlines(VDJ_db,
-                                          references = reference,
-                                          trim_lengths = TRUE,
-                                          force_trim = TRUE,
-                                          nproc = nproc,
-                                          amino_acid = FALSE,
-                                          id = "sequence_id",
-                                          clone = "sequence_id",
-                                          na.rm = FALSE)
+        with_log_capture(log_file, {
+          reference_dir <- paste0(imgt_dir, organism, "/vdj/")
+          reference <- dowser::readIMGT(reference_dir)
+          VDJ_db <- dowser::createGermlines(VDJ_db,
+                                            references = reference,
+                                            trim_lengths = TRUE,
+                                            force_trim = TRUE,
+                                            nproc = nproc,
+                                            amino_acid = FALSE,
+                                            id = "sequence_id",
+                                            clone = "sequence_id",
+                                            na.rm = FALSE)
+        }, open_mode = "a")
 
         # then run shazam observedMutations()
         suppressMessages(library(shazam)) #cannot make it work without loading the entire package as shazam calls multiple objects from the package
@@ -244,9 +256,6 @@ Ab1toAIRR <- function(files,
         if(!full_seq_aa){#we only save this file if no other analysis is performed
           readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", filename, ".tsv.gz"))
         }
-        sink(type = "message")
-        sink()
-        close(log_con)
       }
       # Step6: reconstruct full VDJ AA sequence:
       if(full_seq_aa){
@@ -258,7 +267,7 @@ Ab1toAIRR <- function(files,
       # Step7: add additional attributes:
       if(file.exists(paste0(outfolder, "_info.xlsx"))){
         if(verbose){cat("importing additional info from ", paste0(outfolder, "_info.xlsx"), "\n","\n")}
-        additional_info <- read.xlsx(paste0(outfolder, "_info.xlsx"), 1)
+        additional_info <- openxlsx::read.xlsx(paste0(outfolder, "_info.xlsx"), 1)
 
         AddInfo <- function(db){
           AIRR_collumns <- colnames(db)[!colnames(db) == "well_id"]
@@ -293,8 +302,8 @@ Ab1toAIRR <- function(files,
         dplyr::filter(productive)
 
       # define style
-      length_flag_style <- createStyle(fgFill="bisque")
-      QC_flag_style <- createStyle(fgFill="bisque", fontColour = "red")
+      length_flag_style <- openxlsx::createStyle(fgFill="bisque")
+      QC_flag_style <- openxlsx::createStyle(fgFill="bisque", fontColour = "red")
       cols <- which(colnames(VDJ_db)%in%colnames(VDJ_db))
 
       if(!primers %in% c("IgG", "IgM", "IgK", "IgL", "Mix")){
@@ -307,28 +316,28 @@ Ab1toAIRR <- function(files,
       length_cutoff <- c(350, 300, 400, 300, 300, 300)
       names(v_sequence_end_cutoff) <- c("IgG", "IgM", "IgK", "IgL", "Mix")
 
-      OUT <- createWorkbook()
-      addWorksheet(OUT, "productives")
-      writeData(OUT, sheet = "productives", x = VDJ_db, colNames = TRUE, rowNames = FALSE)
+      OUT <- openxlsx::createWorkbook()
+      openxlsx::addWorksheet(OUT, "productives")
+      openxlsx::writeData(OUT, sheet = "productives", x = VDJ_db, colNames = TRUE, rowNames = FALSE)
       length_issue <- which(VDJ_db$v_sequence_end<=v_sequence_end_cutoff[primers]|"missing too much bp in VH sequence" %in% VDJ_db$comments|VDJ_db$sequence_length < length_cutoff[primers])
-      addStyle(OUT, sheet="productives", style=length_flag_style, rows=length_issue+1, cols=cols, gridExpand=TRUE) # "+1" for header line
+      openxlsx::addStyle(OUT, sheet="productives", style=length_flag_style, rows=length_issue+1, cols=cols, gridExpand=TRUE) # "+1" for header line
       low_QC <- which(VDJ_db$pct_under_30QC_in_trimmed>=10)
-      addStyle(OUT, sheet="productives", style=QC_flag_style, rows=low_QC+1, cols=cols, gridExpand=TRUE) # "+1" for header line
+      openxlsx::addStyle(OUT, sheet="productives", style=QC_flag_style, rows=low_QC+1, cols=cols, gridExpand=TRUE) # "+1" for header line
       nb_prod <- nrow(VDJ_db)
       #!second style added will override the first
       nb_unprod <- nrow(VDJ_db_nonprod)
-      addWorksheet(OUT, "non_productives")
-      writeData(OUT, sheet = "non_productives", x = VDJ_db_nonprod, colNames = TRUE, rowNames = FALSE)
+      openxlsx::addWorksheet(OUT, "non_productives")
+      openxlsx::writeData(OUT, sheet = "non_productives", x = VDJ_db_nonprod, colNames = TRUE, rowNames = FALSE)
 
       nb_igblast_failed <- nrow(failed_VDJ_db)
-      addWorksheet(OUT, "igblast_failed")
-      writeData(OUT, sheet = "igblast_failed", x = failed_VDJ_db, colNames = TRUE, rowNames = FALSE)
+      openxlsx::addWorksheet(OUT, "igblast_failed")
+      openxlsx::writeData(OUT, sheet = "igblast_failed", x = failed_VDJ_db, colNames = TRUE, rowNames = FALSE)
 
       nb_QC_failed <- nrow(QC_failed)
-      addWorksheet(OUT, "QC_failed")
-      writeData(OUT, sheet = "QC_failed", x = QC_failed, colNames = TRUE, rowNames = FALSE)
+      openxlsx::addWorksheet(OUT, "QC_failed")
+      openxlsx::writeData(OUT, sheet = "QC_failed", x = QC_failed, colNames = TRUE, rowNames = FALSE)
 
-      saveWorkbook(OUT, file = paste0(outfolder, "/", outfolder, "_full_recap.xlsx"), overwrite = TRUE)
+      openxlsx::saveWorkbook(OUT, file = paste0(outfolder, "/", outfolder, "_full_recap.xlsx"), overwrite = TRUE)
 
       if(verbose){
         cat("nb total sequences: ", nrow(VDJ_db)+nrow(QC_failed), "\n")
@@ -376,6 +385,15 @@ Ab1toAIRR <- function(files,
 #' @param nproc   number of processors to use, if NULL, will be automatically set based on available processors.
 #'
 #' @keywords internal
+#'
+#' @import sangeranalyseR
+#' @import sangerseqR 
+#' @importFrom Biostrings reverseComplement
+#' @importFrom Biostrings subseq
+#' @importFrom Biostrings DNAStringSet
+#' @importFrom Biostrings replaceAt
+#' @import ggplot2
+#' @import ggrepel
 
 runAb1QC <- function(Ab1_folder,
                      outfolder = NULL,
@@ -386,8 +404,8 @@ runAb1QC <- function(Ab1_folder,
 
   suppressMessages(library(sangeranalyseR))
   suppressMessages(library(sangerseqR))
-  suppressMessages(library(ggplot2))
-  suppressMessages(library(ggrepel))
+  #suppressMessages(library(ggplot2))
+  #suppressMessages(library(ggrepel))
 
   if(!dir.exists(Ab1_folder)){
     stop("folder : ", Ab1_folder," does not exist")
@@ -431,19 +449,19 @@ runAb1QC <- function(Ab1_folder,
   ##open Ab1 files using sangeranalyseR to trimm sequence:
   #M1 Trimming Method = Mott's modified trimming algorithm
   #M1 Trimming Cutoff: the cutoff at which you consider a base to be bad. This works on a logarithmic scale, such that if you want to consider a score of 10 as bad, you set cutoff to 0.1; for 20 set it at 0.01; for 30 set it at 0.001; for 40 set it at 0.0001; and so on. Contiguous runs of bases below this quality will be removed from the start and end of the sequence. Given the high quality reads expected of most modern ABI sequencers, the defualt is 0.0001.
-  message("Importing and trimming all sequences")
+  message("Importing and trimming all sequences using sangeranalyseR")
   seqs <- parallel::mclapply(filenames, FUN=function(filename){
     capture.output({
       suppressMessages({
-        seq <- SangerRead(readFeature = "Reverse Read",
-                          readFileName          = filename,
-                          geneticCode           = GENETIC_CODE,
-                          TrimmingMethod        = "M1",
-                          M1TrimmingCutoff      = 0.001,
-                          baseNumPerRow         = 100,
-                          heightPerRow          = 200,
-                          signalRatioCutoff     = 0.33,
-                          showTrimmed           = TRUE)
+        seq <- sangeranalyseR::SangerRead(readFeature = "Reverse Read",
+                                          readFileName          = filename,
+                                          geneticCode           = GENETIC_CODE,
+                                          TrimmingMethod        = "M1",
+                                          M1TrimmingCutoff      = 0.001,
+                                          baseNumPerRow         = 100,
+                                          heightPerRow          = 200,
+                                          signalRatioCutoff     = 0.33,
+                                          showTrimmed           = TRUE)
       })
     }, type = "output")
     #generateReport(seq, outputDir = Ab1_folder)
@@ -452,18 +470,19 @@ runAb1QC <- function(Ab1_folder,
   names(seqs) <- well_ids
 
   ##open Ab1 files using sanqerseqR to plot chromatograms:
+  message("Plotting chromatograms using sangerseqR")
   seqs2 <- parallel::mclapply(filenames, readsangerseq, mc.cores = nproc)
   names(seqs2) <- well_ids
 
   if(save == "html"){
     for(j in seq_along(seqs2)){
       #message("outputting QC graphs for ", well_ids[j])
-      seq2final <- makeBaseCalls(seqs2[[j]], ratio = 0.33)
+      seq2final <- sangerseqR::makeBaseCalls(seqs2[[j]], ratio = 0.33)
       QC_file <- paste0(QC_folder, "/", gsub(paste0(Ab1_folder, "/"), "", gsub(".ab1", "", filenames[j])))
       pdf(paste0(QC_file, "_chromatogram.pdf"))
-      chromatogram(seq2final, width = 80, height = 3, trim5 = 0, trim3 = 0,showcalls = "both")
+      sangerseqR::chromatogram(seq2final, width = 80, height = 3, trim5 = 0, trim3 = 0,showcalls = "both")
       dev.off()
-      htmlwidgets::saveWidget(qualityBasePlot(seqs[[j]]), file = paste0(QC_file, "_QC_plot.html"))
+      htmlwidgets::saveWidget(sangeranalyseR::qualityBasePlot(seqs[[j]]), file = paste0(QC_file, "_QC_plot.html"))
     }
   }
   if(save == "png"){
@@ -479,11 +498,11 @@ runAb1QC <- function(Ab1_folder,
       #message("outputting QC graphs for ", well_ids[j])
       QC_file <- paste0(QC_folder, "/", gsub(paste0(Ab1_folder, "/"), "", gsub(".ab1", "", filenames[j])))
 
-      p <- qualityBasePlot(seqs[[j]])
+      p <- sangeranalyseR::qualityBasePlot(seqs[[j]])
       scope$transform(p, paste0(QC_file, "_QC_plot.png"))
 
-      seq2final <- makeBaseCalls(seqs2[[j]], ratio = 0.33)
-      chromatogram(seq2final, width = 80, height = 3, trim5 = 0, trim3 = 0, showcalls = "both", filename = paste0(QC_file, "_chromatogram.pdf"))
+      seq2final <- sangerseqR::makeBaseCalls(seqs2[[j]], ratio = 0.33)
+      sangerseqR::chromatogram(seq2final, width = 80, height = 3, trim5 = 0, trim3 = 0, showcalls = "both", filename = paste0(QC_file, "_chromatogram.pdf"))
     }
   }
 
@@ -2283,17 +2302,19 @@ flagVDJdoublets <- function(db,
 #' @export
 #'
 #' @import dplyr
-#' @import Biostrings
+#' @importFrom Biostrings DNAStringSet
+#' @importFrom Biostrings writeXStringSet
 
 runAssignGenes <- function(db,
                            type = c("nt", "aa"),
                            seq_type = c("Ig", "TCR"),
                            organism = c("human", "mouse", "rabbit", "rat", "rhesus_monkey"),
-                           igblast_dir = "~/share/igblast",
+                           igblast_dir = "~/share/igblast/",
                            imgt_dir = "~/share/germlines/imgt/",
                            sequence = "sequence", sequence_id = "sequence_id",
                            output = FALSE, output_folder = "igblast_results",
-                           log = FALSE, log_file= NULL){
+                           log = FALSE,
+                           log_file= NULL){
 
 
   #suppressMessages(library(dplyr))
@@ -2337,14 +2358,14 @@ runAssignGenes <- function(db,
 
   # Capture IMGT version
   if(file.exists(paste0(igblast_dir, "/IMGT_version.txt"))){
-    database_info <- readLines(paste0(igblast_dir, "/IMGT_version.txt"))
-  }
-  log <- c(
-    paste0("Database: IMGT (", database_info,")"),
+    database_info <- paste0("(",readLines(paste0(igblast_dir, "/IMGT_version.txt")), ")")
+  } else {database_info <- NULL}
+  log_message <- c(
+    paste0("Database: IMGT ", database_info),
     paste0("Organism: ", organism),
-    paste0("Loci: ", seq_type),
+    paste0("Loci: ", seq_type)
   )
-  cat(log, sep = "\n")
+  cat(log_message, sep = "\n")
 
   # run igblast:
   fasta_file <- paste0(output_folder, "All_seq.fasta")
@@ -2352,7 +2373,9 @@ runAssignGenes <- function(db,
   #system(paste0("AssignGenes.py igblast -s ", fasta_file, " -b ", igblast_dir ," --organism human --loci ig --format blast"))
   messages_igblast <- system2("AssignGenes.py", args = paste0(igblast_version," -s ", fasta_file, " -b ", igblast_dir ," --organism ", tolower(organism)," --loci ", loci," --format blast"), stdout = TRUE, stderr = TRUE)
   cat(paste(messages_igblast, collapse = "\n"))
-  if(log & !is.null(log_file)){cat(paste(messages_igblast, collapse = "\n"), file = log_file)}
+  if(log){
+    if(!is.null(log_file)){cat(paste(messages_igblast, collapse = "\n"), file = log_file)}
+  }
   #system(paste0("AssignGenes.py igblast -s ", fasta_file, " -b ", igblast_dir ," --organism human --loci ig --format blast --nproc ", nproc))
 
   igblast_output_file <- paste0(output_folder, "All_seq_igblast")
@@ -2360,7 +2383,9 @@ runAssignGenes <- function(db,
   reference_dir <- paste0(imgt_dir, organism, "/vdj/imgt_", organism, "_*.fasta")
   messages_makedb <- system2("MakeDb.py", args = paste0("igblast -i ", igblast_output_file, ".fmt7 -s ", fasta_file, " -r ", reference_dir, " --extended --failed"), stdout = TRUE, stderr = TRUE)
   cat(paste(messages_makedb, collapse = "\n"))
-  if(log & !is.null(log_file)){cat(paste(messages_makedb, collapse = "\n"), file = log_file)}
+  if(log){
+    if(!is.null(log_file)){cat(paste(messages_makedb, collapse = "\n"), file = log_file)}
+  }
 
   # restore original metadata:
   pass_true <- file.exists(paste0(igblast_output_file, "_db-pass.tsv"))
@@ -2426,6 +2451,11 @@ runAssignGenes <- function(db,
 #' 2. import igblast results and add all metadata from the original dataframe
 #' dependencies: standalone igblastn; dplyr; readr; Biostrings; parallel,
 #' @export
+#'
+#' @import dplyr
+#' @importFrom Biostrings DNAStringSet
+#' @importFrom Biostrings writeXStringSet
+#' @importFrom Biostrings readDNAStringSet
 
 runIgblastn <- function(db,
                        sequence = "sequence",
@@ -2441,7 +2471,7 @@ runIgblastn <- function(db,
                        log_file= NULL,
                        nproc_igblast = 10){
 
-  suppressMessages(library(dplyr))
+  #suppressMessages(library(dplyr))
 
   seq_type <- match.arg(seq_type)
   organism <- match.arg(organism)
@@ -2490,18 +2520,18 @@ runIgblastn <- function(db,
   # Capture IMGT version
   version_info <- system2(command, args = "-version", stdout = TRUE)
   if(file.exists(paste0(igblast_dir, "/IMGT_version.txt"))){
-    database_info <- readLines(paste0(igblast_dir, "/IMGT_version.txt"))
-  }
+    database_info <- paste0("(",readLines(paste0(igblast_dir, "/IMGT_version.txt")), ")")
+  } else {database_info <- NULL}
 
-  log <- c(
+  log_message <- c(
     paste0("Running ", version_info[1]),
     paste0("Organism: ", organism),
     paste0("Loci: ", seq_type),
-    paste0("Database: IMGT (", database_info,")"),
+    paste0("Database: IMGT ", database_info),
     paste0("Output format: airr"),
     paste0("Nproc: ", nproc_igblast)
     )
-  cat(log, sep = "\n")
+  cat(log_message, sep = "\n")
 
   database_type <- list("Ig" = "ig", "TCR" = "tr")
 
@@ -2676,7 +2706,8 @@ gapV <- function(seq,
 #' @export
 #'
 #' @import dplyr
-#' @import Biostrings
+#' @importFrom Biostrings DNAStringSet
+#' @importFrom Biostrings writeXStringSet
 #' @importFrom readr read_csv
 
 runBlastnC <- function(db,
@@ -2794,6 +2825,10 @@ runBlastnC <- function(db,
 #' Currently limited to human Ig sequences.
 #'
 #' @export
+#'
+#' @importFrom Biostrings readDNAStringSet
+#' @importFrom Biostrings translate
+#' @importFrom Biostrings DNAStringSet
 
 reconstructFullVDJ <- function(db,
                                igblast_dir = "~/share/igblast",
@@ -3103,6 +3138,7 @@ importSangerVDJ <- function(sanger_files, db = NULL,
 #' @export
 #'
 #' @import dplyr
+#' @importFrom Biostrings readDNAStringSet
 
 scImportVDJ <- function(vdj_files,
                         seurat = NULL,
