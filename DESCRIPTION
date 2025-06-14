@@ -9,6 +9,11 @@ Authors@R: c(
       email = "pascal.chappert@inserm.fr",
       role = c("aut", "cre")
     )
+    person(
+      "Anaïs", "Roeser", 
+      email = "anaïs.roeser@inserm.fr",
+      role = c("ctb")
+    )
   )
 Description: RERB is an R-based wrappER for the analysis of BCR repertoires. 
     Uses core function from the Immcantation pipeline (https://immcantation.readthedocs.io/en/stable/).
