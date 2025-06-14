@@ -2,7 +2,7 @@
 
 RER-B is an **R**-based wrapp**ER** for the analysis of single-cell **B**CR repertoires using the immcantation pipeline (TCR may come at some point...). It is designed to deal with mixed data from 10X or BD Rhapsody-based scVDJ_seq data as well as plate-based Sanger VDJ sequencing (see also Ab1toAIRR). RER-B is primarily designed to work with seurat objects and incorporates a few handy functions for smooth interfacing. Initial QC (filtering on features/mitochondrial genes) should have been performed before and will be used for the initial filtering of scVDJ_seq-derived VDJ contigs. Initial reference mapping using azimuth can also be used at the end of the pipeline to flag doublets using observed VDJ contigs in cells (flagVDJdoublets). RER-B is also intended for use with plate-based VDJ sequencing data and provides a few tools to work with index-sorting data (both BD ARIAs and SONY MA900 cell sorters and FlowJo analysis exports for now...). It is compatible with most plotting options from the immcantation pipeline and also incorporates dedicated plotting options (coming soon...). Of note, RER-B provides two wrappers (**scImportVDJ( )** and **scFindBCRClones( )**) described below, but all functions listed in the figure below can be used separately from one another.
 
-![Figure1: RER-B pipeline](doc/RER-B_flowchart_v0.9.6.png) **Figure1:** RER-B pipeline
+![Figure1: RER-B pipeline](RER-B_flowchart_v0.9.6.png) **Figure1:** RER-B pipeline
 
 ## How to use it:
 

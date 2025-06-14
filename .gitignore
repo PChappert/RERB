@@ -6,6 +6,7 @@ inst/doc
 vignettes/*.R
 vignettes/*.html
 vignettes/*.pdf
+vignettes/*.Rmd
 src/*.o
 src/*.so
 src/*.dll
