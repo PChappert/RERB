@@ -6,7 +6,8 @@
 -   Added option to switch from runAssignGenes [default] to runIgblastn in most wrapper functions
 -   runAssignGenes and runIgblastn now work with TCR and mouse/rat/rabbit/rhesus-monkey datasets
 -   Added importFJGates function to import results from FlowJO gating on index-sorting data
--   Added Ab1toAIRR to directly QC and align .Ab1 zipped files from plate-based Sanger sequencing (based on former Ab1toAIRR.sh script now deprecated)
+-   Added Ab1toAIRR to directly QC and align .Ab1 zipped files from plate-based Sanger sequencing (based on former Ab1toAIRR.sh script now deprecated). Provides added flexibility regarding which steps need to be run a second time to simply update alignment or imported well_id-associated info.
+-   new time_and_log fonction
 -   Fixed bug in clone frequency calculation in AddAIRRMetadata
 
 ## Version 0.9.5: May 6, 2025
