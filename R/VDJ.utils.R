@@ -1,107 +1,3 @@
-#### Function to capture safely all outputs from a function and send it to a log file ####
-#' safely combine sink() and on.exit() so that even if function (expr) fails, the sink is properly closed.
-#'
-#' \code{time_and_log}
-#'
-#' @param expr        function
-#' @param verbose     whether to write to console
-#' @param time        whether to return elapsed time
-#' @param log_file    log file name
-#' @param log_title   title for written section in log file
-#' @param open_mode   passed to file, "a" or "at" = append [default], "w" or "wt" = write (will erase prior text).
-#' 
-#' @keywords internal
-
-time_and_log <- function(expr,
-                         verbose = TRUE, 
-                         time = TRUE,
-                         log_file = NULL, 
-                         log_title = NULL,
-                         open_mode = "a") {
-                                    
-  error_occurred <- FALSE
-  error_msg <- NULL
-  start <- Sys.time()
-  result <- NULL
-  log_con <- NULL
-  raw_txt <- deparse(substitute(expr))
-  if (length(raw_txt) > 2 && raw_txt[1] == "{" && tail(raw_txt, 1) == "}") {
-    # Strip brackets and combine
-    expr_txt <- paste(raw_txt[-c(1, length(raw_txt))], collapse = "; ")
-  } else {
-    expr_txt <- paste(raw_txt, collapse = "; ")
-  }
-  
-  # Helper to strip ANSI codes
-  strip_ansi <- function(text) {
-    gsub("\033\\[[0-9;]*m", "", text)
-  }
-  
-  if (!is.null(log_file)) {
-    log_file <- normalizePath(log_file, mustWork = FALSE)
-    log_con <- file(log_file, open = open_mode)
-    sink(log_con)
-    sink(log_con, type = "message")
-    if(!is.null(log_title)){
-      cat(sprintf("[%s] =============================\n", format(start, "%Y-%m-%d %H:%M:%S")))
-      cat(sprintf(paste0("[%s] ", log_title, "\n"), format(start, "%Y-%m-%d %H:%M:%S")))
-    }
-    cat(sprintf("[%s] =============================\n", format(start, "%Y-%m-%d %H:%M:%S")))
-    #cat(sprintf("[%s] Started running: %s\n", format(start, "%Y-%m-%d %H:%M:%S"), expr_txt))
-  }
-  
-  tryCatch(
-    {
-      withCallingHandlers(
-        eval(substitute(expr), envir = parent.frame()), 
-        warning = function(w) {
-          msg <- strip_ansi(w$message)
-          cat(sprintf("[%s] WARNING: %s\n", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), msg))
-          invokeRestart("muffleWarning")
-        },
-        message = function(m) {
-          msg <- strip_ansi(m$message)
-          cat(sprintf("[%s] MESSAGE: %s\n", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), msg))
-          invokeRestart("muffleMessage")
-        }
-      )
-    },
-    error = function(e) {
-      error_occurred <<- TRUE
-      error_msg <<- strip_ansi(e$message)
-      cat(sprintf("[%s] ERROR: %s\n", format(Sys.time(), "%Y-%m-%d %H:%M:%S"), error_msg))
-    }
-  )
-  
-  elapsed <- difftime(Sys.time(), start, units = "secs")
-  
-  if (!is.null(log_file)) {
-    if(time){
-      cat(sprintf("[%s] Elapsed: %.2f seconds\n", 
-                  format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
-                  as.numeric(elapsed)))
-    }
-    #cat(sprintf("[%s] finished %s\n", 
-    #            format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
-    #            if (error_occurred) "with error" else "successfully"))
-    cat(sprintf("[%s] =============================\n", format(Sys.time(), "%Y-%m-%d %H:%M:%S")))
-    sink(type = "message")
-    sink()
-    close(log_con)
-  }
-  
-  if (verbose && !error_occurred && time) {
-    cat(paste0("Elapsed: ", sprintf("%.2f %s", elapsed, units(elapsed)), "\n"))
-  }
-  
-  if (error_occurred && !is.null(log_file)) {
-    message(sprintf("Error occurred. Please check the log file at '%s' for details.", 
-                    log_file))
-  }
-  
-  invisible(result)  # return result quietly
-}
-
 
 #### Function to directly process plate-based .Ab1 file ####
 #' unzip Eurofins-based results and run all steps from QC to final AIRR formatted datatable
@@ -214,6 +110,65 @@ Ab1toAIRR <- function(files,
       dir.create(outfolder)
       # allows using temp_folder to unzip the data from eurofins, while outputting data in a seperate folder
     }
+    
+    if(update_info){
+      #reopen already QCed and aligned db
+      #check first for full-pass db:
+      filename_pass <- paste0(outfolder, "/", outfilename, "_igblast-pass_c-call-pass_germ-pass_shm-pass_full-pass.tsv.gz")
+      if(file.exists(filename_pass)){
+        if(verbose){cat("opening", filename_pass, "\n")}
+        VDJ_db <- readr::read_tsv(filename_pass, show_col_types = FALSE)
+      } else {
+        #check first for shm-pass db:
+        filename_pass <- paste0(outfolder, "/", outfilename, "_igblast-pass_c-call-pass_germ-pass_shm-pass.tsv.gz")
+        if(file.exists(filename_pass)){
+          if(verbose){cat("opening", filename_pass, "\n")}
+          VDJ_db <- readr::read_tsv(filename_pass, show_col_types = FALSE)
+        } else {
+          #check first for full-pass db:
+          filename_pass <- paste0(outfolder, "/", outfilename, "_igblast-pass_c-call-pass_germ-pass.tsv.gz")
+          if(file.exists(filename_pass)){
+            if(verbose){cat("opening", filename_pass, "\n")}
+            VDJ_db <- readr::read_tsv(filename_pass, show_col_types = FALSE)
+          } else {
+            #check first for full-pass db:
+            filename_pass <- paste0(outfolder, "/", outfilename, "_igblast-pass_c-call-pass.tsv.gz")
+            if(file.exists(filename_pass)){
+              if(verbose){cat("opening", filename_pass, "\n")}
+              VDJ_db <- readr::read_tsv(filename_pass, show_col_types = FALSE)
+            } else {
+              filename_pass <- paste0(outfolder, "/", outfilename, "_igblast-pass.tsv.gz")
+              if(file.exists(filename_pass)){
+                if(verbose){cat("opening", filename_pass, "\n")}
+                VDJ_db <- readr::read_tsv(filename_pass, show_col_types = FALSE)
+              } else {
+                filename_pass <- paste0(outfolder, "/", outfilename, "_QC-pass.tsv")
+                if(file.exists(filename_pass)){
+                  stop("no aligned file found in : ", outfolder, " run the partial Ab1toAIRR pipeline with QC = FALSE option")
+                } else {
+                  stop("no aligned or QCed file found in : ", outfolder, " run the full Ab1toAIRR pipeline")
+                }
+              }
+            }
+          }
+        }
+      }
+      filename_igblast_fail <- paste0(outfolder, "/", outfilename, "_igblast-fail.tsv.gz")
+      if(file.exists(filename_igblast_fail)){
+        failed_VDJ_db <- readr::read_tsv(filename_igblast_fail, show_col_types = FALSE)
+      } else {
+        cat("file: ",filename_igblast_fail, " not found")
+        failed_VDJ_db <- NULL
+      }
+      filename_fail <- paste0(outfolder, "/", outfilename, "_QC-fail.tsv")
+      if(file.exists(filename_fail)){
+        QC_failed <- readr::read_tsv(filename_fail, show_col_types = FALSE)
+      } else {
+        cat("file: ",filename_fail, " not found")
+        QC_failed <- NULL
+      }
+    }
+    
     if(QC){
       time_and_log({
         cat("filename: ", filename, "\n")
@@ -272,7 +227,7 @@ Ab1toAIRR <- function(files,
         }
       }
     }
-
+    
     if(nrow(VDJ_db)>0){
       # Step3: run Igblast:
       if(igblast){
@@ -310,11 +265,11 @@ Ab1toAIRR <- function(files,
         VDJ_db <- dplyr::relocate(VDJ_db, c_call, .after = j_call)
 
         if(nrow(failed_VDJ_db)>0){
-          outfilename_fail <- paste0(outfilename, "_igblast_fail")
+          outfilename_fail <- paste0(outfilename, "_igblast-fail")
           readr::write_tsv(failed_VDJ_db, file = paste0(outfolder, "/", outfilename_fail, ".tsv.gz"))
         }
 
-        outfilename <- paste0(outfilename, "_igblast_pass")
+        outfilename <- paste0(outfilename, "_igblast-pass")
         if(!(update_c_call|SHM|full_seq_aa)){#we only save this file if no other analysis is performed
           readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
         }
@@ -356,7 +311,7 @@ Ab1toAIRR <- function(files,
           VDJ_db <- observedMutations(VDJ_db, sequenceColumn= "sequence_alignment", germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=TRUE, combine=TRUE, nproc=nproc)
           
         }, verbose = FALSE, log_file = log_file, log_title = "adding germline alignments and observed mutations", open_mode = "a")
-        outfilename <- paste0(outfilename, "germ-pass_shm-pass")
+        outfilename <- paste0(outfilename, "_germ-pass_shm-pass")
         if(!full_seq_aa){#we only save this file if no other analysis is performed
           readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
         }
@@ -371,58 +326,6 @@ Ab1toAIRR <- function(files,
       }
 
       # Step7: add additional attributes:
-      if(update_info){
-        #reopen already QCed and aligned db
-        #check first for full-pass db:
-        filename_pass <- paste0(outfolder, "/", outfilename, "_igblast_pass_c-call-pass_shm-pass_full-pass.tsv.gz")
-        if(file.exists(filename_pass)){
-          if(verbose){cat("opening", filename_pass, "\n")}
-          VDJ_db <- readr::read_tsv(filename_pass, show_col_types = FALSE)
-        } else {
-          #check first for shm-pass db:
-          filename_pass <- paste0(outfolder, "/", outfilename, "_igblast_pass_c-call-pass_shm-pass.tsv.gz")
-          if(file.exists(filename_pass)){
-            if(verbose){cat("opening", filename_pass, "\n")}
-            VDJ_db <- readr::read_tsv(filename_pass, show_col_types = FALSE)
-          } else {
-            #check first for full-pass db:
-            filename_pass <- paste0(outfolder, "/", outfilename, "_igblast_pass_c-call-pass.tsv.gz")
-            if(file.exists(filename_pass)){
-              if(verbose){cat("opening", filename_pass, "\n")}
-              VDJ_db <- readr::read_tsv(filename_pass, show_col_types = FALSE)
-            } else {
-              #check first for full-pass db:
-              filename_pass <- paste0(outfolder, "/", outfilename, "_igblast_pass.tsv.gz")
-              if(file.exists(filename_pass)){
-                if(verbose){cat("opening", filename_pass, "\n")}
-                VDJ_db <- readr::read_tsv(filename_pass, show_col_types = FALSE)
-              } else {
-                filename_pass <- paste0(outfolder, "/", outfilename, ".tsv")
-                if(file.exists(filename_pass)){
-                  stop("no aligned file found in : ", outfolder, " run the partial Ab1toAIRR pipeline with QC = FALSE option")
-                } else {
-                  stop("no aligned or QCed file found in : ", outfolder, " run the full Ab1toAIRR pipeline")
-                }
-              }
-            }
-          }
-        }
-        filename_igblast_fail <- paste0(outfolder, "/", outfilename, "_igblast_fail.tsv.gz")
-        if(file.exists(filename_igblast_fail)){
-          failed_VDJ_db <- readr::read_tsv(filename_igblast_fail, show_col_types = FALSE)
-        } else {
-          cat("file: ",filename_igblast_fail, " not found")
-          failed_VDJ_db <- NULL
-        }
-        filename_fail <- paste0(outfolder, "/", outfilename, "_QC-fail.tsv")
-        if(file.exists(filename_fail)){
-          QC_failed <- readr::read_tsv(filename_fail, show_col_types = FALSE)
-        } else {
-          cat("file: ",filename_fail, " not found")
-          QC_failed <- NULL
-        }
-      }
-      
       if(file.exists(paste0(outfolder, "_info.xlsx"))){
         if(verbose){cat("importing additional info from ", paste0(outfolder, "_info.xlsx"), "\n","\n")}
         additional_info <- openxlsx::read.xlsx(paste0(outfolder, "_info.xlsx"), 1)
@@ -2519,6 +2422,7 @@ runAssignGenes <- function(db,
 
   if(sequence_id != "sequence_id"){ # make sure columns are renamed properly to adapt to igblast formatting; old column name is kept
     db$sequence_id = db[[sequence_id]]
+    if(any(duplicated(db$sequence_id))){stop("the following sequence_id are duplicated: ", paste(db$sequence_id[duplicated(db$sequence_id)], collapse = "; "))}
   }
 
   # export fasta file:
@@ -2674,6 +2578,7 @@ runIgblastn <- function(db,
 
   if(sequence_id != "sequence_id"){ # make sure columns are renamed properly to adapt to igblast formatting; old column name is kept
     db$sequence_id = db[[sequence_id]]
+    if(any(duplicated(db$sequence_id))){stop("the following sequence_id are duplicated: ", paste(db$sequence_id[duplicated(db$sequence_id)], collapse = "; "))}
   }
 
   # export fasta file:
@@ -3351,7 +3256,7 @@ scImportVDJ <- function(vdj_files,
                         output = TRUE,
                         verbose = TRUE,
                         output_folder = "VDJ_QC",
-                        cell_id = "cell_id", locus = "locus", heavy = "IGH", productive = "productive", complete_vdj = "complete_vdj",
+                        cell_id = "cell_id", locus = "locus", productive = "productive", complete_vdj = "complete_vdj",
                         sequence_id = "sequence_id", umi_count = "umi_count", consensus_count = "consensus_count",
                         junction = "junction", junction_aa = "junction_aa", sequence = "sequence",
                         v_call = "v_call", d_call = "d_call", j_call = "j_call", c_call = "c_call"){
@@ -3361,6 +3266,14 @@ scImportVDJ <- function(vdj_files,
   #suppressMessages(library(dplyr))
 
   seq_type <- match.arg(seq_type)
+  if(seq_type == "Ig"){
+    heavy <- "IGH"
+  }
+  if(seq_type == "TCR"){
+    heavy <- c("TRB","TRD")
+    clean_HC <- FALSE
+  }
+  
   organism <- match.arg(organism)
   igblast_dir <- ifelse(stringr::str_ends(igblast_dir,"/"), igblast_dir, paste0(igblast_dir, "/"))
   imgt_dir <- ifelse(stringr::str_ends(imgt_dir,"/"), imgt_dir, paste0(imgt_dir, "/"))
@@ -3702,12 +3615,11 @@ scImportVDJ <- function(vdj_files,
 
 
 #### Wrapper function to perform clonal grouping on mix paired (single-cell) and unpaired (bulk or sanger) VDJ data ####
-#' Full BCR analysis pipeline for heavy chain curated AIRR single-cell repertoire datasets
+#' Full BCR or TCR analysis pipeline for AIRR single-cell repertoire datasets
 #'
-#' \code{scFindBCRClones} performs clonal clustering of single cell data
+#' \code{scFindClones} performs clonal clustering of single cell data
 #'
-#' @param db              an AIRR formatted dataframe containing heavy and light chain sequences. Should contain only one heavy chain (IGH) per cell_id, if not run resolveMultiHC() first.
-#' @param tech            name of the scRNA-seq technology used (one of 10X or BD
+#' @param db              an AIRR formatted dataframe containing BCR (heavy and light chain) or TCR sequences. For BCR, should contain only one heavy chain (IGH) per cell_id, if not will run resolveMultiHC() first. For TCR, expects filtered datasets (1 heavy and 1 light chain per cell).
 #' @param method          method to use for scoper::hierarchicalClones(), can be one between: identical, hierarchical or spectral
 #' @param spectral_method method to use for scoper::spectralClones(), can be one between: novj or vj
 #' @param threshold       method to use for scoper::hierarchicalClones() or scoper::spectralClones(),
@@ -3754,6 +3666,7 @@ scImportVDJ <- function(vdj_files,
 #' @param junc_len        name of the column containing junction length info.
 #' @param sequence_alignment name of the column containing sequence alignment.
 #' @param recap.highlight Which column to use to create extra sheets in the recap table
+#' @param top_column      Which columns to relocate to the front of the final table
 #'
 #' @return    an AIRR formatted dataframe containing selected heavy and light chains (when available) for all cells as well as clonal grouping for all cells (clone_id).
 #' If igblast and update_c_call are set to "light" or "all", will run igblast and runBlastnC on requested contigs.
@@ -3785,80 +3698,91 @@ scImportVDJ <- function(vdj_files,
 #' @importFrom dowser readIMGT
 #' @importFrom shazam observedMutations
 
-scFindBCRClones <- function(db,
-                            output = TRUE,
-                            output_folder = "VDJ_Clones",
-                            analysis_name = "All_sequences",
-                            seq_type = c("Ig", "TCR"),
-                            organism = c("human", "mouse", "rabbit", "rat", "rhesus_monkey"),
-                            only_heavy = FALSE,
-                            na.heavy.rm = FALSE,
-                            igblast = c("none", "filtered_light", "all"),
-                            update_c_call = c("all", "filtered light", "none"),
-                            clean_LC = TRUE,
-                            split_by_light = TRUE,
-                            update_germline = TRUE,
-                            SHM = TRUE,
-                            full_seq_aa = TRUE,
-                            #passed to Scoper:
-                            method = c("changeo", "hierarchical", "identical", "spectral"), spectral_method = c("novj", "vj"),
-                            threshold = c(0.12, 0.15),
-                            cell_id_scoper = "cell_id",
-                            #passed to resolveMultiContigs():
-                            tech = NULL,
-                            split.by = NULL,
-                            #passed to runIgblastn()/runAssignGenes()/reconstructFullVDJ/createGermline():
-                            igblast_dir = "~/share/igblast",
-                            imgt_dir = "~/share/germlines/imgt/",
-                            CH1_AA = list(IGHG1 = "ASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKV",
-                                          IGHG2 = "ASTKGPSVFPLAPCSRSTSESTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSNFGTQTYTCNVDHKPSNTKVDKTV",
-                                          IGHG3 = "ASTKGPSVFPLAPCSRSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYTCNVNHKPSNTKVDKRV",
-                                          IGHG4 = "ASTKGPSVFPLAPCSRSTSESTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTKTYTCNVDHKPSNTKVDKRV",
-                                          IGHA1 = "ASPTSPKVFPLSLCSTQPDGNVVIACLVQGFFPQEPLSVTWSESGQGVTARNFPPSQDASGDLYTTSSQLTLPATQCLAGKSVTCHVKHYTNPSQDVT",
-                                          IGHA2 = "ASPTSPKVFPLSLDSTPQDGNVVVACLVQGFFPQEPLSVTWSESGQNVTARNFPPSQDASGDLYTTSSQLTLPATQCPDGKSVTCHVKHYTNSSQDVT",
-                                          IGHM = "GSASAPTLFPLVSCENSPSDTSSVAVGCLAQDFLPDSITFSWKYKNNSDISSTRGFPSVLRGGKYAATSQVLLPSKDVMQGTDEHVVCKVQHPNGNKEKNVPLPV",
-                                          IGHD = "APTKAPDVFPIISGCRHPKDNSPVVLACLITGYHPTSVTVTWYMGTQSQPQRTFPEIQRRDSYYMTSSQLSTPLQQWRQGEYKCVVQHTASKSKKEIF",
-                                          IGHE = "ASTQSPSVFPLTRCCKNIPSNATSVTLGCLATGYFPEPVMVTWDTGSLNGTTMTLPATTLTLSGHYATISLLTVSGAWAKQMFTCRVAHTPSSTDWVDNKTFS",
-                                          IGKC = "RTVAAPSVFIFPPSDEQLKSGTASVVCLLNNFYPREAKVQWKVDNALQSGNSQESVTEQDSKDSTYSLSSTLTLSKADYEKHKVYACEVTHQGLSSPVTKSFNRGEC",
-                                          IGLC1 = "GQPKGQPKANPTVTLFPPSSEELQANKATLVCLISDFYPGAVTVAWKADGSPVKAGVETTKPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPTECS",
-                                          IGLC2 = "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVTVAWKADSSPVKAGVETTTPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPTECS",
-                                          IGLC3 = "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVTVAWKADSSPVKAGVETTTPSKQSNNKYAASSYLSLTPEQWKSHKSYSCQVTHEGSTVEKTVAPTECS",
-                                          IGLC6 = "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVKVAWKADGSPVNTGVETTTPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPAECS",
-                                          IGLC7 = "GQPKAAPSVTLFPPSSEELQANKATLVCLVSDFNPGAVTVAWKADGSPVKVGVETTKPSKQSNNKYAASSYLSLTPEQWKSHRSYSCRVTHEGSTVEKTVAPAECS"),
-                            #used for final recap excel sheet
-                            shared.tech = list(scRNAseq = c("10X", "BD"),
-                                               scSanger = c("scPCR", "scCulture")),
-                            recap.highlight = NULL,
-                            top_columns = NULL,
-                            #global:
-                            cell_id = "cell_id",
-                            locus = "locus",
-                            assay = "assay",
-                            heavy = "IGH",
-                            umi_count = "umi_count",
-                            consensus_count = "consensus_count",
-                            productive = "productive",
-                            complete_vdj = "complete_vdj",
-                            junction = "junction",
-                            junction_aa = "junction_aa",
-                            junc_len = "junction_length",
-                            sequence = "sequence",
-                            sequence_id = "sequence_id",
-                            sequence_alignment  = "sequence_alignment",
-                            v_call = "v_call",
-                            d_call = "d_call",
-                            j_call = "j_call",
-                            c_call = "c_call",
-                            nproc = 1,
-                            verbose = TRUE,
-                            fields = NULL){
-
+scFindClones <- function(db,
+                         output = TRUE,
+                         output_folder = "VDJ_Clones",
+                         analysis_name = "All_sequences",
+                         seq_type = c("Ig", "TCR"),
+                         organism = c("human", "mouse", "rabbit", "rat", "rhesus_monkey"),
+                         only_heavy = FALSE,
+                         na.heavy.rm = FALSE,
+                         igblast = c("none", "filtered_light", "all"),
+                         update_c_call = c("all", "filtered light", "none"),
+                         clean_LC = TRUE,
+                         split_by_light = TRUE,
+                         update_germline = TRUE,
+                         SHM = TRUE,
+                         full_seq_aa = TRUE,
+                         #passed to Scoper:
+                         method = c("changeo", "hierarchical", "identical", "spectral"), spectral_method = c("novj", "vj"),
+                         threshold = c(0.12, 0.15),
+                         cell_id_scoper = "cell_id",
+                         #passed to resolveMultiContigs():
+                         tech = NULL,
+                         split.by = NULL,
+                         #passed to runIgblastn()/runAssignGenes()/reconstructFullVDJ/createGermline():
+                         igblast_dir = "~/share/igblast",
+                         imgt_dir = "~/share/germlines/imgt/",
+                         CH1_AA = list(IGHG1 = "ASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKV",
+                                       IGHG2 = "ASTKGPSVFPLAPCSRSTSESTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSNFGTQTYTCNVDHKPSNTKVDKTV",
+                                       IGHG3 = "ASTKGPSVFPLAPCSRSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYTCNVNHKPSNTKVDKRV",
+                                       IGHG4 = "ASTKGPSVFPLAPCSRSTSESTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTKTYTCNVDHKPSNTKVDKRV",
+                                       IGHA1 = "ASPTSPKVFPLSLCSTQPDGNVVIACLVQGFFPQEPLSVTWSESGQGVTARNFPPSQDASGDLYTTSSQLTLPATQCLAGKSVTCHVKHYTNPSQDVT",
+                                       IGHA2 = "ASPTSPKVFPLSLDSTPQDGNVVVACLVQGFFPQEPLSVTWSESGQNVTARNFPPSQDASGDLYTTSSQLTLPATQCPDGKSVTCHVKHYTNSSQDVT",
+                                       IGHM = "GSASAPTLFPLVSCENSPSDTSSVAVGCLAQDFLPDSITFSWKYKNNSDISSTRGFPSVLRGGKYAATSQVLLPSKDVMQGTDEHVVCKVQHPNGNKEKNVPLPV",
+                                       IGHD = "APTKAPDVFPIISGCRHPKDNSPVVLACLITGYHPTSVTVTWYMGTQSQPQRTFPEIQRRDSYYMTSSQLSTPLQQWRQGEYKCVVQHTASKSKKEIF",
+                                       IGHE = "ASTQSPSVFPLTRCCKNIPSNATSVTLGCLATGYFPEPVMVTWDTGSLNGTTMTLPATTLTLSGHYATISLLTVSGAWAKQMFTCRVAHTPSSTDWVDNKTFS",
+                                       IGKC = "RTVAAPSVFIFPPSDEQLKSGTASVVCLLNNFYPREAKVQWKVDNALQSGNSQESVTEQDSKDSTYSLSSTLTLSKADYEKHKVYACEVTHQGLSSPVTKSFNRGEC",
+                                       IGLC1 = "GQPKGQPKANPTVTLFPPSSEELQANKATLVCLISDFYPGAVTVAWKADGSPVKAGVETTKPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPTECS",
+                                       IGLC2 = "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVTVAWKADSSPVKAGVETTTPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPTECS",
+                                       IGLC3 = "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVTVAWKADSSPVKAGVETTTPSKQSNNKYAASSYLSLTPEQWKSHKSYSCQVTHEGSTVEKTVAPTECS",
+                                       IGLC6 = "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVKVAWKADGSPVNTGVETTTPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPAECS",
+                                       IGLC7 = "GQPKAAPSVTLFPPSSEELQANKATLVCLVSDFNPGAVTVAWKADGSPVKVGVETTKPSKQSNNKYAASSYLSLTPEQWKSHRSYSCRVTHEGSTVEKTVAPAECS"),
+                         #used for final recap excel sheet
+                         shared.tech = list(scRNAseq = c("10X", "BD"),
+                                            scSanger = c("scPCR", "scCulture")),
+                         recap.highlight = NULL,
+                         top_columns = NULL,
+                         #global:
+                         cell_id = "cell_id",
+                         locus = "locus",
+                         assay = "assay",
+                         umi_count = "umi_count",
+                         consensus_count = "consensus_count",
+                         productive = "productive",
+                         complete_vdj = "complete_vdj",
+                         junction = "junction",
+                         junction_aa = "junction_aa",
+                         junc_len = "junction_length",
+                         sequence = "sequence",
+                         sequence_id = "sequence_id",
+                         sequence_alignment  = "sequence_alignment",
+                         v_call = "v_call",
+                         d_call = "d_call",
+                         j_call = "j_call",
+                         c_call = "c_call",
+                         nproc = 1,
+                         verbose = TRUE,
+                         fields = NULL){
+                            
   start <- Sys.time()
   #suppressMessages(library(dplyr))
   #suppressMessages(library(scoper))
   #suppressMessages(library(dowser))
 
   seq_type <- match.arg(seq_type)
+  if(seq_type == "Ig"){
+    heavy <- "IGH"
+    chains <- c("IGH", "IGK", "IGL")
+    fct_type <- "BCR"
+  }
+  if(seq_type == "TCR"){
+    heavy <- c("TRB","TRD")
+    chains <- c("TRA", "TRB", "TRG", "TRD")
+    fct_type <- "TCR"
+  }
+  #! any change made here must be also implemented at the resolveLight() step
+  
   organism <- match.arg(organism)
   igblast_dir <- ifelse(stringr::str_ends(igblast_dir,"/"), igblast_dir, paste0(igblast_dir, "/"))
   imgt_dir <- ifelse(stringr::str_ends(imgt_dir,"/"), imgt_dir, paste0(imgt_dir, "/"))
@@ -3889,9 +3813,13 @@ scFindBCRClones <- function(db,
       }
     }
   }
+  
+  if(seq_type == "Ig"){
+    fct_type <- "BCR"
+  } else {fct_type <- seq_type}
 
   #initiate log file:
-  log_file <- paste0(output_folder, analysis_name, "_scFindBCRClones_logfile.txt")
+  log_file <- paste0(output_folder, analysis_name, "_scFind", fct_type,"Clones_logfile.txt")
   time_and_log({
     cat("analysis_name: ", analysis_name, "\n")
     cat("organism: ", organism, "\n")
@@ -3905,11 +3833,8 @@ scFindBCRClones <- function(db,
     cat("update_germline: ", update_germline, "\n")
     cat("SHM: ", SHM, "\n")
     cat("full_seq_aa: ", full_seq_aa, "\n")
-  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "scFindBCRClones", open_mode = "wt")
+  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = paste0("scFind", fct_type,"Clones"), open_mode = "wt")
   
-  #log_file <- paste0(output_folder, Sys.time(), "_", analysis_name, "_scFindBCRClones_logfile.txt")
-  #log_connection <- file(log_file, open = "a")  # a for appending or w for erasing onto previous log
-
   ## run initial QC on imput and arguments provided:
   required_collumns <- c(cell_id, locus, junction, junction_aa, junc_len, productive)
   missing_collumns <- setdiff(required_collumns, colnames(db))
@@ -3993,11 +3918,11 @@ scFindBCRClones <- function(db,
       cat("nb failed: ", nb_failed_sequences, " contigs from ", nb_failed_cells, " cells\n")
     }
     
-    h_db <- dplyr::filter(VDJ_db, (!!rlang::sym(locus) == heavy))
-    l_db <- dplyr::filter(VDJ_db, (!!rlang::sym(locus) != heavy))
+    h_db <- dplyr::filter(VDJ_db, (!!rlang::sym(locus) %in% heavy))
+    l_db <- dplyr::filter(VDJ_db, !(!!rlang::sym(locus) %in% heavy))
   } else {
-    h_db <- dplyr::filter(db, (!!rlang::sym(locus) == heavy))
-    l_db <- dplyr::filter(db, (!!rlang::sym(locus) != heavy))
+    h_db <- dplyr::filter(db, (!!rlang::sym(locus) %in% heavy))
+    l_db <- dplyr::filter(db, !(!!rlang::sym(locus) %in% heavy))
   }
 
   # check if remaining heavy chain multiplets:
@@ -4048,15 +3973,20 @@ scFindBCRClones <- function(db,
   nb_total_cells <- length(unique(VDJ_db[[cell_id]]))
 
   rm(db, h_db, l_db)
+  
+  other_chains_db <- VDJ_db %>%
+    dplyr::filter(!locus %in% chains)
+  VDJ_db <- VDJ_db %>%
+    dplyr::filter(locus %in% chains)
 
-  # Create the bcr_info column
+  # Create the bcr_info or tcr_info column
   VDJ_db <- VDJ_db %>%
     dplyr::group_by(!!rlang::sym(cell_id)) %>%
     dplyr::mutate(
-      bcr_info = dplyr::case_when(
-        any(!!rlang::sym(locus) == "IGH") & any(!!rlang::sym(locus) %in% c("IGL", "IGK")) ~ "full",
-        all(!!rlang::sym(locus) == "IGH") ~ "heavy_only",
-        all(!!rlang::sym(locus) %in% c("IGL", "IGK")) ~ "light_only",
+      !!rlang::sym(paste0(tolower(fct_type),"_info")) := dplyr::case_when(
+        any(!!rlang::sym(locus) %in% heavy) & any(!(!!rlang::sym(locus) %in% heavy)) ~ "full",
+        all(!!rlang::sym(locus) %in% heavy) ~ "heavy_only",
+        all(!(!!rlang::sym(locus) %in% heavy)) ~ "light_only",
         TRUE ~ NA_character_
       )
     ) %>%
@@ -4064,10 +3994,10 @@ scFindBCRClones <- function(db,
 
   # Check / Remove cells without heavy chain.
   # Technically they can't be used in clustering analysis but they won't interfere in the following steps and will end up with a NA value for clone_id.
-  LC_only <- dplyr::filter(VDJ_db, bcr_info == "light_only")
+  LC_only <- dplyr::filter(VDJ_db, !!rlang::sym(paste0(tolower(fct_type),"_info")) == "light_only")
   if(na.heavy.rm & nrow(LC_only)>0){
     if(nrow(LC_only)>0){
-      VDJ_db <- dplyr::filter(VDJ_db, bcr_info != "light_only")
+      VDJ_db <- dplyr::filter(VDJ_db, !!rlang::sym(paste0(tolower(fct_type),"_info")) != "light_only")
       filename_LC_only <- paste0(output_folder, analysis_name, "_VDJ_LC_only")
       readr::write_tsv(LC_only_cloned_VDJ_db, file = paste0(filename_LC_only, ".tsv.gz"))
       LC_only_log <- paste0(paste0(length(unique(LC_only[[cell_id]])), " cells out of ", nb_total_cells," are missing a heavy chain and will be removed (see: ",filename_LC_only, ".tsv). \n"))
@@ -4097,9 +4027,9 @@ scFindBCRClones <- function(db,
     )
     
     h_db <- VDJ_db %>%
-      dplyr::filter(!!rlang::sym(locus) == heavy)
+      dplyr::filter(!!rlang::sym(locus) %in% heavy)
     l_db <- VDJ_db %>%
-      dplyr::filter(!!rlang::sym(locus) != heavy)
+      dplyr::filter(!(!!rlang::sym(locus) %in% heavy))
 
     out_temp_folder <- paste0(output_folder, "temp/")
     if(!dir.exists(out_temp_folder)){
@@ -4289,7 +4219,7 @@ scFindBCRClones <- function(db,
       "------------\n"
     )
     time_and_log({
-      cloned_VDJ_db <- resolveMultiContigs(cloned_VDJ_db, split.by = split.by, chain = c("IGL", "IGK"),
+      cloned_VDJ_db <- resolveMultiContigs(cloned_VDJ_db, split.by = split.by, chain = light,
                                            assay = assay, resolve_multi_CDR3 = TRUE, use_clone = TRUE,
                                            analysis_name = analysis_name,
                                            output = output, output_folder = output_folder,
@@ -4313,8 +4243,8 @@ scFindBCRClones <- function(db,
       "------------\n"
     )
     
-    h_db <- dplyr::filter(cloned_VDJ_db, (!!rlang::sym(locus) == heavy))
-    l_db <- dplyr::filter(cloned_VDJ_db, (!!rlang::sym(locus) != heavy))
+    h_db <- dplyr::filter(cloned_VDJ_db, (!!rlang::sym(locus) %in% heavy))
+    l_db <- dplyr::filter(cloned_VDJ_db, !(!!rlang::sym(locus) %in% heavy))
 
     nb_light_submitted <- nrow(l_db)
     nb_cells_ini <- length(unique(l_db$cell_id))
@@ -4372,8 +4302,8 @@ scFindBCRClones <- function(db,
       "------------\n"
     )
     
-    h_db <- dplyr::filter(cloned_VDJ_db, (!!rlang::sym(locus) == heavy))
-    l_db <- dplyr::filter(cloned_VDJ_db, (!!rlang::sym(locus) != heavy))
+    h_db <- dplyr::filter(cloned_VDJ_db, (!!rlang::sym(locus) %in% heavy))
+    l_db <- dplyr::filter(cloned_VDJ_db, !(!!rlang::sym(locus) %in% heavy))
 
     time_and_log({
       l_db <- runBlastnC(l_db,
@@ -4419,9 +4349,9 @@ scFindBCRClones <- function(db,
     )
     
     heavy_cloned_VDJ_db <- cloned_VDJ_db %>%
-      dplyr::filter(bcr_info %in% c("full", "heavy_only"))
+      dplyr::filter(!!rlang::sym(paste0(tolower(fct_type),"_info")) %in% c("full", "heavy_only"))
     light_only_db <- cloned_VDJ_db %>%
-      dplyr::filter(bcr_info == "light_only")
+      dplyr::filter(!!rlang::sym(paste0(tolower(fct_type),"_info")) == "light_only")
 
     #heavy_cloned_VDJ_db <- dowser::resolveLightChains(heavy_cloned_VDJ_db,
     #                                                  nproc = nproc,
@@ -4438,22 +4368,55 @@ scFindBCRClones <- function(db,
     #                                                  nolight = "missing",
     #                                                  pad_ends = TRUE)
 
-    time_and_log({
-      heavy_cloned_VDJ_db <- resolveLightChains2(heavy_cloned_VDJ_db,
-                                                 nproc = nproc,
-                                                 minseq = 1,
-                                                 locus = locus,
-                                                 heavy = heavy,
-                                                 id = sequence_id,
-                                                 seq = "sequence_alignment",
-                                                 clone = "clone_id",
-                                                 cell = cell_id,
-                                                 v_call = v_call,
-                                                 j_call = j_call,
-                                                 junc_len = junc_len,
-                                                 nolight = "missing",
-                                                 pad_ends = TRUE)
-    }, verbose = verbose, log_file = log_file, log_title = "Spliting clonal groups according to selected light chains", open_mode = "a")
+    if(seq_type == "Ig"){
+      time_and_log({
+        heavy_cloned_VDJ_db <- resolveLightChains2(heavy_cloned_VDJ_db,
+                                                   nproc = nproc,
+                                                   minseq = 1,
+                                                   locus = locus,
+                                                   heavy = "IGH",
+                                                   id = sequence_id,
+                                                   seq = "sequence_alignment",
+                                                   clone = "clone_id",
+                                                   cell = cell_id,
+                                                   v_call = v_call,
+                                                   j_call = j_call,
+                                                   junc_len = junc_len,
+                                                   nolight = "missing",
+                                                   pad_ends = TRUE)
+      }, verbose = verbose, log_file = log_file, log_title = "Spliting clonal groups according to selected light chains", open_mode = "a")
+    }
+    if(seq_type == "TCR"){
+      time_and_log({
+        # needs to adapt to the fact that resolveLightChains() requires a unique value for heavy chain
+        heavy_cloned_VDJ_db <- heavy_cloned_VDJ_db %>% 
+          dplyr::group_by(!!rlang::sym(cell_id)) %>% 
+          dplyr::mutate(heavy_chain = case_when(
+            any(!!rlang::sym(locus) == "TRB") ~ "TRB",
+            any(!!rlang::sym(locus) == "TRD") ~ "TRD",
+            TRUE ~ NA_character_
+          )) %>% 
+          dplyr::ungroup() %>%
+          dplyr::group_by(heavy_chain) %>% 
+          dplyr::group_modify(
+            ~ resolveLightChains2(.x,
+                                  nproc = nproc,
+                                  minseq = 1,
+                                  locus = locus,
+                                  heavy = unique(.x$heavy_chain),
+                                  id = sequence_id,
+                                  seq = "sequence_alignment",
+                                  clone = "clone_id",
+                                  cell = cell_id,
+                                  v_call = v_call,
+                                  j_call = j_call,
+                                  junc_len = junc_len,
+                                  nolight = "missing",
+                                  pad_ends = TRUE)
+          ) %>% 
+          dplyr::ungroup()
+      }, verbose = verbose, log_file = log_file, log_title = "Spliting clonal groups according to selected light chains", open_mode = "a")
+    }
     
     cloned_VDJ_db <- heavy_cloned_VDJ_db %>%
       dplyr::bind_rows(light_only_db)
@@ -4605,14 +4568,14 @@ scFindBCRClones <- function(db,
 
   cloned_VDJ_db <- dplyr::arrange(cloned_VDJ_db, clone_id, !!rlang::sym(cell_id), !!rlang::sym(v_call))
 
-  # Update bcr_info column in case any sequence as been remove along the way:
+  # Update bcr_info/tcr_info column in case any sequence as been remove along the way:
   cloned_VDJ_db <- cloned_VDJ_db %>%
     group_by(!!rlang::sym(cell_id)) %>%
     mutate(
-      bcr_info = case_when(
-        any(!!rlang::sym(locus) == "IGH") & any(!!rlang::sym(locus) %in% c("IGL", "IGK")) ~ "full",
-        all(!!rlang::sym(locus) == "IGH") ~ "heavy_only",
-        all(!!rlang::sym(locus) %in% c("IGL", "IGK")) ~ "light_only",
+      !!rlang::sym(paste0(tolower(fct_type),"_info")) := case_when(
+        any(!!rlang::sym(locus) %in% heavy) & any(!(!!rlang::sym(locus) %in% heavy)) ~ "full",
+        all(!!rlang::sym(locus) %in% heavy) ~ "heavy_only",
+        all(!(!!rlang::sym(locus) %in% heavy)) ~ "light_only",
         TRUE ~ NA_character_
       )
     ) %>%
@@ -4633,17 +4596,19 @@ scFindBCRClones <- function(db,
 
   # export recap table:
   message(
-    "----------------------------------\n",
-    "Exporting recap excel workbook to: ", output_folder,"\n",
-    "----------------------------------\n"
+    "--------------------------------\n",
+    "Exporting recap excel workbook :\n",
+    "--------------------------------\n"
   )
   
-  n_final_heavy <- as.numeric(table(cloned_VDJ_db[[locus]])[["IGH"]])
+  n_final_heavy <- as.numeric(table(cloned_VDJ_db[[locus]] %in% heavy)[["TRUE"]])
   n_final_cells <- length(unique(cloned_VDJ_db[[cell_id]]))
 
   if(!only_heavy){
-    n_final_light <- as.numeric(table(cloned_VDJ_db[[locus]])[["IGL"]]) + as.numeric(table(cloned_VDJ_db[[locus]])[["IGK"]])
-    n_final_cells_with_full_BCR <- table(cloned_VDJ_db$bcr_info == "full", cloned_VDJ_db[[locus]])["TRUE","IGH"]
+    n_final_light <- as.numeric(table(cloned_VDJ_db[[locus]] %in% heavy)[["FALSE"]])
+    h_db <- cloned_VDJ_db %>%
+      dplyr::filter(locus %in% heavy)
+    n_final_cells_with_full_BCR <- as.numeric(table(h_db[[paste0(tolower(fct_type),"_info")]] == "full")[["TRUE"]])
     pct_full <- round(n_final_cells_with_full_BCR/n_final_cells*100)
   }
   if(is.null(analysis_name)){analysis_name <- "none provided"}
@@ -4758,12 +4723,108 @@ scFindBCRClones <- function(db,
   openxlsx::writeData(OUT, sheet= "Analysis parameters", x=as.data.frame(analysis_parameters), colNames = FALSE, rowNames = TRUE)
   openxlsx::saveWorkbook(OUT, file= paste0(output_folder, analysis_name,"_VDJ_full_recap.xlsx"), overwrite = TRUE)
 
-  message("see exported recap file: ", output_folder, analysis_name,"_VDJ_full_recap.xlsx. \n")
+  message("see exported recap file: ", getwd(), "/", output_folder, analysis_name,"_VDJ_full_recap.xlsx. \n")
 
   end <- Sys.time()
   if(verbose){cat(paste0("Total running time: ", sprintf("%.2f %s", end-start, units(difftime(end, start))), ".\n"))}
 
+  if(nrow(other_chains_db > 0)){
+    cloned_VDJ_db <- cloned_VDJ_db %>%
+      dplyr::bind_rows(other_chains_db)
+  }
   return(cloned_VDJ_db)
+}
+
+#### Wrapper function to call scFindClones with BCR data ####
+#' Full BCR analysis pipeline for heavy chain curated AIRR single-cell repertoire datasets
+#'
+#' \code{scFindBCRlones} performs clonal clustering of single cell data
+#'
+#' @param db              an AIRR formatted dataframe containing heavy and light chain sequences. Should contain only one heavy chain (IGH) per cell_id, if not run resolveMultiHC() first.
+#' @param locus           name of column containing locus values.
+#' @param ...             arguments to be passed to scFindClones
+#'
+#' @return an AIRR formatted dataframe with a new clone_id column and clone attribution for all BCR related data (see scFindClones).
+#'
+#' @details
+#' wrapper to run scFindClones with BCR specific arguments. All other arguments from scFindClones can also be used.
+#'
+#' @export
+
+scFindBCRClones <- function(db,
+                            chains = list(heavy = "IGH", 
+                                          light = c("IGK", "IGL")),
+                            ...){
+  
+  cloned_bcr_db <- scFindClones(db,
+                                seq_type = "Ig",
+                                ...)
+  
+  return(cloned_bcr_db)
+}
+
+#### Wrapper function to call scFindClones with TCR data ####
+#' Full TCR analysis pipeline for heavy and light chain curated AIRR single-cell repertoire datasets
+#'
+#' \code{scFindTCRlones} performs clonal clustering of single cell data
+#'
+#' @param db              an AIRR formatted dataframe containing heavy and light chain sequences. Should contain only one heavy chain (IGH) per cell_id, if not run resolveMultiHC() first.
+#' @param locus           name of column containing locus values.
+#' @param TCR_chains      which chains to keep to TCR VEJ analysis
+#' @param igblast         whether to run standalone IgBlast, can be set to c("filtered_light" or "all") if not one of these three values, will be skipped with a warning. [default = "filtered_light" for both 10X and BD: highly recommended for both to avoid issues at the createGermline() or observedMutation() steps due to different references databases used (10X) or missing imgt gaps in the sequence_alignment collumn (Both))]
+#' @param method          method to use for scoper::hierarchicalClones(), can be one between: identical, hierarchical or spectral
+#' @param threshold       method to use for scoper::hierarchicalClones() or scoper::spectralClones(),
+#'                        if multiple thresholds are provided, they will be used successively and results stored in the h_clone_"threshold" column. Final clone_id column will reflect the last threshold used.
+#' @param update_c_call   whether to run runBlastnC to correct c calls made by igblast (issues with calls with similar scores); can be set to c("filtered light" or "all") if not one of these three values, will be skipped with a warning. [default = "all", if using "filtered light" should have already been previously performed on heavy chains (see scImportVDJ())]
+#' @param clean_LC        whether to resolve cases of multiple light chains
+#' @param shared.tech     list of grouped technologies to identify shared clones between scRNA-seq and Sanger sequencing (export in recap teable (seperate sheet) + additional shared_clone column)
+#'
+#' @return an AIRR formatted dataframe with a new clone_id column and clone attribution for all BCR related data (see scFindClones).
+#'
+#' @details
+#' wrapper to run scFindClones with TCR specific arguments. All other arguments from scFindClones can also be used.
+#'
+#' @export
+
+scFindTCRClones <- function(db,
+                            locus = "locus",
+                            igblast = c("none", "all"),
+                            update_c_call = c("none"), 
+                            method = c("changeo", "identical"),
+                            threshold = 0,
+                            shared.tech = NULL, #for now only expected to be used for scRNAseq datasets
+                            ...){
+  
+  # no need for mutation analysis and clone-based germline inference
+  SHM = FALSE
+  update_germline = FALSE
+  # no need for full VDJ reconstruction (mostly for Alphafold prediction of Ab/Antigen interaction)
+  full_seq_aa = FALSE
+  # also setting up this last two option as FALSE as they haven't yet been properly tested for TCR datasets:
+  clean_LC = FALSE
+  
+  tcr_db <- db %>%
+    dplyr::filter(locus %in% TCR_chains)
+  non_tcr_db <- db %>%
+    dplyr::filter(!locus %in% TCR_chains)
+  
+  cloned_tcr_db <- scFindClones(tcr_db,
+                                seq_type = "TCR",
+                                locus = locus,
+                                igblast = igblast,
+                                method = method,
+                                threshold = threshold,
+                                update_c_call = update_c_call,
+                                SHM = SHM,
+                                update_germline = update_germline,
+                                full_seq_aa = full_seq_aa,
+                                shared.tech = shared.tech,
+                                ...)
+  
+  cloned_tcr_db <- cloned_tcr_db %>%
+    dplyr::bind_rows(non_tcr_db)
+  
+  return(cloned_tcr_db)
 }
 
 #### Function to add clonotype information to a Seurat object ####
