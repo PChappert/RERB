@@ -74,4 +74,5 @@ Collate:
     'VDJ.utils.R'
     'VDJ.plots.R'
     'FlowJo.utils.R'
+    'utils.R'
     
