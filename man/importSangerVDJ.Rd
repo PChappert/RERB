@@ -16,9 +16,9 @@ importSangerVDJ(
   rename.columns = list(list(old_name = "cell_type", new_name = "sorted_cell_type")),
   prefix.columns = c("low10QC_alternate_calls", "low30QC_alternate_calls",
     "missing_v_bp", "missing_j_bp", "comments"),
-  rm.columns = c("well_id", "alternate_well_id", "plate_id", "primer",
-    "germline_alignment_d_mask", "mu_count", "mu_count_cdr_r", "mu_count_cdr_s",
-    "mu_count_fwr_r", "mu_count_fwr_s", "primary_sequence", "raw_sequence"),
+  rm.columns = c("well_id", "alternate_well_id", "plate_id", "germline_alignment_d_mask",
+    "mu_count", "mu_count_cdr_r", "mu_count_cdr_s", "mu_count_fwr_r", "mu_count_fwr_s",
+    "primary_sequence", "raw_sequence"),
   overwrite.columns = FALSE,
   run_igblast = FALSE,
   update_c_call = FALSE,
@@ -30,7 +30,7 @@ importSangerVDJ(
 )
 }
 \arguments{
-\item{sanger_files}{a data frame with the following minimal columns : "sample_id", "directory", "filename" and "assay_type"}
+\item{sanger_files}{a data frame with the following minimal columns : "sample_id", "directory", "filename"}
 
 \item{db}{an AIRR formatted data frame containing heavy and light chain sequences to which the imported sanger VDJ data will be appended. if NULL, returning only the merged sanger VDJ data}
 

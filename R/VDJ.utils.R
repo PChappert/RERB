@@ -26,7 +26,6 @@
 #' @export
 #'
 #' @import dplyr
-#' @import openxlsx
 #' @import fs
 #' @import stringr
 #' @import shazam
@@ -60,8 +59,13 @@ Ab1toAIRR <- function(files,
   igblast_method <- match.arg(igblast_method)
 
   if(is.null(nproc)){
-    cores <- parallel::detectCores()
-    nproc <- max((cores[1]-2), 1) #not to overload computer
+    if (requireNamespace("parallel", quietly = TRUE)) {
+      cores <- parallel::detectCores()
+      nproc <- max((cores[1]-2), 1) #not to overload computer
+    } else {
+      message("Optional: 'parallel' not installed — defaulting to nproc = 1")
+      nproc <- 1
+    }
   }
 
   if(!igblast){
@@ -76,10 +80,6 @@ Ab1toAIRR <- function(files,
     SHM = FALSE
     full_seq_aa = FALSE
   }
-
-  # Load necessary libraries
-  #library(stringr)
-  #library(fs)
 
   # Check each filepath, remove missing one and send a warning
   file_exists <- file.exists(files)
@@ -100,7 +100,7 @@ Ab1toAIRR <- function(files,
     filename <- fs::path_ext_remove(fs::path_file(filepath))
     file_folder <- fs::path_dir(filepath)
     # Replace pattern in filename to create output folder name
-    outfilename <- str_replace(filename, "_SCF_SEQ_ABI", "")
+    outfilename <- stringr::str_replace(filename, "_SCF_SEQ_ABI", "")
     outfolder <- paste0(file_folder, "/", outfilename)
     # Create log file path
     log_file <- paste0(outfolder, "/", outfilename, ".log")
@@ -363,43 +363,50 @@ Ab1toAIRR <- function(files,
         dplyr::filter(productive)
 
       # define style
-      length_flag_style <- openxlsx::createStyle(fgFill="bisque")
-      QC_flag_style <- openxlsx::createStyle(fgFill="bisque", fontColour = "red")
-      cols <- which(colnames(VDJ_db)%in%colnames(VDJ_db))
-
-      if(!primers %in% c("IgG", "IgM", "IgK", "IgL", "Mix")){
-        message("incorrect primers provided, defaulting to Mix")
-        primers <- "Mix"
+      if (requireNamespace("openxlsx", quietly = TRUE)) {
+        length_flag_style <- openxlsx::createStyle(fgFill="bisque")
+        QC_flag_style <- openxlsx::createStyle(fgFill="bisque", fontColour = "red")
+        cols <- which(colnames(VDJ_db)%in%colnames(VDJ_db))
+        
+        if(!primers %in% c("IgG", "IgM", "IgK", "IgL", "Mix")){
+          message("incorrect primers provided, defaulting to Mix")
+          primers <- "Mix"
+        }
+        v_sequence_end_cutoff <- c(270, 270, 270, 270, 270, 270)
+        names(v_sequence_end_cutoff) <- c("IgG", "IgM", "IgK", "IgL", "Mix")
+        
+        length_cutoff <- c(350, 300, 400, 300, 300, 300)
+        names(v_sequence_end_cutoff) <- c("IgG", "IgM", "IgK", "IgL", "Mix")
+        
+        OUT <- openxlsx::createWorkbook()
+        openxlsx::addWorksheet(OUT, "productives")
+        openxlsx::writeData(OUT, sheet = "productives", x = VDJ_db, colNames = TRUE, rowNames = FALSE)
+        length_issue <- which(VDJ_db$v_sequence_end<=v_sequence_end_cutoff[primers]|"missing too much bp in VH sequence" %in% VDJ_db$comments|VDJ_db$sequence_length < length_cutoff[primers])
+        openxlsx::addStyle(OUT, sheet="productives", style=length_flag_style, rows=length_issue+1, cols=cols, gridExpand=TRUE) # "+1" for header line
+        low_QC <- which(VDJ_db$pct_under_30QC_in_trimmed>=10)
+        openxlsx::addStyle(OUT, sheet="productives", style=QC_flag_style, rows=low_QC+1, cols=cols, gridExpand=TRUE) # "+1" for header line
+        nb_prod <- nrow(VDJ_db)
+        #!second style added will override the first
+        nb_unprod <- nrow(VDJ_db_nonprod)
+        openxlsx::addWorksheet(OUT, "non_productives")
+        openxlsx::writeData(OUT, sheet = "non_productives", x = VDJ_db_nonprod, colNames = TRUE, rowNames = FALSE)
+        
+        nb_igblast_failed <- nrow(failed_VDJ_db)
+        openxlsx::addWorksheet(OUT, "igblast_failed")
+        openxlsx::writeData(OUT, sheet = "igblast_failed", x = failed_VDJ_db, colNames = TRUE, rowNames = FALSE)
+        
+        nb_QC_failed <- nrow(QC_failed)
+        openxlsx::addWorksheet(OUT, "QC_failed")
+        openxlsx::writeData(OUT, sheet = "QC_failed", x = QC_failed, colNames = TRUE, rowNames = FALSE)
+        
+        openxlsx::saveWorkbook(OUT, file = paste0(outfolder, "/", stringr::str_replace(filename, "_SCF_SEQ_ABI", ""), "_full_recap.xlsx"), overwrite = TRUE)
+        
+      } else {
+        message("Optional: 'openxlsx' not installed — simply saving as tsv files")
+        readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", stringr::str_replace(filename, "_SCF_SEQ_ABI", ""), "_full_recap-prod.tsv"))
+        readr::write_tsv(VDJ_db_nonprod, file = paste0(outfolder, "/", stringr::str_replace(filename, "_SCF_SEQ_ABI", ""), "_full_recap-non-prod.tsv"))
       }
-      v_sequence_end_cutoff <- c(270, 270, 270, 270, 270, 270)
-      names(v_sequence_end_cutoff) <- c("IgG", "IgM", "IgK", "IgL", "Mix")
-
-      length_cutoff <- c(350, 300, 400, 300, 300, 300)
-      names(v_sequence_end_cutoff) <- c("IgG", "IgM", "IgK", "IgL", "Mix")
-
-      OUT <- openxlsx::createWorkbook()
-      openxlsx::addWorksheet(OUT, "productives")
-      openxlsx::writeData(OUT, sheet = "productives", x = VDJ_db, colNames = TRUE, rowNames = FALSE)
-      length_issue <- which(VDJ_db$v_sequence_end<=v_sequence_end_cutoff[primers]|"missing too much bp in VH sequence" %in% VDJ_db$comments|VDJ_db$sequence_length < length_cutoff[primers])
-      openxlsx::addStyle(OUT, sheet="productives", style=length_flag_style, rows=length_issue+1, cols=cols, gridExpand=TRUE) # "+1" for header line
-      low_QC <- which(VDJ_db$pct_under_30QC_in_trimmed>=10)
-      openxlsx::addStyle(OUT, sheet="productives", style=QC_flag_style, rows=low_QC+1, cols=cols, gridExpand=TRUE) # "+1" for header line
-      nb_prod <- nrow(VDJ_db)
-      #!second style added will override the first
-      nb_unprod <- nrow(VDJ_db_nonprod)
-      openxlsx::addWorksheet(OUT, "non_productives")
-      openxlsx::writeData(OUT, sheet = "non_productives", x = VDJ_db_nonprod, colNames = TRUE, rowNames = FALSE)
-
-      nb_igblast_failed <- nrow(failed_VDJ_db)
-      openxlsx::addWorksheet(OUT, "igblast_failed")
-      openxlsx::writeData(OUT, sheet = "igblast_failed", x = failed_VDJ_db, colNames = TRUE, rowNames = FALSE)
-
-      nb_QC_failed <- nrow(QC_failed)
-      openxlsx::addWorksheet(OUT, "QC_failed")
-      openxlsx::writeData(OUT, sheet = "QC_failed", x = QC_failed, colNames = TRUE, rowNames = FALSE)
-
-      openxlsx::saveWorkbook(OUT, file = paste0(outfolder, "/", str_replace(filename, "_SCF_SEQ_ABI", ""), "_full_recap.xlsx"), overwrite = TRUE)
-
+      
       time_and_log({
         cat("nb total sequences: ", nrow(VDJ_db)+nrow(QC_failed), "\n")
         cat(paste0("nb failing initial QC: ",nb_QC_failed), "\n")
@@ -464,13 +471,10 @@ Ab1toAIRR <- function(files,
 #' @keywords internal
 #'
 #' @import sangeranalyseR
-#' @import sangerseqR 
 #' @importFrom Biostrings reverseComplement
 #' @importFrom Biostrings subseq
 #' @importFrom Biostrings DNAStringSet
 #' @importFrom Biostrings replaceAt
-#' @import ggplot2
-#' @import ggrepel
 
 runAb1QC <- function(Ab1_folder,
                      outfolder = NULL,
@@ -481,7 +485,6 @@ runAb1QC <- function(Ab1_folder,
                      nproc = NULL){
 
   suppressMessages(library(sangeranalyseR))
-  suppressMessages(library(sangerseqR))
   #suppressMessages(library(ggplot2))
   #suppressMessages(library(ggrepel))
 
@@ -516,8 +519,13 @@ runAb1QC <- function(Ab1_folder,
   }
 
   if(is.null(nproc)){
-    cores <- parallel::detectCores()
-    nproc <- max((cores[1]-2), 1) #not to overload computer
+    if (requireNamespace("parallel", quietly = TRUE)) {
+      cores <- parallel::detectCores()
+      nproc <- max((cores[1]-2), 1) #not to overload computer
+    } else {
+      message("Optional: 'parallel' not installed — defaulting to nproc = 1")
+      nproc <- 1
+    }
   }
 
   filenames <- list.files(Ab1_folder, pattern="*.ab1", full.names=TRUE)
@@ -532,7 +540,7 @@ runAb1QC <- function(Ab1_folder,
   #M1 Trimming Method = Mott's modified trimming algorithm
   #M1 Trimming Cutoff: the cutoff at which you consider a base to be bad. This works on a logarithmic scale, such that if you want to consider a score of 10 as bad, you set cutoff to 0.1; for 20 set it at 0.01; for 30 set it at 0.001; for 40 set it at 0.0001; and so on. Contiguous runs of bases below this quality will be removed from the start and end of the sequence. Given the high quality reads expected of most modern ABI sequencers, the defualt is 0.0001.
   message("Importing and trimming all sequences using sangeranalyseR")
-  seqs <- parallel::mclapply(filenames, FUN=function(filename){
+  seqs <- safe_mclapply(filenames, FUN=function(filename){
     capture.output({
       suppressMessages({
         seq <- sangeranalyseR::SangerRead(readFeature = "Reverse Read",
@@ -548,46 +556,59 @@ runAb1QC <- function(Ab1_folder,
     }, type = "output")
     #generateReport(seq, outputDir = Ab1_folder)
     return(seq)
-  },mc.cores = nproc)
+  }, mc.cores = nproc)
   names(seqs) <- well_ids
 
   ##open Ab1 files using sanqerseqR to plot chromatograms:
-  message("Plotting chromatograms using sangerseqR")
-  seqs2 <- parallel::mclapply(filenames, readsangerseq, mc.cores = nproc)
-  names(seqs2) <- well_ids
-
-  if(save == "html"){
-    for(j in seq_along(seqs2)){
-      #message("outputting QC graphs for ", well_ids[j])
-      seq2final <- sangerseqR::makeBaseCalls(seqs2[[j]], ratio = 0.33)
-      QC_file <- paste0(QC_folder, "/", gsub(paste0(Ab1_folder, "/"), "", gsub(".ab1", "", filenames[j])))
-      pdf(paste0(QC_file, "_chromatogram.pdf"))
-      sangerseqR::chromatogram(seq2final, width = 80, height = 3, trim5 = 0, trim3 = 0,showcalls = "both")
-      dev.off()
-      htmlwidgets::saveWidget(sangeranalyseR::qualityBasePlot(seqs[[j]]), file = paste0(QC_file, "_QC_plot.html"))
+  if (requireNamespace("sangerseqR", quietly = TRUE)) {
+    suppressMessages(library(sangerseqR))
+    message("Plotting chromatograms using sangerseqR")
+    seqs2 <- safe_mclapply(filenames, sangerseqR::readsangerseq, mc.cores = nproc)
+    names(seqs2) <- well_ids
+    
+    if(save == "html"){
+      for(j in seq_along(seqs2)){
+        #message("outputting QC graphs for ", well_ids[j])
+        seq2final <- sangerseqR::makeBaseCalls(seqs2[[j]], ratio = 0.33)
+        QC_file <- paste0(QC_folder, "/", gsub(paste0(Ab1_folder, "/"), "", gsub(".ab1", "", filenames[j])))
+        pdf(paste0(QC_file, "_chromatogram.pdf"))
+        sangerseqR::chromatogram(seq2final, width = 80, height = 3, trim5 = 0, trim3 = 0,showcalls = "both")
+        dev.off()
+        htmlwidgets::saveWidget(sangeranalyseR::qualityBasePlot(seqs[[j]]), file = paste0(QC_file, "_QC_plot.html"))
+      }
     }
-  }
-  if(save == "png"){
-    #save_image() from the plotly package can also be used to save only one image but much slower:
-    #in all cases, the kaleido package should be installed in python as follow and run through the reticulate R package
-    #install.packages('reticulate')
-    #reticulate::install_miniconda()
-    #reticulate::conda_install('r-reticulate', 'python-kaleido')
-    #reticulate::conda_install('r-reticulate', 'plotly', channel = 'plotly')
-    #reticulate::use_miniconda('r-reticulate')
-    scope <- plotly::kaleido()
-    for (j in seq_along(seqs2)) {
-      #message("outputting QC graphs for ", well_ids[j])
-      QC_file <- paste0(QC_folder, "/", gsub(paste0(Ab1_folder, "/"), "", gsub(".ab1", "", filenames[j])))
-
-      p <- sangeranalyseR::qualityBasePlot(seqs[[j]])
-      scope$transform(p, paste0(QC_file, "_QC_plot.png"))
-
-      seq2final <- sangerseqR::makeBaseCalls(seqs2[[j]], ratio = 0.33)
-      sangerseqR::chromatogram(seq2final, width = 80, height = 3, trim5 = 0, trim3 = 0, showcalls = "both", filename = paste0(QC_file, "_chromatogram.pdf"))
+    if(save == "png"){
+      #save_image() from the plotly package can also be used to save only one image but much slower:
+      #in all cases, the kaleido package should be installed in python as follow and run through the reticulate R package
+      #install.packages('reticulate')
+      #reticulate::install_miniconda()
+      #reticulate::conda_install('r-reticulate', 'python-kaleido')
+      #reticulate::conda_install('r-reticulate', 'plotly', channel = 'plotly')
+      #reticulate::use_miniconda('r-reticulate')
+      scope <- safe_kaleido()
+      
+      if (!is.null(scope_result) && is.function(scope$transform)) {
+        for (j in seq_along(seqs2)) {
+          #message("outputting QC graphs for ", well_ids[j])
+          QC_file <- paste0(QC_folder, "/", gsub(paste0(Ab1_folder, "/"), "", gsub(".ab1", "", filenames[j])))
+          
+          p <- sangeranalyseR::qualityBasePlot(seqs[[j]])
+          scope$transform(p, paste0(QC_file, "_QC_plot.png"))
+          
+          seq2final <- sangerseqR::makeBaseCalls(seqs2[[j]], ratio = 0.33)
+          sangerseqR::chromatogram(seq2final, width = 80, height = 3, trim5 = 0, trim3 = 0, showcalls = "both", filename = paste0(QC_file, "_chromatogram.pdf"))
+        }
+      } else {
+        message("Skipping png Qc plots step: 'plotly::kaleido()' failed or is not usable.")
+      }
+      
+      rm(scope) 
+      gc()
     }
+  } else {
+    message("Optional: 'sangerseqR' not installed — skipping QC plots")
   }
-
+  
   primary_seqs <- lapply(seqs, FUN=function(seq){
     return(Biostrings::reverseComplement(Biostrings::subseq(seq@primarySeq, start = seq@QualityReport@trimmedStartPos, end = seq@QualityReport@trimmedFinishPos)))
   })
@@ -756,6 +777,8 @@ runAb1QC <- function(Ab1_folder,
 #' full_length,	fwr1,	fwr1_nt,	cdr1,	cdr1_nt,	fwr2,	fwr2_nt,	cdr2,	cdr2_nt,	fwr3,	fwr3_nt,	cdr3,	cdr3_nt,	fwr4,	fwr4_nt,
 #' reads,	umis,	raw_clonotype_id,	raw_consensus_id,	exact_subclonotype_id,
 #'
+#' @import dplyr
+#'
 #' @export
 
 reformatVDJinput <- function(db, tech,
@@ -824,6 +847,8 @@ reformatVDJinput <- function(db, tech,
 #' "plot": the histogram + density plot with antimode-based bins highlighted (Kernel Density Estimation)
 #' "top75%": the top bins corresponding to >75% of all values.
 #'
+#' @import dplyr
+#'
 #' @keywords internal
 
 binContigs <- function(data,
@@ -831,8 +856,7 @@ binContigs <- function(data,
                        title = "Histogram + Density Plot with Antimode-Based Bins",
                        file = "DensityPlot.pdf"){
 
-  suppressMessages(library(dplyr))
-  suppressMessages(library(ggplot2))
+  #suppressMessages(library(dplyr))
 
   # Compute Kernel Density Estimation (KDE)
   dens <- density(data)
@@ -862,25 +886,31 @@ binContigs <- function(data,
   } else { selected_bins <- bin_freq_df[1, ] }
 
   if(plot){
-    # Convert density estimation and antimodes to a data frame for ggplot
-    density_df <- data.frame(x = dens$x, y = dens$y)
-    antimodes_df <- data.frame(x = antimodes, y = dens$y[which.minima(dens$y)])
-
-    p  <- ggplot2::ggplot() +
-      ggplot2::geom_histogram(data = data.frame(x = data), aes(x = x, y = after_stat(density)),
-                     bins = 30, fill = "gray", alpha = 0.5, color = "black") +
-      ggplot2::geom_line(data = density_df, aes(x = x, y = y), color = "blue", linewidth = 1) +
-      ggplot2::geom_point(data = antimodes_df, aes(x = x, y = y), color = "red", size = 3) +
-      ggplot2::geom_vline(xintercept = bin_edges, linetype = "dashed", color = "gray") +
-      ggplot2::geom_vline(xintercept = bin_edges[selected_bins$Bin[length(selected_bins$Bin)]], linetype = "solid", color = "green", linewidth = 1) +
-      ggplot2::labs(title = title,
-           x = "Value", y = "Density") +
-      ggplot2::theme_minimal()
-
-    if(grepl(".pdf", file)|grepl(".png", file)){
-      ggplot2::ggsave(file, plot = p, width = 8, height = 5, dpi = 300)
+    if (requireNamespace("ggplot2", quietly = TRUE)) {
+      suppressMessages(library(ggplot2))
+      # Convert density estimation and antimodes to a data frame for ggplot
+      density_df <- data.frame(x = dens$x, y = dens$y)
+      antimodes_df <- data.frame(x = antimodes, y = dens$y[which.minima(dens$y)])
+      
+      p  <- ggplot2::ggplot() +
+        ggplot2::geom_histogram(data = data.frame(x = data), aes(x = x, y = after_stat(density)),
+                                bins = 30, fill = "gray", alpha = 0.5, color = "black") +
+        ggplot2::geom_line(data = density_df, aes(x = x, y = y), color = "blue", linewidth = 1) +
+        ggplot2::geom_point(data = antimodes_df, aes(x = x, y = y), color = "red", size = 3) +
+        ggplot2::geom_vline(xintercept = bin_edges, linetype = "dashed", color = "gray") +
+        ggplot2::geom_vline(xintercept = bin_edges[selected_bins$Bin[length(selected_bins$Bin)]], linetype = "solid", color = "green", linewidth = 1) +
+        ggplot2::labs(title = title,
+                      x = "Value", y = "Density") +
+        ggplot2::theme_minimal()
+      
+      if(grepl(".pdf", file)|grepl(".png", file)){
+        ggplot2::ggsave(file, plot = p, width = 8, height = 5, dpi = 300)
+      }
+      return(list("bins" = bins, "plot" = p, "top75%" = selected_bins))
+    } else {
+      message("Optional: 'ggplot2' not installed — skipping plot.")
+      return(list("bins" = bins, "top75%" = selected_bins))
     }
-    return(list("bins" = bins, "plot" = p, "top75%" = selected_bins))
   }
   return(list("bins" = bins, "top75%" = selected_bins))
 }
@@ -940,6 +970,9 @@ binContigs <- function(data,
 #' clonal grouping should be done beforehand (scoper::HierarchicalClones()or SpectralClones()), without splitting by light chain (only_heavy = TRUE and split_light = FALSE).
 #' scoper::HierarchicalClones() also provides light chain selection but unlike dowser::resolveLightChains(), it doesn't work with cells missing a light chain.
 #'
+#' @import dplyr
+#' @import scoper
+#'
 #' @export
 
 
@@ -956,7 +989,7 @@ resolveMultiContigs <- function(db,
                                cell_id = "cell_id", sequence_id = "sequence_id", locus = "locus", consensus_count = "consensus_count", umi_count = "umi_count", v_call = "v_call", j_call = "j_call", c_call = "c_call", junction = "junction", junction_aa = "junction_aa",
                                dominant = "dominant", productive = "productive", complete_vdj = "complete_vdj", clone_id = "clone_id", nproc = 1){
 
-  suppressMessages(library(dplyr))
+  #suppressMessages(library(dplyr))
 
   if(!is.null(output_folder)){
     if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
@@ -1065,14 +1098,14 @@ resolveMultiContigs <- function(db,
 
     # we further separate singlets from expanded clones:
     db_filtered <- db_filtered %>%
-      group_by(!!rlang::sym(clone_id)) %>%
-      mutate(expanded_clone = n_distinct(!!rlang::sym(cell_id)) > 1) %>%
-      ungroup()
+      dplyr::group_by(!!rlang::sym(clone_id)) %>%
+      dplyr::mutate(expanded_clone = n_distinct(!!rlang::sym(cell_id)) > 1) %>%
+      dplyr::ungroup()
 
     exp_db <- dplyr::filter(db_filtered, expanded_clone)
     singlets_db <- dplyr::filter(db_filtered, !expanded_clone)
     if(missing_clone_id>0){
-      singlets_db <- bind_rows(singlets_db, no_clone_id)
+      singlets_db <- dplyr::bind_rows(singlets_db, no_clone_id)
     }
 
     # for expanded clones we then perform clonal clustering of light chains, select the best light chain(s) for each clone and then for each cell.
@@ -1419,7 +1452,7 @@ resolveLightChains2 <- function(data, nproc=1, minseq=1,locus="locus",heavy="IGH
   light$vj_alt_cell <- NA
   light[[subgroup]] <- 1
   light[[clone]] <- -1
-  paired <- parallel::mclapply(unique(heavy[[clone]]),function(cloneid){
+  paired <- safe_mclapply(unique(heavy[[clone]]),function(cloneid){
     # Get heavy chains within a clone, and corresponding light chains
     # separate heavy chains with (sc) and without (bulk) paired light chains
     hd <- dplyr::filter(heavy,!!rlang::sym(clone) == cloneid)
@@ -1637,8 +1670,6 @@ resolveLightChains2 <- function(data, nproc=1, minseq=1,locus="locus",heavy="IGH
 #' @keywords internal
 #'
 #' @import dplyr
-#' @import ggplot2
-#' @import patchwork
 
 vdjQCplot <- function(db,
                       use_chain = "all",
@@ -1662,10 +1693,17 @@ vdjQCplot <- function(db,
                       second_umi_count = "second_umi_count",
                       export = c("graph", "pdf")){
 
-  #suppressMessages(library(dplyr))
-  #suppressMessages(library(ggplot2))
-  #suppressMessages(library(patchwork))
-
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    message("Optional: 'ggplot2' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(ggplot2))
+  
+  if (!requireNamespace("patchwork", quietly = TRUE)) {
+    message("Optional: 'patchwork' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  
   if(use_chain == "all"){
     chains = levels(as.factor(db[[locus]]))
   } else {chains = heavy}
@@ -1851,7 +1889,6 @@ vdjQCplot <- function(db,
     return(combined.plots)
   }
 }
-
 
 #### Function to flag B cell doublets in single cell data ####
 #' check for cases where two IGH or two IGH and two light chains are found in a cell and could represent a B cell doublet.
@@ -3223,11 +3260,12 @@ importSangerVDJ <- function(sanger_files, db = NULL,
 #' 1. will first import VDJ datasets listed in vdj_dir input dataframe and filter on cells in provided seurat V5 object;
 #' 2. will run igblast on filtered datasets if requested;
 #' 3. will run resolveMultiHC() to resolve HC multiplets
-#' dependencies: Biostrings; igblast; AssignGene.py; MakeDb.py; dplyr; parallel, ggplot2 and openxlsx
-#' @export
-#'
 #' @import dplyr
+#' @import readr
+#' @import purrr
 #' @importFrom Biostrings readDNAStringSet
+#' 
+#' @export
 
 scImportVDJ <- function(vdj_files,
                         seurat = NULL,
@@ -3308,7 +3346,7 @@ scImportVDJ <- function(vdj_files,
   update_c_call <- update_c_call[1]
 
   ## Part1: import all VDJ data; filter based on seurat cell_ids (if present) and run IgBlast if needed (e.g. 10X):
-  if(is(seurat)[1] == "Seurat"){meta <- seurat[[]]} else {meta <- seurat}
+  if(inherits(seurat, "Seurat")){meta <- seurat[[]]} else {meta <- seurat}
   rm(seurat)
   if(!is.null(meta)){
     if(!cell_id %in% colnames(meta))
@@ -3342,7 +3380,16 @@ scImportVDJ <- function(vdj_files,
   message("-------------------------------")
   message(paste0("Part ", step," of ",n ,": importing unfiltered VDJ outputs"))
 
-  VDJ.list <- pbapply::pblapply(vdj_files[[sample_id]], FUN=function(sample){
+  safe_pblapply <- function(X, FUN, ..., mc.cores = 1) {
+    if (requireNamespace("pbapply", quietly = TRUE)) {
+      return(pbapply::pblapply(X, FUN, ...))
+    } else {
+      message("Package 'pbapply' not found. Falling back to lapply().")
+      return(lapply(X, FUN, ...))
+    }
+  }
+  
+  VDJ.list <- safe_pblapply(vdj_files[[sample_id]], FUN=function(sample){
     if("full_path" %in% colnames(vdj_files)){
       file <- vdj_files[match(sample,vdj_files[[sample_id]]),"full_path"]
     } else {
@@ -4683,48 +4730,52 @@ scFindClones <- function(db,
                              "final IGH contigs" = n_final_heavy,
                              "final unique cells" = n_final_cells)
   }
-
-  OUT <- openxlsx::createWorkbook()
-  openxlsx::addWorksheet(OUT, "Cloned VDJ")
-  openxlsx::writeData(OUT, sheet= "Cloned VDJ", x=cloned_VDJ_db, colNames = TRUE, rowNames = FALSE)
-  openxlsx::addWorksheet(OUT, "Expanded Cloned VDJ")
-  openxlsx::writeData(OUT, sheet= "Expanded Cloned VDJ", x=dplyr::filter(cloned_VDJ_db, expanded_clone), colNames = TRUE, rowNames = FALSE)
-  if(assay %in% colnames(cloned_VDJ_db)){
-    cloned_VDJ_db <- cloned_VDJ_db %>%
-      dplyr::group_by(clone_id) %>%
-      dplyr::mutate(
-        shared_clone = any(assay %in% shared.tech[["scRNAseq"]]) & any(assay %in% shared.tech[["scSanger"]])
-      ) %>%
-      dplyr::ungroup()
-    if(any(cloned_VDJ_db$shared_clone)){
-      openxlsx::addWorksheet(OUT, "Shared Cloned VDJ")
-      openxlsx::writeData(OUT, sheet= "Shared Cloned VDJ", x=dplyr::filter(cloned_VDJ_db, shared_clone), colNames = TRUE, rowNames = FALSE)
+  if (requireNamespace("openxlsx", quietly = TRUE)) {
+    OUT <- openxlsx::createWorkbook()
+    openxlsx::addWorksheet(OUT, "Cloned VDJ")
+    openxlsx::writeData(OUT, sheet= "Cloned VDJ", x=cloned_VDJ_db, colNames = TRUE, rowNames = FALSE)
+    openxlsx::addWorksheet(OUT, "Expanded Cloned VDJ")
+    openxlsx::writeData(OUT, sheet= "Expanded Cloned VDJ", x=dplyr::filter(cloned_VDJ_db, expanded_clone), colNames = TRUE, rowNames = FALSE)
+    if(assay %in% colnames(cloned_VDJ_db)){
+      cloned_VDJ_db <- cloned_VDJ_db %>%
+        dplyr::group_by(clone_id) %>%
+        dplyr::mutate(
+          shared_clone = any(assay %in% shared.tech[["scRNAseq"]]) & any(assay %in% shared.tech[["scSanger"]])
+        ) %>%
+        dplyr::ungroup()
+      if(any(cloned_VDJ_db$shared_clone)){
+        openxlsx::addWorksheet(OUT, "Shared Cloned VDJ")
+        openxlsx::writeData(OUT, sheet= "Shared Cloned VDJ", x=dplyr::filter(cloned_VDJ_db, shared_clone), colNames = TRUE, rowNames = FALSE)
+      }
     }
-  }
-
-  if(!is.null(recap.highlight)){
-    missing_highlights <- setdiff(recap.highlight, colnames(cloned_VDJ_db))
-    if(length(missing_highlights)>0){
-      warning("missing the following recap.highlight column(s): ", paste(missing_highlights, collapse = ", "))
-    }
-    recap_highlights <- intersect(recap.highlight, colnames(cloned_VDJ_db))
-    if(length(recap_highlights)>0){
-      for(highlight in recap_highlights){
-        levels <- levels(as.factor(cloned_VDJ_db[[highlight]]))
-        for(level in levels){
-          openxlsx::addWorksheet(OUT, level)
-          openxlsx::writeData(OUT, sheet= level, x=dplyr::filter(cloned_VDJ_db, !!rlang::sym(highlight) == level), colNames = TRUE, rowNames = FALSE)
+    
+    if(!is.null(recap.highlight)){
+      missing_highlights <- setdiff(recap.highlight, colnames(cloned_VDJ_db))
+      if(length(missing_highlights)>0){
+        warning("missing the following recap.highlight column(s): ", paste(missing_highlights, collapse = ", "))
+      }
+      recap_highlights <- intersect(recap.highlight, colnames(cloned_VDJ_db))
+      if(length(recap_highlights)>0){
+        for(highlight in recap_highlights){
+          levels <- levels(as.factor(cloned_VDJ_db[[highlight]]))
+          for(level in levels){
+            openxlsx::addWorksheet(OUT, level)
+            openxlsx::writeData(OUT, sheet= level, x=dplyr::filter(cloned_VDJ_db, !!rlang::sym(highlight) == level), colNames = TRUE, rowNames = FALSE)
+          }
         }
       }
     }
+    
+    openxlsx::addWorksheet(OUT, "Analysis parameters")
+    openxlsx::writeData(OUT, sheet= "Analysis parameters", x=as.data.frame(analysis_parameters), colNames = FALSE, rowNames = TRUE)
+    openxlsx::saveWorkbook(OUT, file= paste0(output_folder, analysis_name,"_VDJ_full_recap.xlsx"), overwrite = TRUE)
+    
+    message("see exported recap file: ", getwd(), "/", output_folder, analysis_name,"_VDJ_full_recap.xlsx. \n")
+  } else {
+    message("Optional: 'openxlsx' not installed — simply saving as tsv files")
+    readr::write_tsv(cloned_VDJ_db, file = paste0(output_folder, analysis_name,"_VDJ_full_recap.tsv"))
   }
-
-  openxlsx::addWorksheet(OUT, "Analysis parameters")
-  openxlsx::writeData(OUT, sheet= "Analysis parameters", x=as.data.frame(analysis_parameters), colNames = FALSE, rowNames = TRUE)
-  openxlsx::saveWorkbook(OUT, file= paste0(output_folder, analysis_name,"_VDJ_full_recap.xlsx"), overwrite = TRUE)
-
-  message("see exported recap file: ", getwd(), "/", output_folder, analysis_name,"_VDJ_full_recap.xlsx. \n")
-
+  
   end <- Sys.time()
   if(verbose){cat(paste0("Total running time: ", sprintf("%.2f %s", end-start, units(difftime(end, start))), ".\n"))}
 
@@ -4852,6 +4903,9 @@ scFindTCRClones <- function(db,
 #' (use the "groupBy =" argument, by default NULL will return frequency among all cells in the dataset, if set to NULL, no frequency is returned).
 #' Grouping in done at the sc level post incorporation of the VDJ info so all collumns from both sc and import can be used.
 #'
+#' @import dplyr
+#' @import purrr
+#'
 #' @export
 
 addAIRRmetadata <- function(sc, vdj_db = NULL,
@@ -4868,7 +4922,7 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
                             chains = list(TCR = list(tcra = "TCRA", tcrb = "TCRB", tcrg = "TCRG", tcrd = "TCRD"),
                                          BCR = list(igheavy = "IGH", iglight = c("IGL", "IGK")))){
 
-  library(dplyr)
+  #library(dplyr)
 
   type <- match.arg(type)
   if(!type %in% c("BCR", "TCR")){
@@ -4887,7 +4941,12 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
     split.by = "split.by"
   }
 
-  sc_meta <- sc[[]]
+  if(inherits(sc, "Seurat")){
+    sc_meta <- sc[[]]
+  } else {
+    stop(sc, " is NOT a Seurat object")
+  }
+  
   if(!cell_id %in% rownames(sc[[]])){
     sc_meta[[cell_id]] <- rownames(sc[[]])
   }

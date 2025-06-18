@@ -13,7 +13,7 @@ HexmapClonotypes3D(
     IGHA2 = "red", IGHG1 = "blue", IGHG2 = "lightblue", IGHG3 = "lightblue", IGHG4 =
     "lightblue", IGHE = "brown")),
   prefix = NULL,
-  plots_folder = "Hexbin_plots",
+  plots_folder = "VDJ_Clones/Hexbin_plots",
   use_chain = "IGH",
   locus = "locus",
   cell_id = "cell_id",
@@ -23,7 +23,13 @@ HexmapClonotypes3D(
   radius = 1,
   padding = 0.2,
   shape = c("hex", "circle"),
-  seed = 42
+  seed = 42,
+  save_plot = TRUE,
+  save_as = c("pdf", "png"),
+  height = 6,
+  width = 6,
+  return_plot = FALSE,
+  return_coords = FALSE
 )
 }
 \arguments{
@@ -59,7 +65,19 @@ HexmapClonotypes3D(
 
 \item{shape}{shape to use [default: hex]}
 
-\item{seed}{}
+\item{seed}{random seed for plotting}
+
+\item{save_plot}{whether to save the plots [default: TRUE]}
+
+\item{save_as}{format to save the plot ("pdf", or "png") [default: pdf]}
+
+\item{height}{height of saved plot}
+
+\item{width}{width of saved plot}
+
+\item{return_plot}{whether to return the plots [default: FALSE]}
+
+\item{return_coords}{whether to return the plots coordinates [default: FALSE]}
 
 \item{groups_to_plot}{which groups to plot}
 

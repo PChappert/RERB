@@ -21,7 +21,12 @@ DonutPlotClonotypes(
     = c("Set1")),
   external_bar = c("expanded", "top5", "none"),
   productive = "productive",
-  productive_only = TRUE
+  productive_only = TRUE,
+  save_plot = TRUE,
+  save_as = c("pdf", "png"),
+  height = 3,
+  width = 3,
+  return_plot = FALSE
 )
 }
 \arguments{
@@ -54,6 +59,16 @@ DonutPlotClonotypes(
 \item{productive}{name of column containing productive calls.}
 
 \item{productive_only}{whether to exclude non productive sequences [default: TRUE]}
+
+\item{save_plot}{whether to save the plots [default: TRUE]}
+
+\item{save_as}{format to save the plot ("pdf", or "png") [default: pdf]}
+
+\item{height}{height of saved plot}
+
+\item{width}{width of saved plot}
+
+\item{return_plot}{whether to retrun the plots [default: FALSE]}
 }
 \value{
 a seurat object with additional metadata imported from the vdj_db dataframe.

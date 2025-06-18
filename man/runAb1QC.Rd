@@ -7,6 +7,7 @@
 runAb1QC(
   Ab1_folder,
   outfolder = NULL,
+  outfilename = NULL,
   save = c("png", "html"),
   primers = c("IgG", "IgM", "IgL", "IgK", "Mix"),
   trim_cutoff = list(IgG = 300, IgM = 275, IgK = 400, IgL = 275, Mix = 275, Undefined =
@@ -21,7 +22,7 @@ runAb1QC(
 
 \item{save}{whether to save png or html plots}
 
-\item{primers}{primer used for PCR}
+\item{primers}{primers used for PCR}
 
 \item{trim_cutoff}{cutoff thresholds to use depending on primers}
 

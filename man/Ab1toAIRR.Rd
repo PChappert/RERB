@@ -21,6 +21,7 @@ Ab1toAIRR(
   update_c_call = TRUE,
   SHM = TRUE,
   full_seq_aa = TRUE,
+  update_info = FALSE,
   verbose = TRUE,
   return_db = FALSE,
   nproc = NULL
@@ -49,7 +50,7 @@ Ab1toAIRR(
 
 \item{full_seq_aa}{whether to reconstruct full AA sequences for each sequence}
 
-\item{verbose}{whether to right to the console}
+\item{verbose}{whether to write to the console}
 
 \item{return_db}{whether to return the final productive sequences data table}
 

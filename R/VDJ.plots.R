@@ -2,7 +2,7 @@
 #### Rapid function to plot histogram (with or without density) ####
 #' Plot a basic histogram
 #'
-#' \code{plotMultiHistogram}
+#' \code{plotHisto}
 #' @param df        a data frame with at least the feature column
 #' @param feature   which column to use for plotting
 #' @param density   whether to add a density curve
@@ -14,11 +14,14 @@
 #' @details
 #' returns a simple histogram
 #'
-#' @import ggplot2
-#'
 #' @export
 
-plotMultiHistogram <- function(df, density = TRUE, feature, label_column, vline) {
+plotHisto <- function(df, density = TRUE, feature, label_column, vline) {
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    message("Optional: 'ggplot2' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(ggplot2))
   if(isTRUE(density)){
     plt <- ggplot(df, aes(x=eval(parse(text=feature)), fill=eval(parse(text=label_column)))) +
       geom_histogram(alpha=0.7, position="identity", aes(y = ..density..), color="black") +
@@ -41,19 +44,7 @@ plotMultiHistogram <- function(df, density = TRUE, feature, label_column, vline)
 #' \code{DonutPlotClonotypes3D} Plots multiple donut plots and save them as pdf
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
-#' @param prefix    prefix to use for saved files
-#' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
-#' @param locus     name of column containing locus values.
-#' @param cell_id   name of the column containing cell identifier.
-#' @param clone_id  name of the column containing cell identifier.
-#' @param groups_to_plot which groups to plot
-#' @param col.line  color for lines in donut plot
-#' @param plots_folder name for export folder [default: "Donut_plots"]
-#' @param highlight whether to highlight shared clones or clones based on clone_size or clone_rank. Also possible to pre-classify cells prior and set that column in highlight + a color scheme in highlight_col
-#' @param highlight_col color scheme to use for highlighed clones
-#' @param external_bar whether to add an external bar for "expanded" or "top5" clones.
-#' @param productive  name of column containing productive calls.
-#' @param productive_only whether to exclude non productive sequences [default: TRUE]
+#' @param ...       arguments to be passed to DonutPlotClonotypes()
 #'
 #' @return multiple pdf donut plots
 #'
@@ -79,21 +70,7 @@ plotMultiHistogram <- function(df, density = TRUE, feature, label_column, vline)
 DonutPlotClonotypes3D <- function(db,
                                   split.by = NULL,
                                   prefix = NULL,
-                                  use_chain = "IGH",
-                                  locus = "locus",
-                                  cell_id = "cell_id",
-                                  clone_id = "clone_id",
-                                  groups_to_plot = "all",
-                                  col.line = "black",
-                                  plots_folder = "Donut_plots",
-                                  highlight = c("shared", "clone_size", "clone_rank"),
-                                  #also possible to pre-classify cells prior and set that column in highlight + a color scheme in highlight_col
-                                  highlight_col = list("shared" = c("Paired", "random"),
-                                                       "clone_size" = c("Set1"),
-                                                       "clone_rank" = c("Set1")),
-                                  external_bar = c("expanded", "top5", "none"),
-                                  productive = "productive",
-                                  productive_only = TRUE){
+                                  ...){
 
   #library(dplyr, quiet = TRUE)
 
@@ -101,18 +78,8 @@ DonutPlotClonotypes3D <- function(db,
     db$origin <- "all"
     DonutPlotClonotypes(db,
                         split.by = "origin",
-                        prefix = prefix,
-                        use_chain = use_chain,
-                        locus = locus,
-                        cell_id = cell_id,
-                        clone_id = clone_id,
-                        groups_to_plot = groups_to_plot,
-                        col.line = col.line,
-                        plots_folder = plots_folder,
-                        highlight = highlight,
-                        highlight_col = highlight_col,
-                        external_bar = external_bar,
-                        productive_only = productive_only)
+                        ...)
+    return(plots.list)
   }
   if(length(split.by) == 1){
     if(!split.by %in% colnames(db)){
@@ -120,18 +87,8 @@ DonutPlotClonotypes3D <- function(db,
     }
     DonutPlotClonotypes(db,
                         split.by = split.by,
-                        prefix = prefix,
-                        use_chain = use_chain,
-                        locus = locus,
-                        cell_id = cell_id,
-                        clone_id = clone_id,
-                        groups_to_plot = groups_to_plot,
-                        col.line = col.line,
-                        plots_folder = plots_folder,
-                        highlight = highlight,
-                        highlight_col = highlight_col,
-                        external_bar = external_bar,
-                        productive_only = productive_only)
+                        ...)
+    return(plots.list)
   }
   if(length(split.by) > 1){
     if(any(!split.by %in% colnames(db))){
@@ -139,6 +96,15 @@ DonutPlotClonotypes3D <- function(db,
     }
     origin <- split.by[length(split.by)]
     split.by <- split.by[-length(split.by)]
+    
+    if(any(is.na(db[[origin]]))){
+      warning("missing values for ", origin, " for some samples, will be set to 'unknown'")
+      db <- db %>%
+        dplyr::mutate(
+          !!rlang::sym(origin) := ifelse(is.na(!!rlang::sym(origin)), "unknown", !!rlang::sym(origin))
+        )
+    }
+    
     plot_group <- function(data) {
       # Extract group name
       group_name <- unique(data[[split.by[1]]])
@@ -146,21 +112,12 @@ DonutPlotClonotypes3D <- function(db,
         for(i in seq(2, length(split.by)))
         group_name <- paste0(group_name, "_", unique(data[[split.by[i]]]))
       }
+      
       # Plot data
       DonutPlotClonotypes(data,
                           split.by = origin,
                           prefix = paste(c(prefix, group_name), collapse = "_"),
-                          use_chain = use_chain,
-                          locus = locus,
-                          cell_id = cell_id,
-                          clone_id = clone_id,
-                          groups_to_plot = groups_to_plot,
-                          col.line = col.line,
-                          plots_folder = plots_folder,
-                          highlight = highlight,
-                          highlight_col = highlight_col,
-                          external_bar = external_bar,
-                          productive_only = productive_only)
+                          ...)
     }
     db <- db %>%
       dplyr::group_by(!!!rlang::syms(split.by)) %>%
@@ -188,14 +145,12 @@ DonutPlotClonotypes3D <- function(db,
 #' @param external_bar whether to add an external bar for "expanded" or "top5" clones.
 #' @param productive  name of column containing productive calls.
 #' @param productive_only whether to exclude non productive sequences [default: TRUE]
+#' @param height    height of saved plot
+#' @param width     width of saved plot
 #'
 #' @return a seurat object with additional metadata imported from the vdj_db dataframe.
 #'
-#' @import ComplexHeatmap
-#' @import circlize
-#' @import grid
 #' @import dplyr
-#' @import RColorBrewer
 #'
 #' @export
 
@@ -217,12 +172,33 @@ DonutPlotClonotypes <- function(db,
                                                      "clone_rank" = c("Set1")),
                                 external_bar = c("expanded", "top5", "none"),
                                 productive = "productive",
-                                productive_only = TRUE){
+                                productive_only = TRUE,
+                                height = 3,
+                                width = 3){
 
-  #library(grid, quiet = TRUE)
-  #library(circlize, quiet = TRUE)
-  #library(ComplexHeatmap, quiet = TRUE)
-  #library(RColorBrewer, quiet = TRUE)
+  if (!requireNamespace("circlize", quietly = TRUE)) {
+    message("Optional: 'circlize' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(circlize))
+  
+  if (!requireNamespace("grid", quietly = TRUE)) {
+    message("Optional: 'grid' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(grid))
+  
+  if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+    message("Optional: 'RColorBrewer' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(RColorBrewer))
+  
+  if (!requireNamespace("ComplexHeatmap", quietly = TRUE)) {
+    message("Optional: 'ComplexHeatmap' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(ComplexHeatmap))
 
   if(isFALSE(dir.exists(plots_folder))){
     dir.create(plots_folder)
@@ -231,9 +207,7 @@ DonutPlotClonotypes <- function(db,
   if(!any(use_chain %in% c("IGH", "IGL", "IGK"))){
     stop("use_chain should be one of IGH, IGL or IGK")
   }
-  Plot_db <- db %>%
-    dplyr::filter(!!rlang::sym(locus) %in% use_chain)
-
+  
   if(!clone_id %in% colnames(db)){
     stop(paste0("missing",  clone_id, "collumn"))
   }
@@ -244,11 +218,11 @@ DonutPlotClonotypes <- function(db,
     }
   }
 
-  highlight = highlight[1]
+  highlight <- match.arg(highlight) 
   if(!highlight %in% c("shared", "clone_size", "clone_rank") & !highlight %in% colnames(db)){
     stop("highlight column not properly defined")
   }
-  external_bar = external_bar[1]
+  external_bar <- match.arg(external_bar) 
   if(!external_bar %in% c("expanded", "top5", "none")){
     warning("external_bar parameter not properly defined, should be one of expanded, top5 or none, defaulting to none")
     external_bar = "none"
@@ -265,6 +239,9 @@ DonutPlotClonotypes <- function(db,
     origin = split.by
   }
 
+  Plot_db <- db %>%
+    dplyr::filter(!!rlang::sym(locus) %in% use_chain)
+  
   if(any(duplicated(Plot_db[[cell_id]]))){
     stop("duplicated cell_id: ", paste(Plot_db[duplicated(Plot_db[[cell_id]]), cell_id], collapse = ", "))
   }
@@ -288,7 +265,13 @@ DonutPlotClonotypes <- function(db,
     if(h_col %in% rownames(brewer.pal.info)){
       col_shared <- colorRampPalette(brewer.pal(n = brewer.pal.info[match(h_col, rownames(brewer.pal.info)), "maxcolors"], name = h_col))(length(Shared_clones))
     } else {
-      col_shared <- randomcoloR::randomColor(length(Shared_clones))
+      if (!requireNamespace("randomcoloR", quietly = TRUE)) {
+        message("To use random color, you need to install: 'randomcoloR' — defaulting to 'Paired' palette")
+        h_col <- "Paired"
+        col_shared <- colorRampPalette(brewer.pal(n = brewer.pal.info[match(h_col, rownames(brewer.pal.info)), "maxcolors"], name = h_col))(length(Shared_clones))
+      } else {
+        col_shared <- randomcoloR::randomColor(length(Shared_clones))
+      }
     }
     names(col_shared) <- Shared_clones
   }
@@ -304,19 +287,19 @@ DonutPlotClonotypes <- function(db,
       dplyr::mutate(
         expanded = clone_size_in_group > 1,
         clone_rank = row_number()
-      )
-
+      ) 
+    
     n_unique_seq <- nrow(dplyr::filter(data, !expanded & !shared))
-
+    
     if(n_unique_seq>0){
       data <- data %>%
         dplyr::filter(expanded | shared) %>%
-        dplyr::bind_rows(tibble(clone_id = "unique",
+        dplyr::bind_rows(tibble(clone_id = "unique", 
                                 clone_size_in_group = n_unique_seq,
                                 expanded = FALSE,
-                                shared = FALSE))
+                                shared = FALSE)) 
     }
-
+    
     if(highlight == "shared"){
       data <- data %>%
         dplyr::mutate(
@@ -325,7 +308,7 @@ DonutPlotClonotypes <- function(db,
         )
     }
     if(highlight == c("clone_rank")){
-      #each expanded clone gets its own color
+      #'each expanded clone gets its own color
       Expanded_clones <- data[data$expanded, clone_id]
       if(length(Expanded_clones)>0){
         if(h_col %in% rownames(brewer.pal.info)){
@@ -344,7 +327,7 @@ DonutPlotClonotypes <- function(db,
       }
     }
     if(highlight == "clone_size"){
-      #color is defined based on clone size
+      #'color is defined based on clone size
       diff_sizes <- data[!duplicated(data$clone_size_in_group) & data$clone_size_in_group>1,]$clone_size_in_group
       if(length(diff_sizes)>0){
         if(h_col %in% rownames(brewer.pal.info)){
@@ -361,43 +344,59 @@ DonutPlotClonotypes <- function(db,
       } else {
         data$color ="white"
       }
-    }
+    }  
     return(data)
   })
   names(Clones_by_groups_to_plot.list) <- unlist(origins)
-
+  
   ##Plot Circosplots:
   for (i in seq_along(Clones_by_groups_to_plot.list)){
     Clones <- Clones_by_groups_to_plot.list[[i]]
     df_name <- names(Clones_by_groups_to_plot.list)[i]
     nb_seq <- sum(as.numeric(Clones$clone_size_in_group))
-
+    
     #df for sectors to plot
     df1 <- as.data.frame(Clones$clone_size_in_group)
     names(df1) <- "nb_cells"
     df1$xmin <- 0
     df1$xmax <- df1$nb_cells
     df1$color <- Clones$color
-
+    
     #Plot Circosplot
     if(!is.null(prefix)){
       filename = paste0(plots_folder, "/", prefix, "/", prefix, "_", names(Clones_by_groups_to_plot.list)[i], "_",  highlight,".pdf")
     } else {
       filename = paste0(plots_folder, "/", names(Clones_by_groups_to_plot.list)[i], "_",  highlight,".pdf")
     }
-
-    pdf(file = filename, height = 3, width = 3)
+    
+    #TODO add possibility to export plot or save as png
+    # Function to draw and capture a circlize plot
+    #library(gridGraphics)
+    #library(gridExtra)
+    #circos_plot_as_grob <- function(df) {
+      #code for circosplot (what is currently inside pdf())
+      #then capture the base R plot as a grid object
+    #  grid.echo()
+    #  grid.grab()
+    #}
+    # Example with 2 circlize plots arranged side by side at the end
+    #g1 <- circos_plot_as_grob(df1)
+    #g2 <- circos_plot_as_grob(df2)
+    #grid.arrange(g1, g2, ncol = 2)
+    
+    
+    pdf(file = filename, height = height, width = width)
     par(mar=rep(0,4))
-
+    
     circos.clear()
-
-    circos.par(cell.padding=c(0,0,0,0), track.margin=c(0, 0.02),
+    
+    circos.par(cell.padding=c(0,0,0,0), track.margin=c(0, 0.02), 
                start.degree = 90, gap.degree = 0,
                canvas.xlim = c(-1.5,1.5),
                canvas.ylim = c(-1.5,1.5))
-
+    
     circos.initialize(factors = rownames(df1), x = df1$nb_cells, xlim = cbind(df1$xmin, df1$xmax))
-
+    
     #plot track with clone sizes:
     circos.trackPlotRegion(ylim = c(0, 1), factors = rownames(df1), track.height=0.6,
                            #panel.fun for each sector
@@ -406,15 +405,15 @@ DonutPlotClonotypes <- function(db,
                              i = get.cell.meta.data("sector.numeric.index")
                              xlim = get.cell.meta.data("xlim")
                              ylim = get.cell.meta.data("ylim")
-                             circos.rect(xleft=xlim[1], ybottom=ylim[1], xright=xlim[2], ytop=ylim[2],
+                             circos.rect(xleft=xlim[1], ybottom=ylim[1], xright=xlim[2], ytop=ylim[2], 
                                          col = df1$color[i], border= "black", lty = 0.5)
                            })
-
-
-    #add nb sequences in the center:
+    
+    
+    #'add nb sequences in the center:
     text(0,0, nb_seq)
-
-    #highlight expanded or top_5 clones:
+    
+    #'highlight expanded or top_5 clones:
     if(external_bar == "expanded"){
       #add outside track highlighting expanded clones:
       expanded_clones <- Clones[Clones$expanded == TRUE,]
@@ -429,14 +428,14 @@ DonutPlotClonotypes <- function(db,
       #add text:
       text(0.45,1.15, paste0(pct_expanded, "%"))
     }
-
+    
     if(external_bar == "top5"){
-      #add outside track highlighting top5 clones:
-      #accounts for cases with less than five clones (excluding unique sequences of course), no unique sequences or only unique sequences
+      #'add outside track highlighting top5 clones:
+      #'accounts for cases with less than five clones (excluding unique sequences of course), no unique sequences or only unique sequences
       if("unique" %in% Clones$expanded){
-        nb_top5_clones <- min(5, (length(Clones$clone_id)-1))
+        nb_top5_clones <- min(5, (length(Clones$clone_id)-1)) 
       } else {nb_top5_clones <- min(5, (length(Clones$clone_id)))}
-
+      
       if(nb_top5_clones > 0){
         top5_clones <- Clones[1:nb_top5_clones,]
         size_of_last_top5_clone <- as.numeric(top5_clones[nb_top5_clones,]$clone_size_in_group)
@@ -448,7 +447,7 @@ DonutPlotClonotypes <- function(db,
         text(0.45,1.15, paste0(pct_top5, "%"), col="#002147")
       } else {text(0.45,1.15, paste0("0%"), col="#002147")}
     }
-
+    
     ##draw legend
     if(highlight == "clone_size"){
       if(nrow(Clones[!duplicated(Clones$clone_size_in_group) & Clones$expanded == TRUE,]) == 0){
@@ -460,14 +459,14 @@ DonutPlotClonotypes <- function(db,
           unique <- rbind(unique, c("1", "FALSE", "1", "unique", "FALSE", "white"))
         }
       }
-      lgd_clone = ComplexHeatmap::Legend(labels = unique$clone_size_in_group,
-                                         legend_gp = gpar(fill = unique$color),
+      lgd_clone = ComplexHeatmap::Legend(labels = unique$clone_size_in_group, 
+                                         legend_gp = gpar(fill = unique$color), 
                                          title = "clone size",
                                          border = "black")
-
+      
       ComplexHeatmap::draw(lgd_clone, x = unit(0.2, "in"), y = unit(2.4, "in"), just = "left")
     }
-
+    
     dev.off()
   }
 }
@@ -494,12 +493,17 @@ DonutPlotClonotypes <- function(db,
 #' @param radius    shape radius, passed to packcircles
 #' @param padding   padding, passed to packcircles
 #' @param shape     shape to use [default: hex]
-#' @param seed
+#' @param seed      random seed for plotting
+#' @param save_plot whether to save the plots [default: TRUE]
+#' @param save_as   format to save the plot ("pdf", or "png") [default: pdf]
+#' @param height    height of saved plot
+#' @param width     width of saved plot
+#' @param return_plot whether to return the plots [default: FALSE]
+#' @param return_coords whether to return the plots coordinates [default: FALSE]
 #'
 #' @return a hexmap plot
 #'
 #' @import dplyr
-#' @import RColorBrewer
 #'
 #' @export
 
@@ -521,10 +525,21 @@ HexmapClonotypes3D <- function(db,
                                radius = 1,
                                padding = 0.2,
                                shape = c("hex", "circle"),
-                               seed = 42){
+                               seed = 42,
+                               save_plot = TRUE,
+                               save_as = c("pdf", "png"),
+                               height = 6,
+                               width = 6,
+                               return_plot = FALSE,
+                               return_coords = FALSE){
 
-  #library(dplyr, quiet = TRUE)
-  #library(RColorBrewer, quiet = TRUE)
+  if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+    message("Optional: 'RColorBrewer' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(RColorBrewer))
+  
+  save.as <- match.arg(save.as)
 
   if(isFALSE(dir.exists(plots_folder))){
     dir.create(plots_folder)
@@ -593,13 +608,6 @@ HexmapClonotypes3D <- function(db,
           group_name <- paste0(group_name, "_", unique(data[[split.by[i]]]))
       }
       # Plot data
-      if(!is.null(prefix)){
-        title = paste0(prefix, "_", group_name, "_clones_by_", highlight)
-        filename = paste0(plots_folder, "/", prefix, "/", prefix, "_", group_name, "_by_", highlight,".pdf")
-      } else {
-        title = paste(group_name, "_clones_by_", highlight)
-        filename = paste0(plots_folder, "/", group_name, "_by_", highlight,".pdf")
-      }
       p <- HexmapClonotypes(data,
                             ordered = ordered,
                             radius = radius,
@@ -612,14 +620,43 @@ HexmapClonotypes3D <- function(db,
                             palette = palette,
                             seed = seed,
                             return_coords = FALSE)
-      pdf(file = filename, height = 6, width = 6)
-      plot(p)
-      dev.off()
+      
+      if(save_plot){
+        if(!is.null(prefix)){
+          title = paste0(prefix, "_", group_name, "_clones_by_", highlight)
+          filename = paste0(plots_folder, "/", prefix, "/", prefix, "_", group_name, "_by_", highlight,".pdf")
+        } else {
+          title = paste(group_name, "_clones_by_", highlight)
+          filename = paste0(plots_folder, "/", group_name, "_by_", highlight,".pdf")
+        }
+        if(save_as == "pdf"){
+          pdf(file = filename, height = height, width = width)
+          plot(p)
+          dev.off()
+        }
+        if(save_as == "png"){
+          png(filename = filename, height = height, width = width)
+          plot(p)
+          dev.off()
+        }
+      }
+      return(p)
     }
-    Plot_db <- Plot_db %>%
-      dplyr::group_by(!!!rlang::syms(split.by)) %>%
-      dplyr::group_split() %>%
-      purrr::walk(plot_group)
+    
+    groups <- Plot_db %>% 
+      dplyr::group_by(!!!rlang::syms(split.by)) %>% 
+      dplyr::group_nest()
+    
+    plots <- purrr::map(groups$data, plot_group)
+    
+    if(return_plot){
+      group_names <- groups %>% 
+        mutate(id = purrr::pmap_chr(., ~ paste(..., sep = "_"))) %>% 
+        pull(id)
+      
+      names(plots) <- group_names
+      return(plots)
+    }
   }
 }
 
@@ -645,18 +682,19 @@ HexmapClonotypes3D <- function(db,
 #' @param radius    shape radius, passed to packcircles
 #' @param padding   padding, passed to packcircles
 #' @param shape     shape to use [default: hex]
-#' @param seed
+#' @param seed      random seed for plotting
+#' @param save_plot whether to save the plots [default: TRUE]
+#' @param save_as   format to save the plot ("pdf", or "png") [default: pdf]
+#' @param height    height of saved plot
+#' @param width     width of saved plot
+#' @param return_plot whether to return the plots [default: FALSE]
+#' @param return_coords whether to return the plots coordinates [default: FALSE]
 #'
 #' @return a hexmap plot
 #'
 #' @import dplyr
-#' @import RColorBrewer
 #' @import tibble
-#' @import ggplot2
-#' @importFrom ggforce geom_circle
-#' @importFrom packcircles circleProgressiveLayout
-#' @importFrom scales rescale
-#' @importFrom purrr pmap_dfr
+#' @import purrr
 #'
 #' @export
 
@@ -674,14 +712,33 @@ HexmapClonotypes <- function(data,
                              max_colors = 10,
                              return_coords = FALSE) {
 
-  library(dplyr)
-  library(tibble)
-  library(ggplot2)
-  library(ggforce)
-  library(packcircles)
-  library(scales)
-  library(purrr)
-
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    message("Optional: 'ggplot2' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(ggplot2))
+  
+  if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+    message("Optional: 'RColorBrewer' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(RColorBrewer))
+  
+  if (!requireNamespace("ggforce", quietly = TRUE)) {
+    message("Optional: 'ggforce' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  
+  if (!requireNamespace("packcircles", quietly = TRUE)) {
+    message("Optional: 'packcircles' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  
+  if (!requireNamespace("scales", quietly = TRUE)) {
+    message("Optional: 'scales' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  
   shape <- match.arg(shape)
 
   stopifnot(all(c(cell_id, clone_id, fill_col) %in% colnames(data)))
@@ -750,7 +807,7 @@ HexmapClonotypes <- function(data,
   # Arrange clone centroids in circular layout (largest in center)
   theta <- seq(0, 2*pi, length.out = nrow(clone_sizes) + 1)[-1]
   radial_dist <- scales::rescale(rev(clone_sizes$R), to = c(0, 1))
-  centroid_layout <- circleProgressiveLayout(clone_sizes$R, sizetype = "radius") %>%
+  centroid_layout <- packcircles::circleProgressiveLayout(clone_sizes$R, sizetype = "radius") %>%
     as_tibble() %>%
     rename(x_c = x, y_c = y)
 
@@ -840,6 +897,107 @@ HexmapClonotypes <- function(data,
     return(p)
   }
 }
+
+
+#### Function to plot CDR3 logo from repertoire data ####
+#' Plots individual CDR3 logo plots and save as pdf
+#'
+#' \code{plotCDR3logo} Plots individual hexmap plots and save as pdf
+#' @param db            an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
+#' @param split.by      name of column to use to group sequence when calculating clone size and frequencies.
+#' @param CDR3_folder   whether to order clones based on size and highlighing parameter
+#' @param min_size      name of the column use to color each clone [default: "c_call].
+#' @param clone_id      name of the column containing cell identifier.
+#' @param junction_type nt or aa
+#' @param save_plot     whether ta save the plot as a pdf
+#' @param return_plot   whether ta return the ggplot object
+#' @param ...       additional arguments to pass to ggseqlogo
+#'
+#' @return a ggseqlogo plot
+#'
+#' @import dplyr
+#'
+#' @export
+
+plotCDR3logo <- function(db,
+                         CDR3_folder = "VDJ_Clones/CDR3_logo",
+                         split.by = NULL,
+                         min_size = 1,
+                         clone_id = "clone_id",
+                         junction_type = "aa",
+                         save_plot = TRUE,
+                         return_plot = FALSE,
+                         ...) {
+  
+  save_as <- match.arg(save.as)
+  
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    message("Optional: 'ggplot2' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(ggplot2))
+  
+  if (!requireNamespace("ggseqlogo", quietly = TRUE)) {
+    message("Optional: 'ggseqlogo' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  
+  if(isFALSE(dir.exists(CDR3_folder))){
+    dir.create(CDR3_folder)
+  }
+  
+  plot_cdr3 <- function(junctions, junction_type, name){
+    l = length(junctions[1])
+    g = ggseqlogo::ggseqlogo(junctions, seq_type = junction_type, method = "prob", ...)
+    if(save_plot){
+      ggsave(g, filename = paste0(CDR3_folder, "/", name,"_CDR3_logo.pdf"), width=(2/8+l[1]/8), height=2)
+    }
+    return(g)
+  }
+  
+  name_plot <- function(db, split_args){
+    name <- db[[split_args[1]]][1]
+    if(length(split.by) > 2){
+      for (split_arg in 2:length(split_args)){
+        name <- paste0(name, "_", db[[split_arg]][1])
+      }
+    }
+    return(name)
+  }
+  
+  # make sure clone_id is always at the end
+  split.by <- c(split.by[split.by != clone_id], clone_id)
+  
+  groups <- db %>% 
+    dplyr::group_by(!!!rlang::syms(split.by)) %>% 
+    dplyr::mutate(
+      group_size = n()
+    ) %>%
+    dplyr::filter(group_size>=min_size) %>%
+    dplyr::group_nest()
+  
+  plots <- purrr::map(
+    groups$data[[paste0("junction_", junction_type)]], 
+    plot_cdr3, 
+    junction_type = junction_type, 
+    name = name_plot(groups$data)
+      )
+  
+  if(return_plot){
+    group_names <- groups %>% 
+      mutate(id = purrr::pmap_chr(., ~ paste(..., sep = "_"))) %>% 
+      pull(id)
+    
+    names(plots) <- group_names
+    return(plots)
+  }
+}
+                             
+
+
+
+
+
 
 
 

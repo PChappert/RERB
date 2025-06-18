@@ -4,204 +4,21 @@
 \alias{scFindBCRClones}
 \title{Full BCR analysis pipeline for heavy chain curated AIRR single-cell repertoire datasets}
 \usage{
-scFindBCRClones(
-  db,
-  output = TRUE,
-  output_folder = "VDJ_Clones",
-  analysis_name = "All_sequences",
-  seq_type = c("Ig", "TCR"),
-  organism = c("human", "mouse", "rabbit", "rat", "rhesus_monkey"),
-  only_heavy = FALSE,
-  na.heavy.rm = FALSE,
-  igblast = c("none", "filtered_light", "all"),
-  update_c_call = c("all", "filtered light", "none"),
-  clean_LC = TRUE,
-  split_by_light = TRUE,
-  update_germline = TRUE,
-  SHM = TRUE,
-  full_seq_aa = TRUE,
-  method = c("changeo", "hierarchical", "identical", "spectral"),
-  spectral_method = c("novj", "vj"),
-  threshold = c(0.12, 0.15),
-  cell_id_scoper = "cell_id",
-  tech = NULL,
-  split.by = NULL,
-  igblast_dir = "~/share/igblast",
-  imgt_dir = "~/share/germlines/imgt/",
-  imgt_j_nt = "~/share/igblast/fasta/imgt_human_ig_j.fasta",
-  CH1_AA = list(IGHG1 =
-    "ASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKV",
-    IGHG2 =
-    "ASTKGPSVFPLAPCSRSTSESTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSNFGTQTYTCNVDHKPSNTKVDKTV",
-    IGHG3 =
-    "ASTKGPSVFPLAPCSRSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYTCNVNHKPSNTKVDKRV",
-    IGHG4 =
-    "ASTKGPSVFPLAPCSRSTSESTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTKTYTCNVDHKPSNTKVDKRV",
-    IGHA1 =
-    "ASPTSPKVFPLSLCSTQPDGNVVIACLVQGFFPQEPLSVTWSESGQGVTARNFPPSQDASGDLYTTSSQLTLPATQCLAGKSVTCHVKHYTNPSQDVT",
-    
-     IGHA2 =
-    "ASPTSPKVFPLSLDSTPQDGNVVVACLVQGFFPQEPLSVTWSESGQNVTARNFPPSQDASGDLYTTSSQLTLPATQCPDGKSVTCHVKHYTNSSQDVT",
-    IGHM =
-    "GSASAPTLFPLVSCENSPSDTSSVAVGCLAQDFLPDSITFSWKYKNNSDISSTRGFPSVLRGGKYAATSQVLLPSKDVMQGTDEHVVCKVQHPNGNKEKNVPLPV",
-    IGHD =
-    "APTKAPDVFPIISGCRHPKDNSPVVLACLITGYHPTSVTVTWYMGTQSQPQRTFPEIQRRDSYYMTSSQLSTPLQQWRQGEYKCVVQHTASKSKKEIF",
-    IGHE =
-    "ASTQSPSVFPLTRCCKNIPSNATSVTLGCLATGYFPEPVMVTWDTGSLNGTTMTLPATTLTLSGHYATISLLTVSGAWAKQMFTCRVAHTPSSTDWVDNKTFS",
-    IGKC =
-    "RTVAAPSVFIFPPSDEQLKSGTASVVCLLNNFYPREAKVQWKVDNALQSGNSQESVTEQDSKDSTYSLSSTLTLSKADYEKHKVYACEVTHQGLSSPVTKSFNRGEC",
-    
-     IGLC1 =
-    "GQPKGQPKANPTVTLFPPSSEELQANKATLVCLISDFYPGAVTVAWKADGSPVKAGVETTKPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPTECS",
-    IGLC2 =
-    "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVTVAWKADSSPVKAGVETTTPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPTECS",
-    IGLC3 =
-    "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVTVAWKADSSPVKAGVETTTPSKQSNNKYAASSYLSLTPEQWKSHKSYSCQVTHEGSTVEKTVAPTECS",
-    IGLC6 =
-    "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVKVAWKADGSPVNTGVETTTPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPAECS",
-    IGLC7 =
-    "GQPKAAPSVTLFPPSSEELQANKATLVCLVSDFNPGAVTVAWKADGSPVKVGVETTKPSKQSNNKYAASSYLSLTPEQWKSHRSYSCRVTHEGSTVEKTVAPAECS"),
-  shared.tech = list(scRNAseq = c("10X", "BD"), scSanger = c("scPCR", "scCulture")),
-  recap.highlight = NULL,
-  cell_id = "cell_id",
-  locus = "locus",
-  assay = "assay",
-  heavy = "IGH",
-  umi_count = "umi_count",
-  consensus_count = "consensus_count",
-  productive = "productive",
-  complete_vdj = "complete_vdj",
-  junction = "junction",
-  junction_aa = "junction_aa",
-  junc_len = "junction_length",
-  sequence = "sequence",
-  sequence_id = "sequence_id",
-  sequence_alignment = "sequence_alignment",
-  v_call = "v_call",
-  d_call = "d_call",
-  j_call = "j_call",
-  c_call = "c_call",
-  nproc = 1,
-  verbose = "all",
-  fields = NULL
-)
+scFindBCRClones(db, chains = list(heavy = "IGH", light = c("IGK", "IGL")), ...)
 }
 \arguments{
 \item{db}{an AIRR formatted dataframe containing heavy and light chain sequences. Should contain only one heavy chain (IGH) per cell_id, if not run resolveMultiHC() first.}
 
-\item{output}{whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. If set to FALSE, only the corrected database is returned.}
-
-\item{output_folder}{name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_Clones"]}
-
-\item{analysis_name}{name to use for outputs prefixes [default = "All_sequences"]}
-
-\item{only_heavy}{Whether all submitted chains are heavy chains. Automatically set some options accordingly.}
-
-\item{na.heavy.rm}{whether to remove light chain sequences for cells with no heavy chain from the final database [default = TRUE, !!TODO: work on re-importing these sequences in the final recap table if na.heavy.rm = FALSE]}
-
-\item{igblast}{whether to run standalone IgBlast, can be set to c("filtered_light" or "all") if not one of these three values, will be skipped with a warning. [default = "filtered_light" for both 10X and BD: highly recommended for both to avoid issues at the createGermline() or observedMutation() steps due to different references databases used (10X) or missing imgt gaps in the sequence_alignment collumn (Both))]}
-
-\item{update_c_call}{whether to run runBlastnC to correct c calls made by igblast (issues with calls with similar scores); can be set to c("filtered light" or "all") if not one of these three values, will be skipped with a warning. [default = "all", if using "filtered light" should have already been previously performed on heavy chains (see scImportVDJ())]}
-
-\item{clean_LC}{whether to resolve cases of multiple light chains}
-
-\item{split_by_light}{whether to clean cases of multiple light chains (resolveMultiLC()) and split clone by ligth chain (dowser::resolveLightChains()), the clone_id collumn will be updated and results will also be stored in the l_clone_id_"last_used_threshold" column;}
-
-\item{update_germline}{whether to run dowser::createGermlines() to determine consensus clone sequence and create germline for clone after splitting by light chain;}
-
-\item{SHM}{whether to calculate mutational load;}
-
-\item{full_seq_aa}{whether to reconstruct full VDJ sequence (nt and AA +/- CH1 domain)}
-
-\item{method}{method to use for scoper::hierarchicalClones(), can be one between: identical, hierarchical or spectral}
-
-\item{spectral_method}{method to use for scoper::spectralClones(), can be one between: novj or vj}
-
-\item{threshold}{method to use for scoper::hierarchicalClones() or scoper::spectralClones(),
-if multiple thresholds are provided, they will be used successively and results stored in the h_clone_"threshold" column. Final clone_id column will reflect the last threshold used.}
-
-\item{cell_id_scoper}{name of the column containing cell identifier to use scoper in single_cell mode. If only heavy chain data, use NULL to avoid a bug in scoper.}
-
-\item{tech}{which tech was used, passed to resolveMultiContigs, only tech = "BD" will results in additional QC being performed.}
-
-\item{split.by}{name of the column used for grouping at the resolveLigth chain step.}
-
-\item{igblast_dir}{path to igblast database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]}
-
-\item{imgt_dir}{path to imgt-gapped database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]}
-
-\item{imgt_j_nt}{path to imgt_human_ig_j.fasta (passed to reconstructFullVDJ())}
-
-\item{CH1_AA}{named list of CH1 domain for IGH, IGL and IGK c chains (AA); passed to reconstructFullVDJ())}
-
-\item{shared.tech}{list of grouped technologies to identify shared clones between scRNA-seq and Sanger sequencing (export in recap teable (seperate sheet) + additional shared_clone column)}
-
-\item{recap.highlight}{Which column to use to create extra sheets in the recap table}
-
-\item{cell_id}{name of the column containing cell identifier.}
+\item{...}{arguments to be passed to scFindClones}
 
 \item{locus}{name of column containing locus values.}
-
-\item{assay}{name of column containing assay values.}
-
-\item{heavy}{value of heavy chains in locus column. All other values will be}
-
-\item{umi_count}{name of the column containing the number of unique molecules (UMI) for this contig. Previously called "duplicate_count" in an earlier AIRR standard}
-
-\item{consensus_count}{name of the column containing the number of reads for this contig (usually called consensus_count)}
-
-\item{productive}{name of the column containing the info whether a given sequence is productive.}
-
-\item{complete_vdj}{name of the column containing complete_vdj info.}
-
-\item{junction}{name of the column containing identified junction in nucleotide format.}
-
-\item{junction_aa}{name of the column containing identified junction in amino-acid format.}
-
-\item{junc_len}{name of the column containing junction length info.}
-
-\item{sequence}{name of the column containing the original sequence.}
-
-\item{sequence_id}{name of the column containing sequence identifier.}
-
-\item{sequence_alignment}{name of the column containing sequence alignment.}
-
-\item{v_call}{name of the column containing V-segment allele assignments. All entries in this column should be identical to the gene level.}
-
-\item{d_call}{name of the column containing D-segment allele assignments. All entries in this column should be identical to the gene level.}
-
-\item{j_call}{name of the column containing J-segment allele assignments. All entries in this column should be identical to the gene level.}
-
-\item{c_call}{name of the column containing Constant region assignments. All entries in this column should be identical to the gene level.}
-
-\item{nproc}{number of processor to use for parallel computing (passed on to all Immcantation functions).}
-
-\item{verbose}{whether to show messages and cat() ouputs on console, can be "all" or "partial" (messages only)[TODO], all other values will be equivalent to "none"}
-
-\item{fields}{Character vector of additional columns to use for grouping in scoper::hierarchicalClones() or dowser::resolveLightChains(). Sequences with disjoint values in the specified fields will be considered as separate clones.}
 }
 \value{
-an AIRR formatted dataframe containing selected heavy and light chains (when available) for all cells as well as clonal grouping for all cells (clone_id).
-If igblast and update_c_call are set to "light" or "all", will run igblast and runBlastnC on requested contigs.
-If split_by_light is set to TRUE, will also perform clonal partition correction based on observed light chain or heavy chain proximity to cell with known light chain.
-If update_germline and SHM are set to TRUE, will further update the germline alignment columns based on other contigs in the same clonal group, add a germline_d_mask column,
-and then analyse the number and frequency of mutation in VH and VL genes, if split_by_light is set to TRUE or only the VH gene if not.
-Creates a bcr_info columns with three possible values: "full" (if both heavy and light contigs are found for a given cell_id), "heavy_only" or "light_only".
-Creates an expanded_clone (>1 cell_id) and a shared_clone (between scRNAseq and Sanger), see shared.tech argument.
-Also outputs a graph for minimum distance between and maximal distance inside heavy clones for each tested threshold, all intermediate results for each step in the analysis and a final recap table which include all chosen parameters for the analysis as sheet 2.
+an AIRR formatted dataframe with a new clone_id column and clone attribution for all BCR related data (see scFindClones).
 }
 \description{
-\code{scFindBCRClones} performs clonal clustering of single cell data
+\code{scFindBCRlones} performs clonal clustering of single cell data
 }
 \details{
-Works as a wrapper function successively calling in house or Immcantation-based functions to perform full clonal analysis of an AIRR-formatted single B cell repertoire.
-All key parameters are preset and the simple db <- scFindBCRClones(db) line should be sufficient.
-Provided dataframe should be an AIRR formatted dataframe and should contain only one heavy chain (IGH) per cell_id, if not run resolveMultiHC() first.
-Not all cells need to have a detected light chain but cells without a full heavy chain with cdr3 will be removed.
-1. it first performs clonal grouping based on the heavy chain using the Scoper package functions;
-2. cases of multiple light chains are then resolved using identified groups (resolveMultiLC());
-3. clonal groups are further split based on light chain info (step 1) or proximity with other heavy chain for cells with missing light chains (dowser::resolveLightChains);
-4. finally, we use dowser::createGermlines() and shazam::observedMutations() to determine consensus clone sequence and create germline for clone and perform V gene somatic mutation analysis.
-dependencies: stringr; dplyr, scoper, dowser, shazam, alakazam, ggplot2, openxlsx, parallel.
-cite: Jensen C, Sumner J, Kleinstein S, Hoehn K (2024). “Inferring B Cell Phylogenies from Paired H and L Chain BCR Sequences with Dowser.” The Journal of Immunology. doi:10.4049/jimmunol.2300851 https://doi.org/10.4049/jimmunol.2300851, https://doi.org/10.4049/jimmunol.2300851.
+wrapper to run scFindClones with BCR specific arguments. All other arguments from scFindClones can also be used.
 }

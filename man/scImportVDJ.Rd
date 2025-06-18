@@ -33,10 +33,10 @@ scImportVDJ(
   high_cutoff = 250,
   na.rm = FALSE,
   output = TRUE,
+  verbose = TRUE,
   output_folder = "VDJ_QC",
   cell_id = "cell_id",
   locus = "locus",
-  heavy = "IGH",
   productive = "productive",
   complete_vdj = "complete_vdj",
   sequence_id = "sequence_id",
@@ -88,18 +88,17 @@ if variable [preferred option], cutoffs are automatically calculated based on su
 
 \item{output}{whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. If set to FALSE, only the corrected database is returned.}
 
+\item{verbose}{whether to write to the console}
+
 \item{output_folder}{name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].}
 
 \item{cell_id}{name of the column containing cell identifier.}
 
 \item{locus}{name of column containing locus values.}
 
-\item{heavy}{value of heavy chains in locus column. All other values will be
-treated as light chains.}
-
 \item{productive}{name of the column containing the info whether a given sequence is productive.}
 
-\item{complete_vdj}{}
+\item{complete_vdj}{name of the column containing complete_vdj assignments.}
 
 \item{sequence_id}{name of the column containing sequence identifier.}
 
@@ -126,6 +125,9 @@ entries in this column should be identical to the gene level.}
 entries in this column should be identical to the gene level.}
 
 \item{imgt_c_dir}{path to Blast-able imgt C gene database [default = path suggested in Create_IMGT_human_IG_C_Blastdb.R script]}
+
+\item{heavy}{value of heavy chains in locus column. All other values will be
+treated as light chains.}
 }
 \value{
 an AIRR formatted dataframe containing the dominant heavy chain selected for all cells, with the columns: is.VDJ_doublets, is.VDJ_doublet.confidence
@@ -140,5 +142,4 @@ Also outputs one graph and one recap excel workbook with filtered dataframe (she
 1. will first import VDJ datasets listed in vdj_dir input dataframe and filter on cells in provided seurat V5 object;
 2. will run igblast on filtered datasets if requested;
 3. will run resolveMultiHC() to resolve HC multiplets
-dependencies: Biostrings; igblast; AssignGene.py; MakeDb.py; dplyr; parallel, ggplot2 and openxlsx
 }

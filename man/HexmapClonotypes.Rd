@@ -33,7 +33,9 @@ HexmapClonotypes(
 
 \item{shape}{shape to use [default: hex]}
 
-\item{seed}{}
+\item{seed}{random seed for plotting}
+
+\item{return_coords}{whether to return the plots coordinates [default: FALSE]}
 
 \item{db}{an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.}
 
@@ -58,6 +60,16 @@ HexmapClonotypes(
 \item{productive}{name of column containing productive calls.}
 
 \item{productive_only}{whether to exclude non productive sequences [default: TRUE]}
+
+\item{save_plot}{whether to save the plots [default: TRUE]}
+
+\item{save_as}{format to save the plot ("pdf", or "png") [default: pdf]}
+
+\item{height}{height of saved plot}
+
+\item{width}{width of saved plot}
+
+\item{return_plot}{whether to return the plots [default: FALSE]}
 }
 \value{
 a hexmap plot

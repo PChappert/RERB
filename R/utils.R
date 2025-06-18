@@ -1,3 +1,42 @@
+#' safely switch to lapply from mclapply if parallel is not found.
+#'
+#' \code{safe_mclapply}
+#'
+#' @keywords internal
+#' 
+
+safe_mclapply <- function(X, FUN, ..., mc.cores = 1) {
+  if (requireNamespace("parallel", quietly = TRUE)) {
+    return(parallel::mclapply(X, FUN, ..., mc.cores = mc.cores))
+  } else {
+    message("Package 'parallel' not found. Falling back to lapply().")
+    return(lapply(X, FUN, ...))
+  }
+}
+
+#' safely abort kaleido call if missing
+#'
+#' \code{safe_kaleido}
+#'
+#' @keywords internal
+#' 
+
+safe_kaleido <- function(scope = "auto") {
+  if (!requireNamespace("plotly", quietly = TRUE)) {
+    message("Optional: 'plotly' package not available — skipping export.")
+    return(invisible(NULL))
+  }
+  
+  result <- tryCatch(
+    plotly::kaleido(scope = scope),
+    error = function(e) {
+      message("plotly::kaleido() failed: ", e$message)
+      return(invisible(NULL))
+    }
+  )
+  
+  return(result)
+}
 
 #### Function to capture safely all outputs from a function and send it to a log file ####
 #' safely combine sink() and on.exit() so that even if function (expr) fails, the sink is properly closed.

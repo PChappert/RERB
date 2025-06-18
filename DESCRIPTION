@@ -8,7 +8,7 @@ Authors@R: c(
       "Pascal", "Chappert",
       email = "pascal.chappert@inserm.fr",
       role = c("aut", "cre")
-    )
+    ),
     person(
       "Anaïs", "Roeser", 
       email = "anaïs.roeser@inserm.fr",
@@ -35,38 +35,48 @@ BuildVignettes: true
 VignetteBuilder: knitr
 Encoding: UTF-8
 Depends:
-    R (>= 4.0),
-    ggplot2 (>= 3.4.0)
+    R (>= 4.0)
 biocViews:
 Imports:
     airr,
     alakazam (>= 1.1.0),
-    ape (>= 5.6),
     Biostrings,
-    circlize (>= 0.4.16),
+    dowser (>= 2.3),
     dplyr (>= 1.0),
+    fs,
+    purrr,
+    readr,
+    rlang,
+    sangeranalyseR,
+    scoper,
+    shazam (>= 1.1.1),
+    stringr,
+    tibble,
+    tidyr
+Suggests:
+    ggplot2 (>= 3.4.0),
     ggtree,
     ggforce,
+    ggrepel,
+    ggseqlogo,
+    patchwork,
     scales,
-    graphics,
-    gridExtra,
-    markdown,
-    methods,
-    packcircles,
+    ComplexHeatmap,
+    circlize (>= 0.4.16),
+    ape,
+    openxlsx,
+    parallel,
     phangorn (>= 2.7.1),
     phylotate,
     RColorBrewer,
-    rlang,
-    shazam (>= 1.1.1),
-    stats,
-    stringr,
+    packcircles,
+    gridExtra,
+    graphics,
+    markdown,
     tidyselect,
-    tidyr,
-    tibble,
-    utils
-Suggests:
     knitr,
     rmarkdown,
+    sangerseqR,
     testthat,
     pwalign
 RoxygenNote: 7.3.2
