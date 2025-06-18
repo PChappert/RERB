@@ -3382,9 +3382,10 @@ scImportVDJ <- function(vdj_files,
   n = 1 + sum(clean_HC, (igblast %in% c("filtered heavy", "all")), (update_c_call %in% c("filtered heavy", "all")))
   step = 1
 
-  message("-------------------------------")
-  message(paste0("Part ", step," of ",n ,": importing unfiltered VDJ outputs"))
-
+  message("------------")
+  message("Part ", step," of ",n ,": importing unfiltered VDJ outputs")
+  message("------------")
+  
   safe_pblapply <- function(X, FUN, ..., mc.cores = 1) {
     if (requireNamespace("pbapply", quietly = TRUE)) {
       return(pbapply::pblapply(X, FUN, ...))
@@ -3401,7 +3402,7 @@ scImportVDJ <- function(vdj_files,
       file <-  do.call(paste0, vdj_files[match(sample,vdj_files[[sample_id]]),c("directory","filename_vdj")])
       }
 
-    message(paste0("reading file for: ", sample))
+    message("reading file for: ", sample)
 
     #using readr::read_tsv/csv as it is super fast and works directly on compressed files (tsv.gz)
     if(tech == "BD"){
@@ -3483,12 +3484,17 @@ scImportVDJ <- function(vdj_files,
 
   ##Part2 [option 1]: run igblast on all sequences: can take around 15min for 300k+ sequences
   if(igblast == "all"){# not the preferred option as you will use computer power and time on sequences you will discard later but can help getting rid of contigs that won't pass igblast anyway...
-    message("-------------------------------")
     step <- step + 1
-    message(paste0("Part ", step," of ",n ,": running IgBlast on all contigs (can take more than 15min for 300k+ sequences... be patient!)"))
-
     submitted_seqs <- nrow(VDJ_db)
     submitted_cells <- length(unique(VDJ_db$cell_id))
+    expected_time <- ifelse(submitted_seqs < 5000, "less than a minute", 
+                            ifelse(submitted_seqs < 200000, "a few minutes", "more than 10 minutes"))
+    
+    message("------------")
+    #message("Part ", step," of ",n ,": running IgBlast on all contigs (can take more than 15min for 300k+ sequences... be patient!)")
+    message("Part ", step," of ",n ,": running IgBlast on all contigs (",submitted_seqs," contigs, should take ", expected_time, ")")
+    message("------------")
+    
     time_and_log({
       igblast_results <- runAssignGenes(VDJ_db,
                                         organism = organism,
@@ -3530,9 +3536,10 @@ scImportVDJ <- function(vdj_files,
 
   ## Part2 [option 2]: split VDJ_db based on sample_id provided and perform HC filtering if needed [skip if using filtered VDJ data from either technologies]:
   if(clean_HC){
-    message("-------------------------------")
     step <- step + 1
-    message(paste0("Part ", step," of ", n,": splitting by ",split.by ," and performing heavy chain QC"))
+    message("------------")
+    message("Part ", step," of ", n,": splitting by ",split.by ," and performing heavy chain QC")
+    message("------------")
     
     VDJ_db <- resolveMultiContigs(VDJ_db, split.by = split.by, chain = heavy,
                                  assay = "assay", resolve_multi_CDR3 = TRUE, use_clone = FALSE,
@@ -3550,15 +3557,19 @@ scImportVDJ <- function(vdj_files,
 
   ## Part3: run IgBlast on filtered heavy chain only
   if(igblast == "filtered heavy"){# default option as much faster
-    message("-------------------------------")
     step <- step + 1
-    message(paste0("Part ", step, " of ", n,": running IgBlast on filtered heavy chain contigs"))
-
     h_db <- dplyr::filter(VDJ_db, (!!rlang::sym(locus) == heavy))
     l_db <- dplyr::filter(VDJ_db, (!!rlang::sym(locus) != heavy))
     
     submitted_seqs <- nrow(h_db)
     submitted_cells <- length(unique(h_db$cell_id))
+    expected_time <- ifelse(submitted_seqs < 5000, "less than a minute", 
+                            ifelse(submitted_seqs < 200000, "a few minutes", "more than 10 minutes"))
+                            
+    message("------------")
+    message("Part ", step," of ",n ,": running IgBlast on filtered HC contigs (",submitted_seqs," contigs, should take ", expected_time, ")")
+    message("------------")
+    
     time_and_log({
       igblast_results <- runAssignGenes(h_db,
                                         organism = organism,
@@ -3600,12 +3611,11 @@ scImportVDJ <- function(vdj_files,
 
   ## Part4: update c_calls for heavy chains:
   if(update_c_call == "filtered heavy"){
-    message("-------------------------------")
     step <- step + 1
-    message(paste0("Part ", step," of ",n ,": updating c_call for filtered heavy chain contigs (you are almost there!!)"))
-
-    VDJ_db <- dplyr::rename(VDJ_db, c_call_igblast = c_call) # igblast naturally create a "c_call" column. Keeping it as c_call_igblast and creating later a new one with the results from blastn and the name we passed in the argument for c_call.
-
+    message("------------")
+    message("Part ", step," of ",n ,": updating c_call for filtered heavy chain contigs")
+    message("------------")
+    
     h_db <- dplyr::filter(VDJ_db, (!!rlang::sym(locus) == heavy))
     l_db <- dplyr::filter(VDJ_db, (!!rlang::sym(locus) != heavy))
 
@@ -3625,12 +3635,11 @@ scImportVDJ <- function(vdj_files,
     readr::write_tsv(VDJ_db, file = paste0(filename, ".tsv.gz"))
   }
   if(update_c_call == "all"){# not the preferred option as you will use computer power and time on sequences you will discard later...
-    message("-------------------------------")
     step <- step + 1
-    message(paste0("Part ", step," of ", n,": updating c_call for all contigs (could take a while...)"))
-
-    VDJ_db <- dplyr::rename(VDJ_db, c_call_igblast = c_call) # igblast naturally create a "c_call" column. Keeping it as c_call_igblast and creating later a new one with the results from blastn and the name we passed in the argument for c_call.
-
+    message("------------")
+    message("Part ", step," of ", n,": updating c_call for all contigs")
+    message("------------")
+    
     time_and_log({
       VDJ_db <- runBlastnC(VDJ_db,
                            igblast_dir = igblast_dir,
@@ -3646,21 +3655,21 @@ scImportVDJ <- function(vdj_files,
     readr::write_tsv(VDJ_db, file = paste0(filename, ".tsv.gz"))
   }
 
-  message("-------------------------------")
-  if(verbose){cat(paste0("submitted: ", total_submitted_heavy, " IGH contigs and ", total_submitted_light, " IGL/IGK contigs (", total_submitted_cells,  " unique cells).\n"))}
+  message("------------")
+  if(verbose){cat("submitted: ", total_submitted_heavy, " IGH contigs and ", total_submitted_light, " IGL/IGK contigs (",total_submitted_cells," unique cells).\n")}
   if(verbose && igblast == "filtered heavy"){
-    cat(paste0(nb_failed_sequences, " IGH contigs failed igblast.\n"))
+    cat(nb_failed_sequences, " IGH contigs failed igblast.\n")
   }
   if(verbose && igblast == "all"){
-    cat(paste0(nb_failed_sequences, " contigs from ", nb_failed_cells,  " cells failed igblast.\n"))
+    cat(nb_failed_sequences, " contigs from ",nb_failed_cells," cells failed igblast.\n")
   }
   n_final_heavy <- nrow(dplyr::filter(VDJ_db, (!!rlang::sym(locus) == heavy)))
   n_final_light <- nrow(dplyr::filter(VDJ_db, (!!rlang::sym(locus) != heavy)))
   n_final_cells <- length(unique(VDJ_db$cell_id))
-  if(verbose){cat(paste0("final table: ", n_final_heavy, " IGH contigs and ", n_final_light, " IGL/IGK contigs (", n_final_cells,  " unique cells).\n"))}
+  if(verbose){cat("final table: ", n_final_heavy, " IGH contigs and ", n_final_light, " IGL/IGK contigs (",n_final_cells," unique cells).\n")}
 
   end <- Sys.time()
-  if(verbose){ccat(paste0(sprintf("Total running time: %.2f %s", end-start, units(difftime(end, start))),"\n"))}
+  if(verbose){cat(sprintf("Total running time: %.2f %s", end-start, units(difftime(end, start))),"\n")}
 
   return(VDJ_db)
 }
@@ -4064,7 +4073,7 @@ scFindClones <- function(db,
       if(verbose){cat(LC_only_log)}
       time_and_log({
         cat(LC_only_log) 
-      }, verbose = verbose, log_file = log_file, log_title = "Checking cells missing HC", open_mode = "a")
+      }, verbose = verbose, time = FALSE, log_file = log_file, log_title = "Checking cells missing HC", open_mode = "a")
     }
   }
   

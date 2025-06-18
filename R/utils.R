@@ -113,11 +113,11 @@ time_and_log <- function(expr,
     }
   )
   
-  elapsed <- difftime(Sys.time(), start, units = "secs")
+  elapsed <- difftime(Sys.time(), start, units = "mins")
   
   if (!is.null(log_file)) {
     if(time){
-      cat(sprintf("[%s] Elapsed: %.2f seconds\n", 
+      cat(sprintf("[%s] Elapsed: %.2f mins\n", 
                   format(Sys.time(), "%Y-%m-%d %H:%M:%S"),
                   as.numeric(elapsed)))
     }
