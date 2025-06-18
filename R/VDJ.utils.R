@@ -587,7 +587,7 @@ runAb1QC <- function(Ab1_folder,
       #reticulate::use_miniconda('r-reticulate')
       scope <- safe_kaleido()
       
-      if (!is.null(scope_result) && is.function(scope$transform)) {
+      if (!is.null(scope) && is.function(scope$transform)) {
         for (j in seq_along(seqs2)) {
           #message("outputting QC graphs for ", well_ids[j])
           QC_file <- paste0(QC_folder, "/", gsub(paste0(Ab1_folder, "/"), "", gsub(".ab1", "", filenames[j])))
@@ -710,19 +710,24 @@ runAb1QC <- function(Ab1_folder,
   seq_df$primers <- primers
   seq_df$QC_passed <- seq_df$sequence_length>trim_cutoff[[primers]] & seq_df$pct_under_30QC_in_trimmed<20
   options(warn=-1)
-  p <- ggplot(seq_df, aes(x=sequence_length, y=pct_under_30QC_in_trimmed, color=QC_passed, label = well_id)) +
-    geom_point(size=3) +
-    geom_hline(yintercept=20) +
-    geom_vline(xintercept=trim_cutoff[[primers]]) +
-    geom_text_repel(
-      # Repel away from the left edge, not from the right.
-      xlim = c(NA, Inf),
-      # Do not repel from top or bottom edges.
-      ylim = c(-Inf, Inf)
-    ) +
-    ggtitle(paste0("QC plot: ", outfolder)) +
-    theme_classic()
-  ggsave(p, filename=paste0(outfolder, "/QCplot_", outfilename, ".pdf"))
+  if (requireNamespace("ggplot2", quietly = TRUE)) {
+    p <- ggplot(seq_df, aes(x=sequence_length, y=pct_under_30QC_in_trimmed, color=QC_passed, label = well_id)) +
+      geom_point(size=3) +
+      geom_hline(yintercept=20) +
+      geom_vline(xintercept=trim_cutoff[[primers]]) +
+      ggtitle(paste0("QC plot: ", outfolder)) +
+      theme_classic()
+    if (requireNamespace("ggrepel", quietly = TRUE)) {
+      p <- p + 
+        ggrepel::geom_text_repel(
+          # Repel away from the left edge, not from the right.
+          xlim = c(NA, Inf),
+          # Do not repel from top or bottom edges.
+          ylim = c(-Inf, Inf)
+        )
+    } else {message("Optional: 'ggrepel' not installed — skipping text part on QC plot")}
+    ggsave(p, filename=paste0(outfolder, "/QCplot_", outfilename, ".pdf"))
+  } else {message("Optional: 'ggplot2' not installed — skipping QC plot")}
   options(warn=0)
 
   filtered_seq_df <- seq_df[seq_df$QC_passed,]
