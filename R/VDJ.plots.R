@@ -98,7 +98,7 @@ DonutPlotClonotypes3D <- function(db,
     split.by <- split.by[-length(split.by)]
     
     if(any(is.na(db[[origin]]))){
-      warning("missing values for ", origin, " for some samples, will be set to 'unknown'")
+      warning("missing values for '", origin, "' for some samples, will be set to 'unknown'")
       db <- db %>%
         dplyr::mutate(
           !!rlang::sym(origin) := ifelse(is.na(!!rlang::sym(origin)), "unknown", !!rlang::sym(origin))
@@ -904,13 +904,15 @@ HexmapClonotypes <- function(data,
 #'
 #' \code{plotCDR3logo} Plots individual hexmap plots and save as pdf
 #' @param db            an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
-#' @param split.by      name of column to use to group sequence when calculating clone size and frequencies.
-#' @param CDR3_folder   whether to order clones based on size and highlighing parameter
-#' @param min_size      name of the column use to color each clone [default: "c_call].
-#' @param clone_id      name of the column containing cell identifier.
+#' @param split.by      name of column to use to group sequences.
+#' @param locus         name of the column containing locus identifier.
+#' @param chain         name of the chain to plot. [default: IGH]
+#' @param plots_folder  path to folder for saving plots
+#' @param min_size      minimun size of clones to plot
+#' @param clone_id      name of the column containing clones identifier.
 #' @param junction_type nt or aa
-#' @param save_plot     whether ta save the plot as a pdf
-#' @param return_plot   whether ta return the ggplot object
+#' @param save_plot     whether to save the plot as a pdf
+#' @param return_plot   whether to return the ggplot object
 #' @param ...       additional arguments to pass to ggseqlogo
 #'
 #' @return a ggseqlogo plot
@@ -920,16 +922,16 @@ HexmapClonotypes <- function(data,
 #' @export
 
 plotCDR3logo <- function(db,
-                         CDR3_folder = "VDJ_Clones/CDR3_logo",
                          split.by = NULL,
+                         locus = "locus",
+                         use_chain = "IGH",
+                         plots_folder = "VDJ_Clones/CDR3_logo",
                          min_size = 1,
                          clone_id = "clone_id",
                          junction_type = "aa",
                          save_plot = TRUE,
                          return_plot = FALSE,
                          ...) {
-  
-  save_as <- match.arg(save.as)
   
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("Optional: 'ggplot2' not installed — skipping plot.")
@@ -941,34 +943,25 @@ plotCDR3logo <- function(db,
     message("Optional: 'ggseqlogo' not installed — skipping plot.")
     return(invisible(NULL))
   }
-  
-  if(isFALSE(dir.exists(CDR3_folder))){
-    dir.create(CDR3_folder)
+  junction <- paste0("junction_", junction_type)
+  if(!junction %in% colnames(db)){
+    stop("missing '",junction,"' column in provided dataframe")
   }
   
-  plot_cdr3 <- function(junctions, junction_type, name){
-    l = length(junctions[1])
+  plot_cdr3 <- function(data){
+    junctions <- data[[junction]]
+    l = nchar(junctions[1])
     g = ggseqlogo::ggseqlogo(junctions, seq_type = junction_type, method = "prob", ...)
-    if(save_plot){
-      ggsave(g, filename = paste0(CDR3_folder, "/", name,"_CDR3_logo.pdf"), width=(2/8+l[1]/8), height=2)
-    }
-    return(g)
-  }
-  
-  name_plot <- function(db, split_args){
-    name <- db[[split_args[1]]][1]
-    if(length(split.by) > 2){
-      for (split_arg in 2:length(split_args)){
-        name <- paste0(name, "_", db[[split_arg]][1])
-      }
-    }
-    return(name)
+    p <- list(g, l)
+    names(p) <- c("cdr3_logo", "cdr3_length")
+    return(p)
   }
   
   # make sure clone_id is always at the end
   split.by <- c(split.by[split.by != clone_id], clone_id)
   
   groups <- db %>% 
+    dplyr::filter(locus == use_chain) %>%
     dplyr::group_by(!!!rlang::syms(split.by)) %>% 
     dplyr::mutate(
       group_size = n()
@@ -976,19 +969,27 @@ plotCDR3logo <- function(db,
     dplyr::filter(group_size>=min_size) %>%
     dplyr::group_nest()
   
-  plots <- purrr::map(
-    groups$data[[paste0("junction_", junction_type)]], 
-    plot_cdr3, 
-    junction_type = junction_type, 
-    name = name_plot(groups$data)
-      )
+  plots <- purrr::map(groups$data, plot_cdr3)
   
+  group_names <- groups %>% 
+    dplyr::select(-data) %>%
+    dplyr::mutate(id = purrr::pmap_chr(., ~ paste(..., sep = "_"))) %>% 
+    dplyr::pull(id)
+  
+  names(plots) <- group_names
+  
+  if(save_plot){
+    if(isFALSE(dir.exists(plots_folder))){
+      dir.create(plots_folder)
+    }
+    for(i in seq_along(plots)){
+      g <- plots[[i]][[1]]
+      l <- plots[[i]][[2]]
+      name <- names(plots)[i]
+      ggsave(g, filename = paste0(plots_folder, "/", name,"_CDR3_logo.pdf"), width=((2+l)/4), height=2)
+    }
+  }
   if(return_plot){
-    group_names <- groups %>% 
-      mutate(id = purrr::pmap_chr(., ~ paste(..., sep = "_"))) %>% 
-      pull(id)
-    
-    names(plots) <- group_names
     return(plots)
   }
 }
