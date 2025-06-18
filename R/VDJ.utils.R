@@ -3834,12 +3834,14 @@ scFindClones <- function(db,
   seq_type <- match.arg(seq_type)
   if(seq_type == "Ig"){
     heavy <- "IGH"
-    chains <- c("IGH", "IGK", "IGL")
+    light <- c("IGK","IGL")
+    chains <- c(heavy, light)
     fct_type <- "BCR"
   }
   if(seq_type == "TCR"){
     heavy <- c("TRB","TRD")
-    chains <- c("TRA", "TRB", "TRG", "TRD")
+    light <- c("TRA","TRG")
+    chains <- c(heavy, light)
     fct_type <- "TCR"
   }
   #! any change made here must be also implemented at the resolveLight() step
@@ -4793,7 +4795,7 @@ scFindClones <- function(db,
   end <- Sys.time()
   if(verbose){cat(paste0("Total running time: ", sprintf("%.2f %s", end-start, units(difftime(end, start))), ".\n"))}
 
-  if(nrow(other_chains_db > 0)){
+  if(nrow(other_chains_db) > 0){
     cloned_VDJ_db <- cloned_VDJ_db %>%
       dplyr::bind_rows(other_chains_db)
   }
