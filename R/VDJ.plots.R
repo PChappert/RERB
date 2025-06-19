@@ -140,7 +140,7 @@ DonutPlotClonotypes3D <- function(db,
 #' @param groups_to_plot which groups to plot
 #' @param col.line  color for lines in donut plot
 #' @param plots_folder name for export folder [default: "Donut_plots"]
-#' @param highlight whether to highlight shared clones or clones based on clone_size or clone_rank. Also possible to pre-classify cells prior and set that column in highlight + a color scheme in highlight_col
+#' @param highlight whether to highlight shared clones or clones based on clone_size or clone_rank.
 #' @param highlight_col color scheme to use for highlighed clones
 #' @param external_bar whether to add an external bar for "expanded" or "top5" clones.
 #' @param productive  name of column containing productive calls.
@@ -166,16 +166,14 @@ DonutPlotClonotypes <- function(db,
                                 plots_folder = "Donut_plots",
                                 antigen,
                                 highlight = c("shared", "clone_size", "clone_rank"),
-                                #also possible to pre-classify cells prior
-                                highlight_col = list("shared" = c("Paired", "random"),
-                                                     "clone_size" = c("Set1"),
-                                                     "clone_rank" = c("Set1")),
+                                highlight_col = NULL, 
                                 external_bar = c("expanded", "top5", "none"),
                                 productive = "productive",
                                 productive_only = TRUE,
                                 height = 3,
                                 width = 3){
 
+  
   if (!requireNamespace("circlize", quietly = TRUE)) {
     message("Optional: 'circlize' not installed — skipping plot.")
     return(invisible(NULL))
@@ -219,8 +217,20 @@ DonutPlotClonotypes <- function(db,
   }
 
   highlight <- match.arg(highlight) 
-  if(!highlight %in% c("shared", "clone_size", "clone_rank") & !highlight %in% colnames(db)){
-    stop("highlight column not properly defined")
+  if(!highlight %in% c("shared", "clone_size", "clone_rank")){
+    stop("highlight not properly defined :should be one of 'shared', 'clone_size', 'clone_rank' or a column in the dataframe with an associated named color vector in highlight_col")
+  }
+  #default color scheme:
+  if(is.null(highlight_col)){
+    pallettes <- list("shared" = RColorBrewer::brewer.pal(n = 9, name = "Paired"),
+                      "clone_size" = grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 5, name = "Set1"))(10),
+                      "clone_rank" = grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 5, name = "Set1"))(25))
+    if(highlight %in% c("shared", "clone_size", "clone_rank")){
+      highlight_col <- pallettes[[highlight]]
+    } else {
+      warning("no provided color palette: defaulting to 'Set1'")
+      highlight_col <- RColorBrewer::brewer.pal(n = 9, name = "Paired")
+    }
   }
   external_bar <- match.arg(external_bar) 
   if(!external_bar %in% c("expanded", "top5", "none")){
@@ -254,26 +264,18 @@ DonutPlotClonotypes <- function(db,
       overall_clone_size = rowSums(dplyr::select(., where(is.numeric))),
       clone_id = rownames(.)
     ) %>%
-    dplyr::arrange(desc(overall_clone_size))
-
-  h_col <- highlight_col[[highlight]][1]
+    dplyr::arrange(desc(overall_clone_size)) 
 
   ##Define color for plotting shared clones:
   if(highlight == "shared"){
     #each shared clone gets its own color
-    Shared_clones <- Clones_by_groups_to_plot[Clones_by_groups_to_plot$shared, clone_id]
-    if(h_col %in% rownames(brewer.pal.info)){
-      col_shared <- colorRampPalette(brewer.pal(n = brewer.pal.info[match(h_col, rownames(brewer.pal.info)), "maxcolors"], name = h_col))(length(Shared_clones))
-    } else {
-      if (!requireNamespace("randomcoloR", quietly = TRUE)) {
-        message("To use random color, you need to install: 'randomcoloR' — defaulting to 'Paired' palette")
-        h_col <- "Paired"
-        col_shared <- colorRampPalette(brewer.pal(n = brewer.pal.info[match(h_col, rownames(brewer.pal.info)), "maxcolors"], name = h_col))(length(Shared_clones))
-      } else {
-        col_shared <- randomcoloR::randomColor(length(Shared_clones))
-      }
-    }
-    names(col_shared) <- Shared_clones
+    shared_clones <- Clones_by_groups_to_plot[Clones_by_groups_to_plot$shared, clone_id]
+    if(length(shared_clones) > length(highlight_col)){
+      col_shared <- grDevices::colorRampPalette(highlight_col)(length(shared_clones))
+    } else {col_shared <- highlight_col[1:(length(shared_clones))]}
+    #optional: used random color
+    #if (!requireNamespace("randomcoloR", quietly = TRUE)) {col_shared <- randomcoloR::randomColor(length(Shared_clones))}
+    names(col_shared) <- shared_clones
   }
 
   ##create list of dataframes for plotting of circosplots for each time points:
@@ -289,62 +291,61 @@ DonutPlotClonotypes <- function(db,
         clone_rank = row_number()
       ) 
     
-    n_unique_seq <- nrow(dplyr::filter(data, !expanded & !shared))
-    
-    if(n_unique_seq>0){
-      data <- data %>%
-        dplyr::filter(expanded | shared) %>%
-        dplyr::bind_rows(tibble(clone_id = "unique", 
-                                clone_size_in_group = n_unique_seq,
-                                expanded = FALSE,
-                                shared = FALSE)) 
-    }
-    
     if(highlight == "shared"){
+      n_unique_seq <- nrow(dplyr::filter(data, !expanded & !shared))
+      if(n_unique_seq > 0){
+        data <- data %>%
+          dplyr::filter(expanded | shared) %>%
+          dplyr::bind_rows(tibble(clone_id = "unique", 
+                                  clone_size_in_group = n_unique_seq,
+                                  expanded = FALSE,
+                                  shared = FALSE)) 
+      }
       data <- data %>%
         dplyr::mutate(
           color = ifelse(shared == TRUE, col_shared[clone_id],
                          ifelse(expanded == TRUE, "grey", "white"))
         )
     }
-    if(highlight == c("clone_rank")){
-      #'each expanded clone gets its own color
-      Expanded_clones <- data[data$expanded, clone_id]
-      if(length(Expanded_clones)>0){
-        if(h_col %in% rownames(brewer.pal.info)){
-          col_expanded <- colorRampPalette(brewer.pal(n = brewer.pal.info[match(h_col, rownames(brewer.pal.info)), "maxcolors"], name = h_col))(length(Expanded_clones))
-        } else {
-          warning("highlight_col should be one of ColorBrewer Palettes, defaulting to Set1")
-          col_expanded <- colorRampPalette(brewer.pal(n = 9, name = "Set1"))(length(Expanded_clones))
-        }
-        names(col_expanded) <- Expanded_clones
+    if(highlight != "shared"){
+      n_unique_seq <- nrow(dplyr::filter(data, !expanded))
+      if(n_unique_seq > 0){
+        data <- data %>%
+          dplyr::filter(expanded) %>%
+          dplyr::bind_rows(tibble(clone_id = "unique", 
+                                  clone_size_in_group = n_unique_seq,
+                                  expanded = FALSE))
+      }
+      if(highlight == "clone_rank"){
+        #'each expanded clone gets its own color
+        expanded_clones <- data[data$expanded, clone_id]
+        if(length(expanded_clones) > length(highlight_col)){
+          extra_basic_color <- RColorBrewer::brewer.pal(n = ceiling(length(expanded_clones)/5), name = "Set1")[-(1:5)]
+          highlight_col <- c(highlight_col, grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = extra_basic_color, name = "Set1"))(length(extra_basic_color)*5))
+          col_expanded <- highlight_col[1:(length(expanded_clones))]
+        } else {col_expanded <- highlight_col[1:(length(expanded_clones))]}
+        names(col_expanded) <- expanded_clones
         data <- data %>%
           dplyr::mutate(
             color = ifelse(expanded == TRUE, col_expanded[clone_id], "white")
           )
-      } else {
-        data$color = "white"
       }
-    }
-    if(highlight == "clone_size"){
-      #'color is defined based on clone size
-      diff_sizes <- data[!duplicated(data$clone_size_in_group) & data$clone_size_in_group>1,]$clone_size_in_group
-      if(length(diff_sizes)>0){
-        if(h_col %in% rownames(brewer.pal.info)){
-          col_expanded <- colorRampPalette(brewer.pal(n = brewer.pal.info[match(h_col, rownames(brewer.pal.info)), "maxcolors"], name = h_col))(length(diff_sizes))
-        } else {
-          warning("highlight_col should be one of ColorBrewer Palettes, defaulting to Set1")
-          col_expanded <- colorRampPalette(brewer.pal(n = 9, name = "Set1"))(diff_sizes)
-        }
-        names(col_expanded) <- diff_sizes
+      if(highlight == "clone_size"){
+        #'color is defined based on clone size
+        diff_sizes <- unique(data[data$expanded,]$clone_size_in_group)
+        diff_sizes <- rev(diff_sizes[order(diff_sizes)])
+        if(length(diff_sizes) > length(highlight_col)){
+          extra_basic_color <- RColorBrewer::brewer.pal(n = ceiling(length(diff_sizes)/5), name = "Set1")[-(1:5)]
+          highlight_col <- c(highlight_col, grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = extra_basic_color, name = "Set1"))(length(extra_basic_color)*5))
+          col_expanded <- highlight_col[1:(length(diff_sizes))]
+        } else {col_expanded <- highlight_col[1:(length(diff_sizes))]}
+        names(col_expanded) <- as.character(diff_sizes)
         data <- data %>%
           dplyr::mutate(
-            color = ifelse(expanded == TRUE, col_expanded[clone_size_in_group], "white")
+            color = ifelse(expanded == TRUE, col_expanded[as.character(clone_size_in_group)], "white")
           )
-      } else {
-        data$color ="white"
       }
-    }  
+    }
     return(data)
   })
   names(Clones_by_groups_to_plot.list) <- unlist(origins)
