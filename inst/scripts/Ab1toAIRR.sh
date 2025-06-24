@@ -56,7 +56,7 @@ save="${save:-png}"
 tmp_r_file=$(mktemp /tmp/ab1toairr.XXXXXX.R)
 
 cat <<EOF 2>/dev/null > "$tmp_r_file"
-source("~/share/RERB/VDJ.utils_v0.9.6.R")
+devtools::load_all("~/R_packages/RERB")
 files <- $r_file_list
 Ab1toAIRR(files = files, primers = "$primers", save = "$save")
 EOF

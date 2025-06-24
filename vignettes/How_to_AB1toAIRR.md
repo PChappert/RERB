@@ -116,7 +116,7 @@ Finally, **rows for sequences with partial length issues are highlighted in ligh
 
 1.  Install RERB first, including standalone versions of **blast** and **igblast**, **Immcantation ChangeO**, **Alakazam**, **Shazam** and **Dowser** packages (<https://changeo.readthedocs.io/en/stable/examples/igblast.html>) and blastable IMGT database.
 
-2.  To use the bash script: copy the **Ab1toAIRR.sh** script to the /usr/local/bin folder (or any other folder in your \$PATH, just change the first line of the following script accordingly) and to make bash script executable, run in Terminal:
+2.  To use the bash script: modify line 59 of the **Ab1toAIRR.sh** script to adapt it to the path to your RERB folder (default: devtools::load_all("\~/R_packages/RERB")). Then copy the script to the /usr/local/bin folder (or any other folder in your \$PATH, just change the first line of the following script accordingly) and to make bash script executable, run in Terminal:
 
 ``` bash
 cd /usr/local/bin
