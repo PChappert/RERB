@@ -1645,275 +1645,33 @@ resolveLightChains2 <- function(data, nproc=1, minseq=1,locus="locus",heavy="IGH
   return(paired)
 }
 
-#### Plotting function for QC graph (flagVDJdoublets and flagNonBdoublets) ####
-#' plot QC graph
-#'
-#' \code{vdjQCplot} plot QC graph
-#'
-#' @param db            a data table
-#' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
-#' @param plot_cutoff   whether to plot cut_off on graph
-#' @param analysis_name suffix for final plot(s) name
-#' @param na_name       name to use for NA values in colour.by
-#' @param colour.by     parameter to use for coloring of dots
-#' @param colour_code   colors to use for coloring of dots
-#' @param use_chain     which chain(s) to use
-#' @param split.by      name of the column to use to group cells and learn dataset-specific distributions
-#' @param type          whether to plot graphs related to B/B doublets or B/non-B doublets
-#' @param variable_cutoff   whether to use dataset-specific cut-offs
-#' @param high_cutoff   if fixed cutoffs, value to use to mark high probability heavy chain doublets.
-#' @param low_cutfoff   if fixed cutoffs, value to use to mark low-probability doublets
-#' @param locus         name of the column containing locus informations
-#' @param heavy         locus value to use for heavy chain identification
-#' @param cell_id       name of the column containing cell_ids
-#' @param umi_count     name of the column containing umi_count informations
-#' @param second_umi_count name of the column containing second_umi_count informations
-#' @param export        what to export: graph (return the ggplot2 object) or pdf (save)
-#'
-#' @return   a pdf plot in the output folder if export = "pdf" and/or a ggplot object if export = "graph"
-#'
-#' @keywords internal
-#'
-#' @import dplyr
 
-vdjQCplot <- function(db,
-                      use_chain = "all",
-                      split.by = NULL,
-                      type = c("vdj_doublet", "nonB_vdj_doublet"),
-                      output_folder = NULL,
-                      analysis_name = "All_sequences",
-                      variable_cutoff = TRUE,
-                      low_cutfoff = 10,
-                      high_cutoff = 250,
-                      plot_cutoff = FALSE,
-                      na_name = "unknown",
-                      colour.by = list(vdj_doublet = "is.VDJ_doublet.confidence",
-                                       nonB_vdj_doublet = "is.nonB_VDJ_doublet.confidence"),
-                      colour_code = list(vdj_doublet = c("high"="darkred", "low" ="darkorange", "not a doublet"="darkgreen"),
-                                         nonB_vdj_doublet = c("high"="darkred", "low" ="darkorange", "ambient RNA"="darkgreen", "B cell" = "grey")),
-                      locus = "locus",
-                      heavy = "IGH",
-                      cell_id = "cell_id",
-                      umi_count = "umi_count",
-                      second_umi_count = "second_umi_count",
-                      export = c("graph", "pdf")){
-
-  if (!requireNamespace("ggplot2", quietly = TRUE)) {
-    message("Optional: 'ggplot2' not installed — skipping plot.")
-    return(invisible(NULL))
-  }
-  suppressMessages(library(ggplot2))
-  
-  if (!requireNamespace("patchwork", quietly = TRUE)) {
-    message("Optional: 'patchwork' not installed — skipping plot.")
-    return(invisible(NULL))
-  }
-  
-  if(use_chain == "all"){
-    chains = levels(as.factor(db[[locus]]))
-  } else {chains = heavy}
-
-  if(!is.null(split.by)){
-    groups = levels(as.factor(db[[split.by]]))
-  } else {
-    db <- db %>%
-      dplyr::mutate(
-        split.by = "all_sequences"
-      )
-    split.by = "split.by"
-    groups = "all_sequences"
-  }
-
-  colour.group = colour.by[[type]]
-  col = c(colour_code[[type]], na_name = "blue")
-
-
-  # generate recap plots for each sample:
-  combined.plots <- lapply(groups, FUN=function(group){
-    # check color groups are well defined
-    group_db <- db %>%
-      dplyr::filter(!!rlang::sym(split.by) == group) %>%
-      dplyr::mutate(
-        !!rlang::sym(colour.group) := forcats::fct_na_value_to_level(!!rlang::sym(colour.group), level = na_name),
-      )
-    group_db[[colour.group]] <- factor(group_db[[colour.group]], levels = names(col))
-    group_db <- group_db %>% dplyr::arrange(desc(!!rlang::sym(colour.group)))
-
-    # generate dominant versus second umi plots for each chain
-    if(type == "vdj_doublet"){
-      if(plot_cutoff){
-        if(variable_cutoff) {
-          # learn dataset (split.by) and locus specific cutoffs (adapted to library depth):
-          # 1st quartile of dominant VDJ umi_count (in 75% of doublets the second VDJ should be above this value) and minimum of 10 and 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
-          if(!(all(c("upper_cutoff", "lower_cutoff") %in% colnames(group_db)))){
-            group_db <- group_db %>%
-              dplyr::group_by(!!rlang::sym(locus)) %>%
-              dplyr::mutate(
-                upper_cutoff = quantile(!!rlang::sym(umi_count), 0.25, na.rm = TRUE),
-                lower_cutoff = median(!!rlang::sym(umi_count), na.rm = TRUE)/10
-              ) %>%
-              dplyr::ungroup()
-          }
-        } else { # otherwise, use provided cutoffs
-          group_db <- group_db %>%
-            dplyr::mutate(
-              upper_cutoff = high_cutoff,
-              lower_cutoff = low_cutoff
-            )
-        }
-
-        plots.list <- lapply(chains, FUN=function(chain){
-          plot_data <- group_db %>%
-            dplyr::filter(!!rlang::sym(locus) == chain) %>%
-            dplyr::mutate(
-              !!rlang::sym(second_umi_count) := ifelse(is.na(!!rlang::sym(second_umi_count)), 0.1, !!rlang::sym(second_umi_count))
-            )
-
-          max = max(plot_data[[umi_count]])
-          upper_cutoff = max(plot_data[["upper_cutoff"]])
-          lower_cutoff = max(plot_data[["lower_cutoff"]])
-
-          line1 = data.frame(x = seq(0.1, 3*upper_cutoff))
-          line1$y = line1$x/3
-          line2 = data.frame(x = seq(3*lower_cutoff, max))
-          line2$y = lower_cutoff
-          line3 = data.frame(x = seq(3*upper_cutoff, max))
-          line3$y = upper_cutoff
-
-          p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = !!rlang::sym(umi_count), y = !!rlang::sym(second_umi_count), colour = !!rlang::sym(colour.group))) +
-            ggplot2::geom_point() +
-            ggplot2::geom_abline(intercept = 0, slope = 1, color = "black", linetype = "dashed") +
-            ggplot2::geom_line(data = line1, aes(x = x, y = y), color = "black", linetype = "dashed") +
-            ggplot2::geom_line(data = line2, aes(x = x, y = y), color = "black", linetype = "dashed") +
-            ggplot2::geom_line(data = line3, aes(x = x, y = y), color = "black", linetype = "dashed") +
-            ggplot2::scale_color_manual(values = col) +
-            ggplot2::labs(title = paste0(group, " - ", analysis_name),
-                          x = paste0(chain, " Dominant contig"),
-                          y = paste0(chain, " Secondary contig")) +
-            scale_x_log10() +
-            scale_y_log10()
-          return(p)
-        })
-        names(plots.list) = chains
-      } else {
-        plots.list <- lapply(chains, FUN=function(chain){
-          plot_data <- group_db %>%
-            dplyr::filter(!!rlang::sym(locus) == chain) %>%
-            dplyr::mutate(
-              !!rlang::sym(second_umi_count) := ifelse(is.na(!!rlang::sym(second_umi_count)), 0.1, !!rlang::sym(second_umi_count))
-            )
-          p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = !!rlang::sym(umi_count), y = !!rlang::sym(second_umi_count), colour = !!rlang::sym(colour.group))) +
-            ggplot2::geom_point() +
-            ggplot2::geom_abline(intercept = 0, slope = 1, color = "black", linetype = "dashed") +
-            ggplot2::scale_color_manual(values = col) +
-            ggplot2::labs(title = paste0(group, " - ", analysis_name),
-                          x = paste0(chain, " Dominant contig"),
-                          y = paste0(chain, " Secondary contig")) +
-            scale_x_log10() +
-            scale_y_log10()
-          return(p)
-        })
-        names(plots.list) = chains
-      }
-    }
-
-    # generate IGH versus IGL/K plots
-    plot_db <- group_db %>%
-      dplyr::select(!!rlang::sym(cell_id), !!rlang::sym(locus), !!rlang::sym(umi_count), !!rlang::sym(colour.group)) %>%
-      tidyr::pivot_wider(names_from = !!rlang::sym(locus), values_from = !!rlang::sym(umi_count)) %>%
-      dplyr::mutate(
-        !!rlang::sym(paste0(umi_count, "_IGH")) := coalesce(IGH, 0.1),
-        !!rlang::sym(paste0(umi_count, "_light")) := coalesce(IGL, 0.1) + coalesce(IGK, 0.1)
-      )
-
-    if(type == "vdj_doublet"){
-      second_plot_db <- group_db %>%
-        dplyr::filter(!is.na(!!rlang::sym(second_umi_count))) %>%
-        dplyr::select(!!rlang::sym(cell_id), !!rlang::sym(locus), !!rlang::sym(colour.group), !!rlang::sym(second_umi_count)) %>%
-        tidyr::pivot_wider(names_from = !!rlang::sym(locus), values_from = !!rlang::sym(second_umi_count)) %>%
-        dplyr::mutate(
-          !!rlang::sym(paste0(umi_count, "_IGH")) := coalesce(IGH, 0.1),
-          !!rlang::sym(paste0(umi_count, "_light")) := coalesce(IGL, 0.1) + coalesce(IGK, 0.1)
-        )
-
-      col = c(col, "primary_umi_counts" = "grey")
-      plot_db <- plot_db %>%
-        dplyr::mutate(
-          !!rlang::sym(colour.group) := "primary_umi_counts"
-        ) %>%
-        dplyr::bind_rows(second_plot_db)
-    }
-
-    p2 <- ggplot2::ggplot(plot_db, ggplot2::aes(x = !!rlang::sym(paste0(umi_count, "_IGH")), y = !!rlang::sym(paste0(umi_count, "_light")), colour = !!rlang::sym(colour.group))) +
-      ggplot2::geom_point() +
-      ggplot2::scale_color_manual(values = col) +
-      ggplot2::labs(title = paste0(group, " - ", analysis_name),
-                    x = "IGH - UMI Count",
-                    y = "IGL/K - UMI Count") +
-      scale_x_log10() +
-      scale_y_log10()
-
-    if(type == "vdj_doublet"){
-      plots.list[[length(chains)+1]] <- p2
-      # organize final page
-      combined_plot <- plots.list[[1]] + plots.list[[2]]
-      if(length(chains)>2){
-        for(i in 3:(length(chains)+1)){
-          combined_plot <- combined_plot + plots.list[[i]]
-        }
-        combined_plot <- combined_plot + patchwork::plot_layout(ncol = 2)
-      } else {combined_plot <- combined_plot + patchwork::plot_layout(ncol = 1)}
-    } else {
-      combined_plot <- p2 + patchwork::plot_layout(ncol = 1)
-    }
-    return(combined_plot)
-  })
-  names(combined.plots) <- groups
-
-  if("pdf" %in% export){
-    if(!is.null(output_folder)){
-      if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
-      if(!dir.exists(output_folder)){
-        dir.create(output_folder)
-      }
-    }
-    if(type == "vdj_doublet"){
-      filename <- paste0(output_folder, analysis_name, "_VDJ_doublets_QC_plots.pdf")
-    }
-    if(type == "nonB_vdj_doublet"){
-      filename <- paste0(output_folder, analysis_name, "_nonB_VDJ_doublets_QC_plots.pdf")
-    }
-
-    pdf(filename, width = 11.69, height = 8.27)
-    for(group in groups){
-      print(combined.plots[[group]])
-    }
-    dev.off()
-  }
-  if("graph" %in% export){
-    return(combined.plots)
-  }
-}
-
-#### Function to flag B cell doublets in single cell data ####
+#### Function to flag B or T cell doublets in single cell data ####
 #' check for cases where two IGH or two IGH and two light chains are found in a cell and could represent a B cell doublet.
 #'
-#' \code{flagBdoublets} flag potential B cell doublets.
+#' \code{homotypicVDJdoublets} flag potential B cell doublets.
 #'
 #' @param db            a AIRR formatted dataframe containing heavy and light chain sequences, cell_ids and umi_counts.
-#' @param analysis_name name to use for outputs prefixes.
-#' @param use_chain     which chain to use to flag VDJ doublets, can de set to "IGH" or "all" [default = "all"].
 #' @param split.by      name of the column in the dataframe to use to split the dataset prior to calculating variable cut-offs
+#' @param analysis_name name to use for outputs prefixes.
+#' @param use_chains     which chain to use to flag VDJ doublets, can de set to "IGH" or "all" [default = "all"].
+#' @param locus         name of column containing locus values.
+#' @param seq_type      
+#' @param heavy         heavy chains to be used. if set to NULL, will default to IGH for Ig and TRB/TRD for TCR.
+#' @param light         light chains to be used. if set to NULL, will default to IGL/IGK for Ig and TRA/TRG for TCR.
+#' @param assay         name of column containing assay values.
+#' @param scRNAseq.tech vector with names of scRNA-seq technologies used in the assay column, i.e. those from which we have data so far.
 #' @param variable_cutoff whether to use variable cutoffs [default = TRUE, cutoffs are automatically calculated based on summary counts in the database to account for potential sequencing bias (1st quartile and max of 10 or 1/10 of median).].
 #' @param low_cutoff    cut_off for low probability heavy chain doublets (only used if variable_cutoff = FALSE).
 #' @param high_cutoff   cut_off for high probability heavy chain doublets (only used if variable_cutoff = FALSE).
 #' @param output        whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. Can be set to none, partial (only pdf + log file with QC parameters) or total (pdf + log file with QC parameters + tsv file with sequences).
 #' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
 #' @param cell_id       name of the column containing cell identifier.
-#' @param locus         name of column containing locus values.
 #' @param umi_count     name of the column containing the number of unique molecules (UMI) for this contig. Previously called "duplicate_count" in an earlier AIRR standard
+#' @param save_plot     format to save the final ggplot2 object. "pdf" or "png". if set to any other value, no plot will be saved.
+#' @param verbose       whether to print recap informations to the console
 #'
-#' @return   the original data frame with for the following additional columns: "is.VDJ_doublet" and "is.IGH_doublet.confidence" (use_chain = "IGH") or "is.IGH_doublet.confidence", "is.IGK_doublet.confidence" and "is.IGL_doublet.confidence" (use_chain = "all")
+#' @return   the original data frame with for the following additional columns: "is.VDJ_doublet" and "is.IGH_doublet.confidence" (use_chains = "IGH") or "is.IGH_doublet.confidence", "is.IGK_doublet.confidence" and "is.IGL_doublet.confidence" (use_chains = "all")
 #' as well as graphs plotting the primary versus "second_" umi_counts by locus for all cell_ids colored by "is."locus"_VDJ_doublet.confidence".
 #'
 #' @details
@@ -1926,124 +1684,213 @@ vdjQCplot <- function(db,
 #'
 #' @import dplyr
 
-flagBdoublets <- function(db,
-                           analysis_name = "All_sequences",
-                           use_chain = c("all", "IGH"),
-                           split.by = NULL,
-                           variable_cutoff = TRUE, low_cutoff = 10, high_cutoff = 250,
-                           output = TRUE, output_folder = "VDJ_QC",
-                           cell_id = "cell_id", locus = "locus", umi_count = "umi_count"){
+homotypicVDJdoublets <- function(db,
+                                 split.by = NULL,
+                                 analysis_name = "All_sequences",
+                                 use_chains = c("all", "heavy"),
+                                 locus = "locus", 
+                                 seq_type = c("Ig", "TCR"),
+                                 heavy = NULL,
+                                 light = NULL, 
+                                 assay = "assay",
+                                 scRNAseq.tech = c("10X", "BD"),
+                                 variable_cutoff = TRUE, 
+                                 low_cutoff = 10, 
+                                 high_cutoff = 250,
+                                 output = TRUE, 
+                                 output_folder = "VDJ_QC",
+                                 cell_id = "cell_id", 
+                                 umi_count = "umi_count",
+                                 save_plot = c("pdf", "png"),
+                                 verbose = TRUE){
+                          
 
-  #suppressMessages(library(dplyr))
-
-  if(!is.null(output_folder)){
-    if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
-    if(!dir.exists(output_folder)){
-      dir.create(output_folder)
+  seq_type <- match.arg(seq_type)
+  
+  if(is.null(heavy)){
+    if(seq_type == "Ig"){
+      heavy <- "IGH"
+    }
+    if(seq_type == "TCR"){
+      heavy <- c("TRB","TRD")
     }
   }
-
-  log_file <- paste0(output_folder, Sys.time(), "_", analysis_name, "_", paste(use_chain, collapse = "-"), "_doublets_logfile.txt")
-  log_connection <- file(log_file, open = "a")  # a for appending or w for erasing onto previous log
-
-  use_chain <- use_chain[1]
-  if(!(use_chain %in% c("IGH", "all"))){
-    stop("use_chain must be one of IGH or all.")
-  }
-
-  if(use_chain == "all"){
-    chains = unique(levels(as.factor(db[[locus]])))
-  } else {chains = use_chain}
-
-  # perform first a few check ups:
-  for(i in chains){
-    locus_db <- dplyr::filter(db, (!!rlang::sym(locus) == i))
-    if(nrow(locus_db)<1){stop(paste0("no ",i," contig provided"))}
-    if(any(duplicated(locus_db$cell_id))){stop(paste0(i," contig filtration must be done before runing flagVDJdoublets()"))}
-    if(!paste0("second_", umi_count) %in% colnames(locus_db)){stop(paste0(i," contig filtration must be done before runing flagVDJdoublets()"))}
-    if(paste0("second_", umi_count) %in% colnames(locus_db)){
-      if(all(is.na(locus_db[[paste0("second_", umi_count)]]))){warning("non secondary ",i," contig found, either its a perfect dataset or IGH contig filtration has not been run before runing flagVDJdoublets()")}
+  if(is.null(light)){
+    if(seq_type == "Ig"){
+      light <- c("IGK","IGL")
+    }
+    if(seq_type == "TCR"){
+      light <- c("TRA","TRG")
     }
   }
-  rm(locus_db)
-
-  for(i in c("is.VDJ_doublet", "is.VDJ_doublet.confidence", "is.IGH_doublet.confidence", "is.IGK_doublet.confidence", "is.IGL_doublet.confidence")){
-    db[[i]] <- NULL
+  
+  # define chains to be used:
+  use_chains <- match.arg(use_chains)
+  
+  if(!use_chains %in% c("heavy", "all")){
+    stop("use_chains must be one of heavy or all.")
+  } else {
+    if(use_chains == "all") {
+      chains <- c("heavy", "light")
+    } else {
+      chains <- "heavy"
+    }
   }
-
+  
+  db <- db %>%
+    dplyr::mutate(
+      locus_simplified = ifelse(locus %in% heavy, "heavy", ifelse(locus %in% light, "light", "other"))
+    ) %>%
+    dplyr::select(-dplyr::any_of(
+      c("is.VDJ_doublet", 
+        "is.VDJ_doublet.confidence", 
+        paste0("is.", paste(heavy, collapse = "-"),"_doublet.confidence"), 
+        paste0("is.", paste(light, collapse = "-"),"_doublet.confidence"))
+    ))
+  
+  # filter on scRNA-seq contigs and prepare the dataset:
+  flagged_db <- db %>%
+    dplyr::filter(
+      locus_simplified %in% chains & !!rlang::sym(assay) %in% scRNAseq.tech
+    ) 
+  
+  other_db <- db %>%
+    dplyr::filter(
+      !(locus_simplified %in% chains & !!rlang::sym(assay) %in% scRNAseq.tech)
+    ) 
+  
   if(is.null(split.by)){
     split <- NULL
-    db <- db %>%
+    flagged_db <- flagged_db %>%
       dplyr::mutate(
         split.by = "all_sequences"
       )
     split.by = "split.by"
   }
+  
+  for(chain in chains){
+    locus_db <- flagged_db %>%
+      dplyr::filter(locus_simplified == chain)
 
+    if(nrow(locus_db)==0){
+      warning(paste0("no ",paste(unlist(mget(chain)), collapse = "-")," contig provided"))
+      chains <- chains[!chains == chain]
+      }
+    if(any(duplicated(locus_db$cell_id))){
+      stop(paste0(paste(unlist(mget(chain)), collapse = "-")," contig filtration must be done before runing flagVDJdoublets(), run resolveMultiContigs()."))
+      }
+    if(!paste0("second_", umi_count) %in% colnames(locus_db)){
+      stop(paste0(paste(unlist(mget(chain)), collapse = "-")," contig filtration must be done before runing flagVDJdoublets(), run resolveMultiContigs()."))
+      }
+    if(paste0("second_", umi_count) %in% colnames(locus_db)){
+      if(all(is.na(locus_db[[paste0("second_", umi_count)]]))){
+        warning("non secondary ",paste(unlist(mget(chain)), collapse = "-")," contig found, either its a perfect dataset or ", paste(unlist(mget(chain)), collapse = "-")," contig filtration has not been run before runing flagVDJdoublets()")
+        }
+    }
+    rm(locus_db)
+  }
+  
   # update cutoffs if needed:
   if(variable_cutoff){
     # learn dataset (split.by) and locus specific cutoffs (adapted to library depth):
     # 1st quartile of dominant VDJ umi_count (in 75% of doublets the second VDJ should be above this value) and minimum of 10 and 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
-    db <- db %>%
-      dplyr::group_by(!!rlang::sym(locus), !!rlang::sym(split.by)) %>%
+    flagged_db <- flagged_db %>%
+      dplyr::group_by(locus_simplified, !!rlang::sym(split.by)) %>%
       dplyr::mutate(
         upper_cutoff = quantile(!!rlang::sym(umi_count), 0.25, na.rm = TRUE),
-        lower_cutoff = median(!!rlang::sym(umi_count), na.rm = TRUE)/10
+        lower_cutoff = ceiling(median(!!rlang::sym(umi_count), na.rm = TRUE)/10)
       ) %>%
       dplyr::ungroup()
   } else { # otherwise, use provided cutoffs
-    db <- db %>%
+    flagged_db <- flagged_db %>%
       dplyr::mutate(
         upper_cutoff = high_cutoff,
         lower_cutoff = low_cutoff
       )
   }
 
-  flagged_db <- db %>%
-    dplyr::filter(!!rlang::sym(locus) %in% chains) %>%
-    dplyr::select(!!rlang::sym(cell_id), !!rlang::sym(split.by), !!rlang::sym(locus),
+  flagged_db <- flagged_db %>%
+    dplyr::select(!!rlang::sym(cell_id), !!rlang::sym(split.by), locus_simplified,
                   !!rlang::sym(umi_count), !!rlang::sym(paste0("second_", umi_count)), upper_cutoff, lower_cutoff) %>%
-    tidyr::pivot_wider(names_from = !!rlang::sym(locus),
+    tidyr::pivot_wider(names_from = locus_simplified,
                        values_from = c(!!rlang::sym(umi_count), !!rlang::sym(paste0("second_", umi_count)), upper_cutoff, lower_cutoff)) %>%
     dplyr::rename_with(
       .fn = ~ sub(paste0(umi_count, "_"), "", .),
-      .cols = all_of(c(paste0(umi_count, "_", chains), paste0("second_", umi_count, "_", chains)))
+      .cols = dplyr::any_of(
+        c(paste0(umi_count, "_heavy"), 
+          paste0("second_", umi_count, "_heavy"),
+          paste0(umi_count, "_light"), 
+          paste0("second_", umi_count, "_light"))
+        )
     ) %>%
     dplyr::mutate(
-      across(all_of(chains),
-             ~ ifelse(is.na(get(paste0("second_", cur_column()))), "not a doublet",
-                      ifelse(!(. > 3*get(paste0("second_", cur_column())) & get(paste0("second_", cur_column())) < get(paste0("upper_cutoff_", cur_column()))), "high",
-                             ifelse(!(. > 3*get(paste0("second_", cur_column())) & get(paste0("second_", cur_column())) < get(paste0("lower_cutoff_", cur_column()))), "low", "not a doublet"))),
+      dplyr::across(
+        dplyr::all_of(chains),
+             ~ ifelse(is.na(get(paste0("second_", dplyr::cur_column()))), "not a doublet",
+                      ifelse(!(. > 3*get(paste0("second_", dplyr::cur_column())) & get(paste0("second_", dplyr::cur_column())) < get(paste0("upper_cutoff_", dplyr::cur_column()))), "high",
+                             ifelse(!(. > 3*get(paste0("second_", dplyr::cur_column())) & get(paste0("second_", dplyr::cur_column())) < get(paste0("lower_cutoff_", dplyr::cur_column()))), "low", "not a doublet"))),
              .names = "is.{.col}_doublet.confidence")
     )
 
-  if(length(chains) == 1){
+  if(!"light" %in% chains){
     # must be high for the heavy chain
     flagged_db <- flagged_db %>%
       dplyr::mutate(
-        is.VDJ_doublet.confidence = is.IGH_doublet.confidence,
-        is.VDJ_doublet = is.VDJ_doublet.confidence == "high"
+        is.VDJ_doublet.confidence = is.heavy_doublet.confidence,
+        is.VDJ_doublet = (is.VDJ_doublet.confidence == "high")
+      ) %>%
+      dplyr::select(
+        dplyr::all_of(c(cell_id,
+                        "is.VDJ_doublet", 
+                        "is.VDJ_doublet.confidence", 
+                        "is.heavy_doublet.confidence",
+                        "upper_cutoff_heavy",
+                        "lower_cutoff_heavy"))
+        ) %>%
+      dplyr::rename(
+        !!rlang::sym(paste0("is.",paste(heavy, collapse = "-"),"_doublet.confidence")) := is.heavy_doublet.confidence
       )
-    # keep flagged_db as is fo QC export at the end
-    final_flagged_db <- flagged_db %>%
-      dplyr::select(c(!!rlang::sym(cell_id)), is.VDJ_doublet, is.VDJ_doublet.confidence)
-  }
-  if(length(chains) > 1){
+  } else {
     # must be high for at least one of the chain and low for the other
     flagged_db <- flagged_db %>%
       dplyr::mutate(
-        is.VDJ_doublet.confidence = ifelse(is.IGH_doublet.confidence %in% c("low", "high") & (is.IGK_doublet.confidence %in% c("low", "high")|is.IGL_doublet.confidence %in% c("low", "high")), "high",
-                                           ifelse(is.IGH_doublet.confidence %in% c("low", "high")|is.IGK_doublet.confidence %in% c("low", "high")|is.IGL_doublet.confidence %in% c("low", "high"),"low","not a doublet")),
+        is.VDJ_doublet.confidence = ifelse(is.heavy_doublet.confidence == "high" & is.light_doublet.confidence %in% c("high", "low"), "high",
+                                           ifelse(is.light_doublet.confidence == "high" & is.heavy_doublet.confidence %in% c("high", "low"), "high", 
+                                                  ifelse(is.heavy_doublet.confidence %in% c("high", "low") | is.light_doublet.confidence %in% c("high", "low"), "low", "not a doublet"))),
         is.VDJ_doublet = is.VDJ_doublet.confidence == "high"
       ) %>%
-      dplyr::select(!!rlang::sym(cell_id), is.VDJ_doublet, is.VDJ_doublet.confidence, is.IGH_doublet.confidence, is.IGK_doublet.confidence, is.IGL_doublet.confidence)
+      dplyr::select(
+        any_of(c(cell_id,
+                 "is.VDJ_doublet", 
+                 "is.VDJ_doublet.confidence", 
+                 "is.heavy_doublet.confidence", 
+                 "is.light_doublet.confidence",
+                 "upper_cutoff_heavy",
+                 "upper_cutoff_light",
+                 "lower_cutoff_heavy",
+                 "lower_cutoff_light"))
+      ) %>%
+      dplyr::rename(
+        !!rlang::sym(paste0("is.",paste(heavy, collapse = "-"),"_doublet.confidence")) := is.heavy_doublet.confidence,
+        !!rlang::sym(paste0("is.",paste(light, collapse = "-"),"_doublet.confidence")) := is.light_doublet.confidence
+      ) 
   }
+  
   db <- db %>%
-    dplyr::left_join(flagged_db, by = join_by(cell_id))
-
+    dplyr::left_join(flagged_db, by = join_by(cell_id)) %>%
+    dplyr::mutate(
+      upper_cutoff = ifelse(locus_simplified == "heavy", upper_cutoff_heavy, 
+                              ifelse(locus_simplified == "light", upper_cutoff_light, NA)),
+      lower_cutoff = ifelse(locus_simplified == "heavy", lower_cutoff_heavy, 
+                                                      ifelse(locus_simplified == "light", lower_cutoff_light, NA))
+    )
+  
   if(output){
     vdjQCplot(db,
-              use_chain = use_chain,
+              use_chains = use_chains,
+              seq_type = seq_type,
+              heavy = heavy,
+              light = light,
               split.by = split.by,
               type = "vdj_doublet",
               variable_cutoff = variable_cutoff,
@@ -2051,94 +1898,81 @@ flagBdoublets <- function(db,
               output_folder = output_folder,
               analysis_name = analysis_name,
               locus = locus,
-              cell_id = "cell_id",
-              umi_count = "umi_count",
-              second_umi_count = "second_umi_count",
-              export = "pdf")
+              cell_id = cell_id,
+              umi_count = umi_count,
+              second_umi_count = paste0("second_", umi_count),
+              save_plot = save_plot,
+              return_plot = FALSE)
   }
-
-  log_message <- paste0(Sys.time(), "\n")
-  cat(log_message, file = log_connection)  # Write to file
 
   groups <- na.omit(levels(as.factor(db[[split.by]])))
   for(group in groups){
-    cells_in_group <- nrow(db %>%
-                             dplyr::filter(!!rlang::sym(split.by) == group, !!rlang::sym(locus) == "IGH"))
-    doublets <- nrow(db %>%
-                       dplyr::filter(!!rlang::sym(split.by) == group, !!rlang::sym(locus) == "IGH", is.VDJ_doublet))
+    group_db <- db %>%
+      dplyr::filter(!!rlang::sym(split.by) == group, !!rlang::sym(locus) %in% heavy)
+    cells_in_group <- nrow(group_db)
+    doublets <- nrow(dplyr::filter(group_db, is.VDJ_doublet))
+    upper_group_cutoff_heavy <- group_db[[paste0("upper_cutoff_", paste(heavy, collapse = "-"))]][1]
+    upper_group_cutoff_light <- group_db[[paste0("upper_cutoff_", paste(light, collapse = "-"))]][1]
+    lower_group_cutoff_heavy <- group_db[[paste0("lower_cutoff_", paste(heavy, collapse = "-"))]][1]
+    lower_group_cutoff_light <- group_db[[paste0("lower_cutoff_", paste(light, collapse = "-"))]][1]
     group_log_message <- paste0(group, ": out of ", cells_in_group," cells:\n",
-                                doublets/cells_in_group*100,"% cells (n = ",doublets,") identified as high probability doublets, using ",paste(use_chain, collapse = "-")," contigs;\n\n")
-    cat(group_log_message, file = log_connection)  # Write to file
-
-    for(chain in chains){
-      group_chain_db <- db %>%
-        dplyr::filter(!!rlang::sym(split.by) == group, !!rlang::sym(locus) == chain)
-      chain_confidence <- table(group_chain_db[[paste0("is.",chain,"_doublet.confidence")]])
-      chain_log_message <- paste0(group, ": out of ", nrow(group_chain_db)," cells with ", chain," contigs:\n",
-                                  chain_confidence["high"]/nrow(group_chain_db)*100,"% cells (n = ",chain_confidence["high"],") identified as high probability doublets, using ",chain," contigs;\n",
-                                  chain_confidence["low"]/nrow(group_chain_db)*100,"% cells (n = ",chain_confidence["low"],") identified as low probability doublets, using ",chain," contigs;\n",
-                                  "upper cutoff used:", group_chain_db[1,"upper_cutoff"],";\n",
-                                  "lower cutoff used:", group_chain_db[1,"lower_cutoff"],";\n\n")
-      cat(chain_log_message, file = log_connection)  # Write to file
-    }
+                                doublets/cells_in_group*100,"% cells (n = ",doublets,") identified as high probability doublets, using ", paste(unlist(mget(chains)), collapse = "-")," contigs;\n",
+                                "upper cutoff used:", upper_group_cutoff_heavy, " for ", paste(heavy, collapse = "-"), " and ",upper_group_cutoff_light, " for ", paste(light, collapse = "-"),"\n",
+                                "lower cutoff used:", lower_group_cutoff_heavy, " for ", paste(heavy, collapse = "-"), " and ",lower_group_cutoff_light, " for ", paste(light, collapse = "-"),"\n","\n")
+    if(verbose){cat(group_log_message)}
   }
-
-  if(is.null(split)){
+  
+  db <- db %>%
+    dplyr::select(
+      -dplyr::any_of(c("locus_simplified",
+                       "upper_cutoff_heavy",
+                       "upper_cutoff_light",
+                       "lower_cutoff_heavy",
+                       "lower_cutoff_light"))
+      )
+  
+  if(nrow(other_db)>0){
+    #adding back non BCR or TCR contigs depending on the seq_type
     db <- db %>%
-      dplyr::select(-!!rlang::sym(split.by))
+      dplyr::bind_rows(other_db)
   }
-
-  close(log_connection)  # Close file connection
-
+  
   return(db)
 }
 
 
-#### Function to identify nonB-B doublets based on azimuth prediction and VDJ detection ####
-#' Predicts nonB-B doublets
+#### Function to identify nonB/T-B/T doublets based on azimuth prediction and VDJ detection ####
+#' Predicts nonB-B or nonT-T doublets
 #'
-#' \code{flagNonBdoublets} Predicts nonB-B doublets based on azimuth predictions and IGH-IGL/K contigs umi_counts.
-#' @param db            an AIRR formatted data frame containing heavy and light chain sequences, cell_ids and umi_counts.
-#' @param scRNAseq.tech vector with names of scRNA-seq technologies used in the assay column, i.e. those from which we have .
-#' @param split.by      name of the column in the seurat object to use to split the dataset. Used both in cases it is needed to filter IGH contigs and for variable cutoffs definitions and plotting.
-#' @param variable_cutoff whether cutoffs are automatically calculated based on summary counts in the database to account for potential sequencing bias (1st quartile and max of 10 or 1/10 of median).
-#'                      else, cutoffs should be provided or preset cutoffs will be used.
-#'
-#' @param low_cutoff    cut_off for low probability heavy chain doublets.
-#' @param high_cutoff   cut_off for high probability heavy chain doublets.
-#' @param output        whether to output graphs with umi_counts.
-#' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
-#' @param azimuth.ref   which azimuth ref was used for mapping of scRNA-seq dataset: one of "pbmcref", "tonsilref", "bonemarrowref" [default datasets as of Feb 2025] [TODO: add gut dataset?]
-#' @param azimuth.column which output column from azimuth should be used [default values as of Feb 2025]
-#' @param azimuth.Bcelltypes which clusters in the azimuth output correspond to B/PC cells populations likely to carry a BCR [default values as of Feb 2025].
-#' @param clone_id      name of the column containing clone identifier [only use if need to filter light chain, if absent defaulting to cell_id].
-#' @param cell_id       name of the column containing cell identifier.
+#' \code{heterotypicVDJdoublets} Predicts nonB/T-B/T doublets based on azimuth predictions and VDJ contigs umi_counts.
+#' @param db            a AIRR formatted dataframe containing heavy and light chain sequences, cell_ids and umi_counts.
+#' @param split.by      name of the column in the dataframe to use to split the dataset prior to calculating variable cut-offs
+#' @param analysis_name name to use for outputs prefixes.
+#' @param use_chains     which chain to use to flag VDJ doublets, can de set to "IGH" or "all" [default = "all"].
 #' @param locus         name of column containing locus values.
-#' @param heavy         value of heavy chains in locus column. All other values will be treated as light chains.
+#' @param heavy         heavy chains to be used. if set to NULL, will default to IGH for Ig and TRB/TRD for TCR.
+#' @param light         light chains to be used. if set to NULL, will default to IGL/IGK for Ig and TRA/TRG for TCR.
+#' @param assay         name of column containing assay values.
+#' @param scRNAseq.tech vector with names of scRNA-seq technologies used in the assay column, i.e. those from which we have data so far.
+#' @param variable_cutoff whether to use variable cutoffs [default = TRUE, cutoffs are automatically calculated based on summary counts in the database to account for potential sequencing bias (1st quartile and max of 10 or 1/10 of median).].
+#' @param low_cutoff    cut_off for low probability heavy chain doublets (only used if variable_cutoff = FALSE).
+#' @param high_cutoff   cut_off for high probability heavy chain doublets (only used if variable_cutoff = FALSE).
+#' @param output        whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. Can be set to none, partial (only pdf + log file with QC parameters) or total (pdf + log file with QC parameters + tsv file with sequences).
+#' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
+#' @param ref           which ref was used for mapping of scRNA-seq dataset: one of "azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref" [default azimuth datasets as of June 2025] [TODO: add gut dataset?]; 
+#'                      to add you own clustering info call it 'clusters' and provide the column ref in ref.column = list("clusters"= "column name") and corresponding B or T cell clusters: ref.Bcelltypes = list("clusters" = c("C1", "C3"...))...
+#' @param ref.column which output column from azimuth should be used [default values as of June 2025]
+#' @param ref.Bcelltypes which clusters in the azimuth output correspond to B/PC cells populations likely to carry a BCR [default values as of June 2025].
+#' @param ref.Tcelltypes which clusters in the azimuth output correspond to T cells populations likely to carry a TCR [default values as of June 2025].
+#' @param cell_id       name of the column containing cell identifier.
 #' @param umi_count     name of the column containing the number of unique molecules (UMI) for this contig. Previously called "duplicate_count" in an earlier AIRR standard
-
-#' @param consensus_count   name of the column containing the number of reads for this contig (usually called consensus_count)
+#' @param save_plot     format to save the final ggplot2 object. "pdf" or "png". if set to any other value, no plot will be saved.
+#' @param verbose       whether to print recap informations to the console
 #'
-#' @param umi_count     name of the column containing the number of unique molecules (UMI) for this contig. Previously called "duplicate_count" in an earlier AIRR standard
-#' @param productive    name of the column containing the info whether a given sequence is productive.
-#' @param sequence_id   name of the column containing sequence identifier.
-#' @param sequence      name of the column containing the original sequence.
-#' @param junction      name of the column containing identified junction in nucleotide format.
-#' @param junction_aa   name of the column containing identified junction in amino-acid format.
-#' @param v_call        name of the column containing V-segment allele assignments. All
-#'                      entries in this column should be identical to the gene level.
-#' @param d_call        name of the column containing D-segment allele assignments. All
-#'                      entries in this column should be identical to the gene level.
-#' @param j_call        name of the column containing J-segment allele assignments. All
-#'                      entries in this column should be identical to the gene level.
-#' @param c_call        name of the column containing Constant region assignments. All
-#'                      entries in this column should be identical to the gene level.
-#'
-#' @return   the original data frame with for two new columns: "is.nonB_VDJ_doublet" and "is.nonB_VDJ_doublet.confidence" as well as graphs plotting the IGH and IGL/K umi_counts for all cell_ids colored by "is.nonB_VDJ_doublet.confidence".
+#' @return   the original data frame with for two new columns: 'is.nonB_VDJ_doublet' and 'is.nonB_VDJ_doublet.confidence' for 'Ig' or nonT for 'TCR' as well as graphs plotting the heavy and light umi_counts for all cell_ids colored by "is.nonB/T_VDJ_doublet.confidence".
 #'
 #' @details
-#' If multiple IGH or IGL/K contigs, will first run resolveMultuiHC()/resolveMultiLC().
-#' Then will define variable cutoffs based on librairie(s) distribution, and assign a probability of being a true nonB-B doublet for each cell not predicted as being a B cell by azimuth.
+#' Will define variable cutoffs based on librairie(s) distribution, and assign a probability of being a true nonB-B doublet for each cell not predicted as being a B cell by azimuth.
 #' High probably nonB-B doublets are define as having both heavy and light chain in the top three quartiles of IGH/IGL/IGK expression in the dataset yet not being mapped to a B cell cluster by azimuth.
 #'
 #' https://azimuth.hubmapconsortium.org/
@@ -2152,150 +1986,288 @@ flagBdoublets <- function(db,
 #'
 #' @import dplyr
 
-flagNonBdoublets <- function(db,
-                             scRNAseq.tech = c("10X", "BD"),
-                             split.by = NULL,
-                             output = TRUE,
-                             analysis_name = "All_sequences",
-                             output_folder = "VDJ_QC/",
-                             variable_cutoff =TRUE,
-                             low_cutoff = 10,
-                             high_cutoff = 250,
-                             azimuth.ref = c("pbmcref", "tonsilref", "bonemarrowref"),
-                             azimuth.column = list(pbmcref = "predicted.celltype.l2", tonsilref = "predicted.cell_type.l1", bonemarrowref = "predicted.celltype.l2"),
-                             azimuth.Bcelltypes = list(pbmcref = c("B intermediate", "B memory", "B naive", "Plasmablast"),
-                                                       tonsilref = c("B activated", "B memory", "B naive", "preGCB", "PB", "PC", "PC/doublet", "preMBC/doublet", "prePB", "Cycling DZ GCB","DZ GCB","DZtoLZ GCB transition","FCRL4/5+ B memory","LZ GCB","LZtoDZ GCB transition"),
-                                                       bonemarrowref = c("Memory B", "Naive B", "Plasma", "pro B", "pre B", "transitional B")),
-                             clone_id = "clone_id", cell_id = "cell_id", locus = "locus", heavy = "IGH", assay = "assay",
-                             productive = "productive", complete_vdj = "complete_vdj",
-                             sequence_id = "sequence_id", umi_count = "umi_count", consensus_count = "consensus_count",
-                             junction = "junction", junction_aa = "junction_aa", sequence = "sequence",
-                             v_call = "v_call", d_call = "d_call", j_call = "j_call", c_call = "c_call"){
-
-
-  if(length(azimuth.ref)!=1 | !(azimuth.ref %in% names(azimuth.Bcelltypes)) | !(azimuth.ref %in% names(azimuth.column))){
-    stop("no clear azimuth reference selected, for now you need to select one of pbmcref, tonsilref or bonemarrowref or import new B cell clusters names associated with you reference using the azimuth.column and azimuth.Bcelltypes arguments.")
+heterotypicVDJdoublets <- function(db,
+                                   split.by = NULL,
+                                   analysis_name = "All_sequences",
+                                   locus = "locus", 
+                                   seq_type = c("Ig", "TCR"),
+                                   use_chains = c("all", "heavy"),
+                                   heavy = NULL, 
+                                   light = NULL,
+                                   assay = "assay",
+                                   scRNAseq.tech = c("10X", "BD"),
+                                   output = TRUE,
+                                   output_folder = "VDJ_QC/",
+                                   variable_cutoff =TRUE,
+                                   low_cutoff = 10,
+                                   high_cutoff = 250,
+                                   ref = c("azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref"),
+                                   ref.column = list("azimuth.pbmcref" = "predicted.celltype.l2", 
+                                                     "azimuth.tonsilref" = "predicted.cell_type.l1", 
+                                                     "azimuth.bonemarrowref" = "predicted.celltype.l2"),
+                                   ref.Bcelltypes = list("azimuth.pbmcref" = c("B intermediate", "B memory", "B naive", "Plasmablast"),
+                                                         "azimuth.tonsilref" = c("B activated", "B memory", "B naive", "preGCB", "PB", "PC", "PC/doublet", "preMBC/doublet", "prePB", "Cycling DZ GCB","DZ GCB","DZtoLZ GCB transition","FCRL4/5+ B memory","LZ GCB","LZtoDZ GCB transition"),
+                                                         "azimuth.bonemarrowref" = c("Memory B", "Naive B", "Plasma", "pro B", "pre B", "transitional B")),
+                                   ref.Tcelltypes = list("azimuth.pbmcref" = c("CD4 CTL", "CD4 Naive", "CD4 Proliferating", "CD4 TCM", "CD4 TEM", "Treg", "CD8 Naive", "CD8 Proliferating", "CD8 TCM", "CD8 TEM", "dnT", "gdT", "MAIT"),
+                                                         "azimuth.tonsilref" = c("CD4 naive", "CD4 Non-TFH", "CD4 TCM", "CD4 TFH", "CD4 TFH Mem", "CD4 TREG", "CD8 naive", "CD8 T", "CD8 TCM", "Cycling T","dnT","MAIT/TRDV2+ gdT","non-TRDV2+ gdT"),
+                                                         "azimuth.bonemarrowref" = c("CD4 Effector", "CD4 Memory", "CD4 Naive", "CD8 Effector 1", "CD8 Effector 2", "CD8 Effector 3", "CD8 Memory", "CD8 Naive", "MAIT", "T proliferating")),
+                                   cell_id = "cell_id", 
+                                   umi_count = "umi_count", 
+                                   save_plot = c("pdf", "png"),
+                                   verbose = TRUE){
+                             
+  seq_type <- match.arg(seq_type)
+  cell_type <- ifelse(seq_type == "Ig", "B", "T")
+  
+  if(is.null(heavy)){
+    if(seq_type == "Ig"){
+      heavy <- "IGH"
+    }
+    if(seq_type == "TCR"){
+      heavy <- c("TRB","TRD")
+    }
   }
-  if(!azimuth.column[[azimuth.ref]] %in% colnames(db)){
-    stop("no clear azimuth column selected, missing ", azimuth.column[[azimuth.ref]]," in provided data frame")
+  if(is.null(light)){
+    if(seq_type == "Ig"){
+      light <- c("IGK","IGL")
+    }
+    if(seq_type == "TCR"){
+      light <- c("TRA","TRG")
+    }
+  }
+  
+  ref <- match.arg(ref)
+  
+  if (seq_type == "Ig"){
+    if(length(ref)!=1 | !(ref %in% names(ref.Bcelltypes)) | !(ref %in% names(ref.column))){
+      stop("no clear reference selected, for now you need to select one of azimuth.pbmcref, azimuth.tonsilref or azimuth.bonemarrowref or import new B cell clusters names associated with you reference using the ref, ref.column and ref.Bcelltypes arguments.")
+    }
+    if(!ref.column[[ref]] %in% colnames(db)){
+      stop("no clear reference column selected, missing ", ref.column[[ref]]," in provided data frame")
+    }
+    VDJ_celltypes <- ref.Bcelltypes[[ref]]
+  } 
+  if (seq_type == "TCR"){
+    if(length(ref)!=1 | !(ref %in% names(ref.Tcelltypes)) | !(ref %in% names(ref.column))){
+      stop("no clear reference selected, for now you need to select one of azimuth.pbmcref, azimuth.tonsilref or azimuth.bonemarrowref or import new B cell clusters names associated with you reference using the ref, ref.column and ref.Bcelltypes arguments.")
+    }
+    if(!ref.column[[ref]] %in% colnames(db)){
+      stop("no clear reference column selected, missing ", ref.column[[ref]]," in provided data frame")
+    }
+    VDJ_celltypes <- ref.Tcelltypes[[ref]]
+  }
+  
+  # define chains to be used:
+  use_chains <- match.arg(use_chains)
+  
+  if(!use_chains %in% c("heavy", "all")){
+    stop("use_chains must be one of heavy or all.")
+  }
+  
+  # perform first a few check ups:
+  if(use_chains == "all") {
+    chains <- c("heavy", "light")
+  } else {
+    chains <- "heavy"
   }
 
-  for(i in c("is.nonB_VDJ_doublet", "is.nonB_VDJ_doublet.confidence")){
-    db[[i]] <- NULL
-  }
-
+  db <- db %>%
+    dplyr::mutate(
+      locus_simplified = ifelse(!!rlang::sym(locus) %in% heavy, "heavy", ifelse(!!rlang::sym(locus) %in% light, "light", "other"))
+    ) %>%
+    dplyr::select(
+      -dplyr::any_of(
+        c(paste0("is.non",cell_type,"_VDJ_doublet"), 
+          paste0("is.non",cell_type,"_VDJ_doublet.confidence"))
+        )
+      )
+  
+  # filter on scRNA-seq contigs and prepare the dataset:
+  flagged_db <- db %>%
+    dplyr::filter(
+      locus_simplified %in% chains & !!rlang::sym(assay) %in% scRNAseq.tech
+    ) 
+  
+  other_db <- db %>%
+    dplyr::filter(
+      !(locus_simplified %in% chains & !!rlang::sym(assay) %in% scRNAseq.tech)
+    ) 
+  
   if(is.null(split.by)){
     split <- NULL
-    db <- db %>%
+    flagged_db <- flagged_db %>%
       dplyr::mutate(
         split.by = "all_sequences"
       )
     split.by = "split.by"
   }
 
-  # seperate first scRNAseq from scSanger data (no need to flag scSanger data):
-  scRNA_db <- dplyr::filter(db, (!!rlang::sym(assay) %in% scRNAseq.tech))
-  scSanger_db <- dplyr::filter(db, !(!!rlang::sym(assay) %in% scRNAseq.tech))
-
-  # if more than one IGH or one IGL/K per cell_id return warning and select the most highly expressed
-  if(any(duplicated(dplyr::filter(scRNA_db, !!rlang::sym(locus) == heavy)[[cell_id]]))){
-    message("multiple IGH contigs detected from some cells, will run resolveMultiHC() with output = none.")
-    scRNA_db <- scRNA_db %>%
-      dplyr::group_by(!!rlang::sym(split.by)) %>%
-      dplyr::do(
-        resolveMultiHC(., cutoff = "variable",
-                       na.rm = FALSE,
-                       output = "none",
-                       cell_id = cell_id, locus = locus, heavy = heavy, productive = productive, complete_vdj = complete_vdj,
-                       sequence_id = sequence_id, umi_count = umi_count, consensus_count = consensus_count,
-                       junction = junction, junction_aa = junction_aa, sequence = sequence,
-                       v_call = v_call, d_call = d_call, j_call = j_call, c_call = c_call)
-      ) %>%
-      dplyr::ungroup()
-  }
-  if(any(duplicated(dplyr::filter(scRNA_db, !!rlang::sym(locus) != heavy)[[cell_id]]))){
-    if(!clone_id %in% colnames(scRNA_db)){
-      clone_id <- "cell_id"
+  # check if more than one heavy or one light per cell_id:
+  for (chain in chains){
+    if(any(duplicated(dplyr::filter(flagged_db, locus_simplified == chain)[[cell_id]]))){
+      stop("multiple ", paste(unlist(mget(chain)), collapse = "-")," contigs detected from some cells, run resolveMultiContigs() first.")
     }
-    message("multiple IGL/K contigs detected from some cells, will run resolveMultiLC() with clone_id = ", clone_id, ".\n")
-    scRNA_db <- resolveMultiLC(scRNA_db,
-                               cell_id = cell_id, clone_id = clone_id, locus = locus, heavy = heavy, favor_lambda = favor_lambda, output = FALSE,
-                               umi_count = umi_count, consensus_count = consensus_count, productive = productive, complete_vdj = complete_vdj,
-                               junction = junction, junction_aa = junction_aa, sequence = sequence, sequence_id = sequence_id,
-                               v_call = v_call, d_call = d_call, j_call = j_call, c_call = c_call)
   }
 
   # update cutoffs if needed:
   if(variable_cutoff){
     # learn dataset (split.by) and locus specific cutoffs (adapted to library depth):
-    # 1st quartile of dominant VDJ umi_count (in 75% of doublets the second VDJ should be above this value) and minimum of 10 and 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
-
-    scRNA_db <- scRNA_db %>%
-      dplyr::group_by(!!rlang::sym(locus), !!rlang::sym(split.by)) %>%
-      dplyr::mutate(
-        upper_cutoff = max(10, quantile(!!rlang::sym(umi_count), 0.25, na.rm = TRUE)),
-        lower_cutoff = max(5, median(!!rlang::sym(umi_count), na.rm = TRUE)/10)
-      ) %>%
-      dplyr::ungroup()
+    # 1st quartile of dominant VDJ umi_count (in 75% of doublets the second VDJ should be above this value) and 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
+    # if homotypicVDJdoublets was run before, we reuse the calculated cutoffs
+    if(!(all(c("upper_cutoff", "lower_cutoff") %in% colnames(flagged_db)))){
+      flagged_db <- flagged_db %>%
+        dplyr::group_by(locus_simplified, !!rlang::sym(split.by)) %>%
+        dplyr::mutate(
+          upper_cutoff = quantile(!!rlang::sym(umi_count), 0.25, na.rm = TRUE),
+          lower_cutoff = ceiling(median(!!rlang::sym(umi_count), na.rm = TRUE)/10)
+        ) %>%
+        dplyr::ungroup()
+    }
   } else { # otherwise, use provided cutoffs
-    scRNA_db <- scRNA_db %>%
-      mutate(
+    flagged_db <- flagged_db %>%
+      dplyr::mutate(
         upper_cutoff = high_cutoff,
         lower_cutoff = low_cutoff
       )
   }
+  
+  cutoffs <- flagged_db %>%
+    dplyr::group_by(orig.ident, locus_simplified) %>%
+    dplyr::summarise(dplyr::across(
+      dplyr::starts_with("upper_cutoff") | dplyr::starts_with("lower_cutoff"),
+      ~ max(.x, na.rm = TRUE),
+      .names = "{.col}"
+    ), .groups = "drop") %>%
+    tidyr::pivot_wider(names_from = locus_simplified, values_from = c(upper_cutoff, lower_cutoff)) %>%
+    dplyr::rename_with(.fn = ~ paste0(.x, "_max"), .cols = starts_with("upper_cutoff")) %>%
+    dplyr::rename_with(.fn = ~ paste0(.x, "_max"), .cols = starts_with("lower_cutoff"))
 
   # look for non-B cells identified by azimuth and check whether the level of contig umi_count make them likely to be a true doublet:
-  non_B_db <- dplyr::filter(scRNA_db, !(!!rlang::sym(azimuth.column[[azimuth.ref]]) %in% azimuth.Bcelltypes[[azimuth.ref]])) %>%
-    dplyr::select(!!rlang::sym(cell_id), !!rlang::sym(locus), !!rlang::sym(umi_count), upper_cutoff, lower_cutoff, !!rlang::sym(split.by)) %>%
-    tidyr::pivot_wider(names_from = !!rlang::sym(locus), values_from = c(!!rlang::sym(umi_count), upper_cutoff, lower_cutoff)) %>%
+  non_VDJcelltype_db <- flagged_db %>%
+    dplyr::filter(!(!!rlang::sym(ref.column[[ref]]) %in% VDJ_celltypes)) 
+  
+  non_VDJcelltype_db <- non_VDJcelltype_db %>%
+    dplyr::select(!!rlang::sym(cell_id), locus_simplified, !!rlang::sym(umi_count), upper_cutoff, lower_cutoff, !!rlang::sym(split.by)) %>%
+    tidyr::pivot_wider(names_from = locus_simplified, 
+                       values_from = c(!!rlang::sym(umi_count), upper_cutoff, lower_cutoff),
+                       values_fill = setNames(list(0), umi_count)) %>%
+    dplyr::left_join(cutoffs, by = "orig.ident") %>%
+    dplyr::mutate(across(
+      dplyr::starts_with("upper_cutoff") | dplyr::starts_with("lower_cutoff"),
+      ~ ifelse(is.na(.x), get(paste0(cur_column(), "_max")), .x)
+    )) %>%
+    dplyr::select(-ends_with("_max"))
+  
+  if(!"light" %in% chains){
+    # must be high for the heavy chain
+    non_VDJcelltype_db <- non_VDJcelltype_db %>%
+      dplyr::mutate(
+        !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) := ifelse(!!rlang::sym(paste0(umi_count, "_heavy")) > upper_cutoff_heavy, "high",
+                                                                                      ifelse(!!rlang::sym(paste0(umi_count, "_heavy")) > lower_cutoff_heavy, "low", "ambient RNA")),
+        !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet")) := (is.nonB_VDJ_doublet.confidence == "high")
+      ) %>%
+      dplyr::select(
+        dplyr::all_of(c(cell_id,
+                        paste0("is.non", cell_type,"_VDJ_doublet"),
+                        paste0("is.non", cell_type,"_VDJ_doublet.confidence"), 
+                        "upper_cutoff_heavy",
+                        "lower_cutoff_heavy"))
+      ) 
+  } else {
+    # must be high for at least one of the chain and low for the other
+    non_VDJcelltype_db <- non_VDJcelltype_db %>%
+      dplyr::mutate(
+        !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) := ifelse(!!rlang::sym(paste0(umi_count, "_heavy")) > upper_cutoff_heavy & !!rlang::sym(paste0(umi_count, "_light")) > upper_cutoff_light, "high",
+                                                                                      ifelse(!!rlang::sym(paste0(umi_count, "_heavy")) > lower_cutoff_heavy & !!rlang::sym(paste0(umi_count, "_light")) > lower_cutoff_light, "low", "ambient RNA")),
+        !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet")) := (is.nonB_VDJ_doublet.confidence == "high")
+      ) %>%
+      dplyr::select(
+        any_of(c(cell_id,
+                 paste0("is.non", cell_type,"_VDJ_doublet"),
+                 paste0("is.non", cell_type,"_VDJ_doublet.confidence"),
+                 "upper_cutoff_heavy",
+                 "upper_cutoff_light",
+                 "lower_cutoff_heavy",
+                 "lower_cutoff_light"))
+      )
+  }
+  
+  VDJcelltype_db <- flagged_db %>%
+    dplyr::filter(!!rlang::sym(ref.column[[ref]]) %in% VDJ_celltypes) 
+  
+  VDJcelltype_db <- VDJcelltype_db %>%
+    dplyr::select(!!rlang::sym(cell_id), locus_simplified, !!rlang::sym(umi_count), upper_cutoff, lower_cutoff, !!rlang::sym(split.by)) %>%
+    tidyr::pivot_wider(names_from = locus_simplified, values_from = c(!!rlang::sym(umi_count), upper_cutoff, lower_cutoff)) %>%
     dplyr::mutate(
-      !!rlang::sym(paste0(umi_count, "_light")) := coalesce(!!rlang::sym(paste0(umi_count, "_IGL")), 0) +  coalesce(!!rlang::sym(paste0(umi_count, "_IGK")), 0),
-      upper_cutoff_light := coalesce(upper_cutoff_IGL, 0) + coalesce(upper_cutoff_IGK, 0),
-      lower_cutoff_light := coalesce(lower_cutoff_IGL, 0) + coalesce(lower_cutoff_IGK, 0),
-      is.nonB_VDJ_doublet.confidence = ifelse(!!rlang::sym(paste0(umi_count, "_IGH")) > upper_cutoff_IGH & !!rlang::sym(paste0(umi_count, "_light")) > upper_cutoff_light, "high",
-                                              ifelse(!!rlang::sym(paste0(umi_count, "_IGH")) > lower_cutoff_IGH | !!rlang::sym(paste0(umi_count, "_light")) > lower_cutoff_light, "low", "ambient RNA")),
-      is.nonB_VDJ_doublet = (is.nonB_VDJ_doublet.confidence == "high")
-    )
-  B_db <- dplyr::bind_rows(dplyr::filter(scRNA_db, (!!rlang::sym(azimuth.column[[azimuth.ref]]) %in% azimuth.Bcelltypes[[azimuth.ref]]))) %>%
-    dplyr::select(!!rlang::sym(cell_id), !!rlang::sym(locus), !!rlang::sym(umi_count), upper_cutoff, lower_cutoff, !!rlang::sym(split.by)) %>%
-    tidyr::pivot_wider(names_from = !!rlang::sym(locus), values_from = c(!!rlang::sym(umi_count), upper_cutoff, lower_cutoff)) %>%
-    dplyr::mutate(
-      !!rlang::sym(paste0(umi_count, "_light")) := coalesce(!!rlang::sym(paste0(umi_count, "_IGL")), 0) +  coalesce(!!rlang::sym(paste0(umi_count, "_IGK")), 0),
-      is.nonB_VDJ_doublet.confidence = "B cell",
-      is.nonB_VDJ_doublet = FALSE
-    )
-
-  full_cell_db <- dplyr::bind_rows(non_B_db, B_db)
-
+      !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) := paste0(cell_type, " cell"),
+      !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet")) := FALSE
+    ) %>%
+    dplyr::select(any_of(c(cell_id,
+                           paste0("is.non", cell_type,"_VDJ_doublet"), 
+                           paste0("is.non", cell_type,"_VDJ_doublet.confidence"))
+    ))
+  
+  flagged_db <- dplyr::bind_rows(non_VDJcelltype_db, VDJcelltype_db)
+  
   db <- db %>%
-    dplyr::left_join(full_cell_db %>% dplyr::select(!!rlang::sym(cell_id), is.nonB_VDJ_doublet, is.nonB_VDJ_doublet.confidence), by = join_by(!!rlang::sym(cell_id)))
-
+    dplyr::left_join(flagged_db, by = join_by(!!rlang::sym(cell_id)))
+  
   if(output){
-    if(!is.null(output_folder)){
-      if(!dir.exists(output_folder)){
-        dir.create(output_folder)
-      }
-      output_folder <- paste0(output_folder, "/")
-    }
     # export QC graph (one by part of the dataframe:
     vdjQCplot(db,
-              use_chain = "all",
+              use_chains = use_chains,
+              seq_type = seq_type,
+              heavy = heavy,
+              light = light,
               split.by = split.by,
-              type = "nonB_vdj_doublet",
+              type = paste0("non", cell_type,"_vdj_doublet"),
+              locus = locus,
+              cell_id = "cell_id",
+              umi_count = umi_count,
               output_folder = output_folder,
               analysis_name = analysis_name,
-              locus = locus,
-              heavy = heavy,
-              cell_id = "cell_id",
-              umi_count = "umi_count",
-              second_umi_count = "second_umi_count",
-              export = "pdf")
+              save_plot = save_plot,
+              return_plot = FALSE)
   }
 
-  if(is.null(split)){
+  groups <- na.omit(levels(as.factor(db[[split.by]])))
+  for(group in groups){
+    group_db <- db %>%
+      dplyr::filter(!!rlang::sym(split.by) == group, !!rlang::sym(locus) %in% heavy)
+    cells_in_group <- nrow(group_db)
+    non_VDJ_group_db <- group_db %>%
+      dplyr::filter(!(!!rlang::sym(ref.column[[ref]]) %in% VDJ_celltypes))
+    non_VDJ_cell_in_group <- nrow(non_VDJ_group_db)
+    high_doublets <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "high"))
+    low_doublets <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "low"))
+    ambient_RNA <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "ambient RNA"))
+    upper_group_cutoff_heavy <- group_db[[paste0("upper_cutoff_", paste(heavy, collapse = "-"))]][1]
+    upper_group_cutoff_light <- group_db[[paste0("upper_cutoff_", paste(light, collapse = "-"))]][1]
+    lower_group_cutoff_heavy <- group_db[[paste0("lower_cutoff_", paste(heavy, collapse = "-"))]][1]
+    lower_group_cutoff_light <- group_db[[paste0("lower_cutoff_", paste(light, collapse = "-"))]][1]
+    group_log_message <- paste0(group, ": out of ", cells_in_group," cells:\n",
+                                non_VDJ_cell_in_group/cells_in_group*100,"% cells (n = ",non_VDJ_cell_in_group,") identified as non-",cell_type, " cells\n",
+                                high_doublets/cells_in_group*100,"% cells (n = ",high_doublets,") identified as high probability non-",cell_type ,"/",cell_type," doublets, using ", paste(unlist(mget(chains)), collapse = "-")," contigs;\n",
+                                low_doublets/cells_in_group*100,"% cells (n = ",low_doublets,") identified as low probability non-",cell_type ,"/",cell_type," doublets; \n",
+                                ambient_RNA/cells_in_group*100,"% cells (n = ",ambient_RNA,") identified as ambient RNA contamination.\n",
+                                "upper cutoff used:", upper_group_cutoff_heavy, " for ", paste(heavy, collapse = "-"), " and ",upper_group_cutoff_light, " for ", paste(light, collapse = "-"),"\n",
+                                "lower cutoff used:", lower_group_cutoff_heavy, " for ", paste(heavy, collapse = "-"), " and ",lower_group_cutoff_light, " for ", paste(light, collapse = "-"),"\n","\n")
+    if(verbose){cat(group_log_message)}
+  }
+  
+  db <- db %>%
+    dplyr::select(
+      -dplyr::any_of(c("locus_simplified",
+                       "upper_cutoff_heavy",
+                       "upper_cutoff_light",
+                       "lower_cutoff_heavy",
+                       "lower_cutoff_light"))
+    )
+  
+  if(nrow(other_db)>0){
+    #adding back non BCR or TCR contigs depending on the seq_type
     db <- db %>%
-      dplyr::select(-!!rlang::sym(split.by))
+      dplyr::bind_rows(other_db)
   }
 
   return(db)
@@ -2308,35 +2280,17 @@ flagNonBdoublets <- function(db,
 #'
 #' @param db            a AIRR formatted dataframe containing heavy and light chain sequences, cell_ids and umi_counts.
 #' @param analysis_name name to use for outputs prefixes.
-#' @param use_chain     which chain to use to flag VDJ doublets, can de set to "IGH" or "all" [default = "all"].
-#' @param homotypic     whether to run flagBdoublets()
-#' @param heterotypic   whether to run flagNonBdoublets()
+#' @param homotypic     whether to run homotypicVDJdoublets()
+#' @param heterotypic   whether to run heterotypicVDJdoublets()
+#' @param seq_type        type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)
+#' @param heavy         heavy chains to be used. if set to NULL, will default to IGH for Ig and TRB/TRD for TCR.
+#' @param light         light chains to be used. if set to NULL, will default to IGL/IGK for Ig and TRA/TRG for TCR.
 #' @param output        whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. Can be set to none, partial (only pdf + log file with QC parameters) or total (pdf + log file with QC parameters + tsv file with sequences).
 #' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
-#' @param cell_id       name of the column containing cell identifier.
-#' @param locus         name of column containing locus values.
-#' @param umi_count     name of the column containing the number of unique molecules (UMI) for this contig. Previously called "duplicate_count" in an earlier AIRR standard
-#' @param heavy         which locus value to use as heavy chain [default: IGH]
 #' @param split.by      which column to use to group cells when learning dataset-specific distributions
-#' @param variable_cutoff whether to use variable cutoffs between datasets
-#' @param low_cutoff    if fixed cutoffs, cutoff to use to define low-probability doublets
-#' @param high_cutoff   if fixed cutoffs, cutoff to use to define high-probability doublets
-#' @param azimuth.ref   reference used when running azimuth
-#' @param azimuth.column name of the column where azimuth calls are stored
-#' @param azimuth.Bcelltypes name of the B cell populations in the used azimuth reference (default for pbmc.ref, tonsil.ref and bonemarrow.ref are provided)
-#' @param scRNAseq.tech scRNA-seq technology used (one of 10X or BD)
-#' @param assay         name of the column containing assay information.
-#' @param productive    name of the column containing sequence productivity information.
-#' @param complete_vdj  name of the column containing sequence completeness information.
-#' @param sequence_id   name of the column containing the sequence_id.
-#' @param consensus_count name of the column containing consensus count.
-#' @param junction      name of the column containing junction (nucleotide format).
-#' @param junction_aa   name of the column containing junction (amino-acid format).
-#' @param sequence      name of the column containing the full sequence.
-#' @param v_call        name of the column containing the v_call.
-#' @param d_call        name of the column containing the d_call.
-#' @param j_call        name of the column containing the j_call.
-#' @param c_call        name of the column containing the c_call.
+#' @param save_plot     format to save the final ggplot2 object. "pdf" or "png". if set to any other value, no plot will be saved.
+#' @param verbose       whether to print recap informations to the console
+#' @param ...           arguments to pass to homotypicVDJdoublets or heterotypicVDJdoublets.
 #'
 #' @export
 
@@ -2344,58 +2298,99 @@ flagVDJdoublets <- function(db,
                             analysis_name = "All_sequences",
                             homotypic = TRUE,
                             heterotypic = TRUE,
+                            seq_type = c("Ig", "TCR"),
+                            heavy = NULL,
+                            light = NULL,
                             output = TRUE,
                             output_folder = "VDJ_QC",
-                            cell_id = "cell_id",
-                            locus = "locus",
-                            heavy = "IGH",
-                            umi_count = "umi_count",
-                            #passed to flagBdoublets():
-                            use_chain = c("all", "IGH"),
                             split.by = NULL,
-                            variable_cutoff = TRUE, low_cutoff = 10, high_cutoff = 250,
-                            #passed to flagNonBdoublets():
-                            azimuth.ref = c("pbmcref", "tonsilref", "bonemarrowref"),
-                            azimuth.column = list(pbmcref = "predicted.celltype.l2", tonsilref = "predicted.celltype.l1", bonemarrowref = "predicted.celltype.l2"),
-                            azimuth.Bcelltypes = list(pbmcref = c("B intermediate", "B memory", "B naive", "Plasmablast"),
-                                                      tonsilref = c("B activated", "B memory", "B naive", "preGCB", "PB", "PC", "PC/doublet", "preMBC/doublet", "prePB", "Cycling DZ GCB","DZ GCB","DZtoLZ GCB transition","FCRL4/5+ B memory","LZ GCB","LZtoDZ GCB transition"),
-                                                      bonemarrowref = c("Memory B", "Naive B", "Plasma", "pro B", "pre B", "transitional B")),
-                            scRNAseq.tech = c("10X", "BD"),
-                            assay = "assay",
-                            productive = "productive", complete_vdj = "complete_vdj",
-                            sequence_id = "sequence_id", consensus_count = "consensus_count",
-                            junction = "junction", junction_aa = "junction_aa", sequence = "sequence",
-                            v_call = "v_call", d_call = "d_call", j_call = "j_call", c_call = "c_call"){
-
-
+                            ref = c("azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref"),
+                            ref.column = list("azimuth.pbmcref" = "predicted.celltype.l2", 
+                                              "azimuth.tonsilref" = "predicted.cell_type.l1", 
+                                              "azimuth.bonemarrowref" = "predicted.celltype.l2"),
+                            ref.Bcelltypes = list("azimuth.pbmcref" = c("B intermediate", "B memory", "B naive", "Plasmablast"),
+                                                  "azimuth.tonsilref" = c("B activated", "B memory", "B naive", "preGCB", "PB", "PC", "PC/doublet", "preMBC/doublet", "prePB", "Cycling DZ GCB","DZ GCB","DZtoLZ GCB transition","FCRL4/5+ B memory","LZ GCB","LZtoDZ GCB transition"),
+                                                  "azimuth.bonemarrowref" = c("Memory B", "Naive B", "Plasma", "pro B", "pre B", "transitional B")),
+                            ref.Tcelltypes = list("azimuth.pbmcref" = c("CD4 CTL", "CD4 Naive", "CD4 Proliferating", "CD4 TCM", "CD4 TEM", "Treg", "CD8 Naive", "CD8 Proliferating", "CD8 TCM", "CD8 TEM", "dnT", "gdT", "MAIT"),
+                                                  "azimuth.tonsilref" = c("CD4 naive", "CD4 Non-TFH", "CD4 TCM", "CD4 TFH", "CD4 TFH Mem", "CD4 TREG", "CD8 naive", "CD8 T", "CD8 TCM", "Cycling T","dnT","MAIT/TRDV2+ gdT","non-TRDV2+ gdT"),
+                                                  "azimuth.bonemarrowref" = c("CD4 Effector", "CD4 Memory", "CD4 Naive", "CD8 Effector 1", "CD8 Effector 2", "CD8 Effector 3", "CD8 Memory", "CD8 Naive", "MAIT", "T proliferating")),
+                            save_plot = c("pdf", "png"),
+                            verbose = TRUE,
+                            ...){
+  
+  save_plot <- match.arg(save_plot)
+  
+  seq_type <- match.arg(seq_type)
+  
+  if(is.null(heavy)){
+    if(seq_type == "Ig"){
+      heavy <- "IGH"
+    }
+    if(seq_type == "TCR"){
+      heavy <- c("TRB","TRD")
+    }
+  }
+  if(is.null(light)){
+    if(seq_type == "Ig"){
+      light <- c("IGK","IGL")
+    }
+    if(seq_type == "TCR"){
+      light <- c("TRA","TRG")
+    }
+  }
+  
+  if(!is.null(output_folder)){
+    if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
+    if(!dir.exists(output_folder)){
+      dir.create(output_folder)
+    }
+  }
+  
+  log_file <- paste0(output_folder, analysis_name, "_flagVDJdoublets_logfile.txt")
+  open_mode = "wt"
+  
   if(homotypic){
-    db <- flagBdoublets(db,
-                        analysis_name = analysis_name,
-                        split.by = split.by,
-                        use_chain = use_chain[1],
-                        variable_cutoff = TRUE,
-                        output = TRUE,
-                        output_folder = output_folder,
-                        cell_id = cell_id, locus = locus, umi_count = umi_count)
+    time_and_log({
+      db <- homotypicVDJdoublets(db,
+                                 seq_type = seq_type,
+                                 heavy = heavy,
+                                 light = light,
+                                 analysis_name = analysis_name,
+                                 split.by = split.by,
+                                 output = output,
+                                 output_folder = output_folder,
+                                 save_plot = save_plot,
+                                 verbose = verbose,
+                                 ...)
+    }, verbose = FALSE, time = TRUE, log_file = log_file, log_title = "homotypic VDJ doublets", open_mode = open_mode)
+    open_mode = "a"
   }
 
   if(heterotypic){
-    db <- flagNonBdoublets(db,
-                           scRNAseq.tech = scRNAseq.tech,
-                           split.by = split.by,
-                           analysis_name = analysis_name,
-                           output = TRUE,
-                           output_folder = output_folder,
-                           azimuth.ref = azimuth.ref,
-                           azimuth.column = azimuth.column,
-                           azimuth.Bcelltypes = azimuth.Bcelltypes,
-                           clone_id = "clone_id", cell_id = cell_id, locus = locus, heavy = heavy, assay = assay,
-                           productive = productive, complete_vdj = complete_vdj,
-                           sequence_id = sequence_id, umi_count = umi_count, consensus_count = consensus_count,
-                           junction = junction, junction_aa = junction_aa, sequence = sequence,
-                           v_call = v_call, d_call = d_call, j_call = j_call, c_call = c_call)
-
+    time_and_log({
+      db <- heterotypicVDJdoublets(db,
+                                   seq_type = seq_type,
+                                   heavy = heavy,
+                                   light = light,
+                                   analysis_name = analysis_name,
+                                   split.by = split.by,
+                                   output = output,
+                                   output_folder = output_folder,
+                                   ref = ref,
+                                   ref.column = ref.column,
+                                   ref.Bcelltypes = ref.Bcelltypes, 
+                                   ref.Tcelltypes = ref.Tcelltypes,
+                                   verbose = verbose,
+                                   ...)
+    }, verbose = FALSE, time = TRUE, log_file = log_file, log_title = "heterotypic VDJ doublets", open_mode = open_mode)
   }
+  
+  time_and_log({
+    cat("\n")
+    print(sessionInfo())
+  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = open_mode)
+  
+  return(db)
 }
 
 
@@ -2407,6 +2402,7 @@ flagVDJdoublets <- function(db,
 #' @param db            a data frame containing at least a sequence and a sequence_id column.
 #' @param sequence      name of the column containing the original sequence.
 #' @param sequence_id   name of the column containing sequence identifier.
+#' @param seq_type      type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)
 #' @param igblast_dir   path to igblast database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]
 #' @param imgt_dir      path to imgt-gapped database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]
 #' @param output        whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. If set to FALSE, only the corrected database is returned.
@@ -3221,6 +3217,8 @@ importSangerVDJ <- function(sanger_files, db = NULL,
 #' @param clean_HC      whether to resolve cases of multiple heavy chains and identify doublets (resolveMultiHC())
 #' @param split.by      name of the column in the seurat object to use to split the dataset prior to filtering heavy chain [if NULL, switch to input "SB_analysis_id" or "10X_lane_id"]
 #' @param tech          name of the scRNA-seq technology used (one of 10X or BD
+#' @param seq_type        type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)
+#' @param organism      organism (any of "human", "mouse", "rhesus_monkey; for other see https://changeo.readthedocs.io/en/stable/examples/igblast.html)
 #' @param igblast       whether to run standalone IgBlast, can be set to c("filtered heavy" or "all") if not one of these three values, will be skipped with a warning. [default = "filtered heavy" for both 10X and BD: highly recommended for both to avoid issues at the createGermline() or observedMutation() steps due to different references databases used (10X) or missing imgt gaps in the sequence_alignment collumn (Both))]
 #' @param igblast_dir   path to igblast database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]
 #' @param imgt_dir      path to imgt database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]
@@ -3668,6 +3666,10 @@ scImportVDJ <- function(vdj_files,
   n_final_cells <- length(unique(VDJ_db$cell_id))
   if(verbose){cat("final table: ", n_final_heavy, " IGH contigs and ", n_final_light, " IGL/IGK contigs (",n_final_cells," unique cells).\n")}
 
+  time_and_log({
+    print(sessionInfo())
+  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = open_mode)
+  
   end <- Sys.time()
   if(verbose){cat(sprintf("Total running time: %.2f %s", end-start, units(difftime(end, start))),"\n")}
 
@@ -3688,6 +3690,8 @@ scImportVDJ <- function(vdj_files,
 #' @param clean_LC        whether to resolve cases of multiple light chains
 #' @param tech            which tech was used, passed to resolveMultiContigs, only tech = "BD" will results in additional QC being performed.
 #' @param split_by_light  whether to clean cases of multiple light chains (resolveMultiLC()) and split clone by ligth chain (dowser::resolveLightChains()), the clone_id collumn will be updated and results will also be stored in the l_clone_id_"last_used_threshold" column;
+#' @param seq_type        type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)
+#' @param organism      organism (any of "human", "mouse", "rhesus_monkey; for other see https://changeo.readthedocs.io/en/stable/examples/igblast.html)
 #' @param update_germline whether to run dowser::createGermlines() to determine consensus clone sequence and create germline for clone after splitting by light chain;
 #' @param SHM             whether to calculate mutational load;
 #' @param output          whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. If set to FALSE, only the corrected database is returned.
@@ -3832,6 +3836,7 @@ scFindClones <- function(db,
   #suppressMessages(library(dowser))
 
   seq_type <- match.arg(seq_type)
+  
   if(seq_type == "Ig"){
     heavy <- "IGH"
     light <- c("IGK","IGL")
@@ -3844,7 +3849,7 @@ scFindClones <- function(db,
     chains <- c(heavy, light)
     fct_type <- "TCR"
   }
-  #! any change made here must be also implemented at the resolveLight() step
+  #TODO any change made here must be also implemented at the resolveMultiContigs() step
   
   organism <- match.arg(organism)
   igblast_dir <- ifelse(stringr::str_ends(igblast_dir,"/"), igblast_dir, paste0(igblast_dir, "/"))
@@ -3876,10 +3881,6 @@ scFindClones <- function(db,
       }
     }
   }
-  
-  if(seq_type == "Ig"){
-    fct_type <- "BCR"
-  } else {fct_type <- seq_type}
 
   #initiate log file:
   log_file <- paste0(output_folder, analysis_name, "_scFind", fct_type,"Clones_logfile.txt")
@@ -4792,13 +4793,18 @@ scFindClones <- function(db,
     readr::write_tsv(cloned_VDJ_db, file = paste0(output_folder, analysis_name,"_VDJ_full_recap.tsv"))
   }
   
-  end <- Sys.time()
-  if(verbose){cat(paste0("Total running time: ", sprintf("%.2f %s", end-start, units(difftime(end, start))), ".\n"))}
-
   if(nrow(other_chains_db) > 0){
     cloned_VDJ_db <- cloned_VDJ_db %>%
       dplyr::bind_rows(other_chains_db)
   }
+  
+  time_and_log({
+    print(sessionInfo())
+  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = open_mode)
+  
+  end <- Sys.time()
+  if(verbose){cat(paste0("Total running time: ", sprintf("%.2f %s", end-start, units(difftime(end, start))), ".\n"))}
+
   return(cloned_VDJ_db)
 }
 
@@ -4808,7 +4814,6 @@ scFindClones <- function(db,
 #' \code{scFindBCRlones} performs clonal clustering of single cell data
 #'
 #' @param db              an AIRR formatted dataframe containing heavy and light chain sequences. Should contain only one heavy chain (IGH) per cell_id, if not run resolveMultiHC() first.
-#' @param locus           name of column containing locus values.
 #' @param ...             arguments to be passed to scFindClones
 #'
 #' @return an AIRR formatted dataframe with a new clone_id column and clone attribution for all BCR related data (see scFindClones).
@@ -4819,15 +4824,13 @@ scFindClones <- function(db,
 #' @export
 
 scFindBCRClones <- function(db,
-                            chains = list(heavy = "IGH", 
-                                          light = c("IGK", "IGL")),
                             ...){
   
-  cloned_bcr_db <- scFindClones(db,
-                                seq_type = "Ig",
-                                ...)
-  
-  return(cloned_bcr_db)
+  cloned_db <- scFindClones(db,
+                            seq_type = "Ig",
+                            ...)
+                                
+  return(cloned_db)
 }
 
 #### Wrapper function to call scFindClones with TCR data ####
@@ -4836,8 +4839,6 @@ scFindBCRClones <- function(db,
 #' \code{scFindTCRlones} performs clonal clustering of single cell data
 #'
 #' @param db              an AIRR formatted dataframe containing heavy and light chain sequences. Should contain only one heavy chain (IGH) per cell_id, if not run resolveMultiHC() first.
-#' @param locus           name of column containing locus values.
-#' @param TCR_chains      which chains to keep to TCR VEJ analysis
 #' @param igblast         whether to run standalone IgBlast, can be set to c("filtered_light" or "all") if not one of these three values, will be skipped with a warning. [default = "filtered_light" for both 10X and BD: highly recommended for both to avoid issues at the createGermline() or observedMutation() steps due to different references databases used (10X) or missing imgt gaps in the sequence_alignment collumn (Both))]
 #' @param method          method to use for scoper::hierarchicalClones(), can be one between: identical, hierarchical or spectral
 #' @param threshold       method to use for scoper::hierarchicalClones() or scoper::spectralClones(),
@@ -4854,12 +4855,12 @@ scFindBCRClones <- function(db,
 #' @export
 
 scFindTCRClones <- function(db,
-                            locus = "locus",
                             igblast = c("none", "all"),
                             update_c_call = c("none"), 
                             method = c("changeo", "identical"),
                             threshold = 0,
                             shared.tech = NULL, #for now only expected to be used for scRNAseq datasets
+                            clean_LC = FALSE, # also setting up this last two option as FALSE as they haven't yet been properly tested for TCR datasets:
                             ...){
   
   # no need for mutation analysis and clone-based germline inference
@@ -4867,31 +4868,20 @@ scFindTCRClones <- function(db,
   update_germline = FALSE
   # no need for full VDJ reconstruction (mostly for Alphafold prediction of Ab/Antigen interaction)
   full_seq_aa = FALSE
-  # also setting up this last two option as FALSE as they haven't yet been properly tested for TCR datasets:
-  clean_LC = FALSE
   
-  tcr_db <- db %>%
-    dplyr::filter(locus %in% TCR_chains)
-  non_tcr_db <- db %>%
-    dplyr::filter(!locus %in% TCR_chains)
-  
-  cloned_tcr_db <- scFindClones(tcr_db,
-                                seq_type = "TCR",
-                                locus = locus,
-                                igblast = igblast,
-                                method = method,
-                                threshold = threshold,
-                                update_c_call = update_c_call,
-                                SHM = SHM,
-                                update_germline = update_germline,
-                                full_seq_aa = full_seq_aa,
-                                shared.tech = shared.tech,
-                                ...)
-  
-  cloned_tcr_db <- cloned_tcr_db %>%
-    dplyr::bind_rows(non_tcr_db)
-  
-  return(cloned_tcr_db)
+  cloned_db <- scFindClones(db,
+                            seq_type = "TCR",
+                            igblast = igblast,
+                            method = method,
+                            threshold = threshold,
+                            update_c_call = update_c_call,
+                            SHM = SHM,
+                            update_germline = update_germline,
+                            full_seq_aa = full_seq_aa,
+                            shared.tech = shared.tech,
+                            ...)
+                                
+  return(cloned_db)
 }
 
 #### Function to add clonotype information to a Seurat object ####
@@ -5065,3 +5055,5 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
  sc <- AddMetaData(sc, sc_vdj_db)
  return(sc)
 }
+
+

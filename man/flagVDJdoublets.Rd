@@ -9,39 +9,32 @@ flagVDJdoublets(
   analysis_name = "All_sequences",
   homotypic = TRUE,
   heterotypic = TRUE,
+  seq_type = c("Ig", "TCR"),
+  heavy = NULL,
+  light = NULL,
   output = TRUE,
   output_folder = "VDJ_QC",
-  cell_id = "cell_id",
-  locus = "locus",
-  heavy = "IGH",
-  umi_count = "umi_count",
-  use_chain = c("all", "IGH"),
   split.by = NULL,
-  variable_cutoff = TRUE,
-  low_cutoff = 10,
-  high_cutoff = 250,
-  azimuth.ref = c("pbmcref", "tonsilref", "bonemarrowref"),
-  azimuth.column = list(pbmcref = "predicted.celltype.l2", tonsilref =
-    "predicted.celltype.l1", bonemarrowref = "predicted.celltype.l2"),
-  azimuth.Bcelltypes = list(pbmcref = c("B intermediate", "B memory", "B naive",
-    "Plasmablast"), tonsilref = c("B activated", "B memory", "B naive", "preGCB", "PB",
-    "PC", "PC/doublet", "preMBC/doublet", "prePB", "Cycling DZ GCB", "DZ GCB",
+  ref = c("azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref"),
+  ref.column = list(azimuth.pbmcref = "predicted.celltype.l2", azimuth.tonsilref =
+    "predicted.cell_type.l1", azimuth.bonemarrowref = "predicted.celltype.l2"),
+  ref.Bcelltypes = list(azimuth.pbmcref = c("B intermediate", "B memory", "B naive",
+    "Plasmablast"), azimuth.tonsilref = c("B activated", "B memory", "B naive", "preGCB",
+    "PB", "PC", "PC/doublet", "preMBC/doublet", "prePB", "Cycling DZ GCB", "DZ GCB",
     "DZtoLZ GCB transition", "FCRL4/5+ B memory", "LZ GCB", "LZtoDZ GCB transition"),
-    bonemarrowref = c("Memory B", "Naive B", "Plasma", "pro B", "pre B",
+    azimuth.bonemarrowref = c("Memory B", "Naive B", "Plasma", "pro B", "pre B",
     "transitional B")),
-  scRNAseq.tech = c("10X", "BD"),
-  assay = "assay",
-  productive = "productive",
-  complete_vdj = "complete_vdj",
-  sequence_id = "sequence_id",
-  consensus_count = "consensus_count",
-  junction = "junction",
-  junction_aa = "junction_aa",
-  sequence = "sequence",
-  v_call = "v_call",
-  d_call = "d_call",
-  j_call = "j_call",
-  c_call = "c_call"
+  ref.Tcelltypes = list(azimuth.pbmcref = c("CD4 CTL", "CD4 Naive", "CD4 Proliferating",
+    "CD4 TCM", "CD4 TEM", "Treg", "CD8 Naive", "CD8 Proliferating", "CD8 TCM", "CD8 TEM",
+    "dnT", "gdT", "MAIT"), azimuth.tonsilref = c("CD4 naive", "CD4 Non-TFH", "CD4 TCM",
+    "CD4 TFH", "CD4 TFH Mem", "CD4 TREG", "CD8 naive", "CD8 T", "CD8 TCM", "Cycling T",
+    "dnT", "MAIT/TRDV2+ gdT", "non-TRDV2+ gdT"), azimuth.bonemarrowref =
+    c("CD4 Effector", "CD4 Memory", "CD4 Naive", "CD8 Effector 1", "CD8 Effector 2",
+    "CD8 Effector 3", "CD8 Memory", 
+     "CD8 Naive", "MAIT", "T proliferating")),
+  save_plot = c("pdf", "png"),
+  verbose = TRUE,
+  ...
 )
 }
 \arguments{
@@ -49,63 +42,27 @@ flagVDJdoublets(
 
 \item{analysis_name}{name to use for outputs prefixes.}
 
-\item{homotypic}{whether to run flagBdoublets()}
+\item{homotypic}{whether to run homotypicVDJdoublets()}
 
-\item{heterotypic}{whether to run flagNonBdoublets()}
+\item{heterotypic}{whether to run heterotypicVDJdoublets()}
+
+\item{seq_type}{type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)}
+
+\item{heavy}{heavy chains to be used. if set to NULL, will default to IGH for Ig and TRB/TRD for TCR.}
+
+\item{light}{light chains to be used. if set to NULL, will default to IGL/IGK for Ig and TRA/TRG for TCR.}
 
 \item{output}{whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. Can be set to none, partial (only pdf + log file with QC parameters) or total (pdf + log file with QC parameters + tsv file with sequences).}
 
 \item{output_folder}{name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].}
 
-\item{cell_id}{name of the column containing cell identifier.}
-
-\item{locus}{name of column containing locus values.}
-
-\item{heavy}{which locus value to use as heavy chain [default: IGH]}
-
-\item{umi_count}{name of the column containing the number of unique molecules (UMI) for this contig. Previously called "duplicate_count" in an earlier AIRR standard}
-
-\item{use_chain}{which chain to use to flag VDJ doublets, can de set to "IGH" or "all" [default = "all"].}
-
 \item{split.by}{which column to use to group cells when learning dataset-specific distributions}
 
-\item{variable_cutoff}{whether to use variable cutoffs between datasets}
+\item{save_plot}{format to save the final ggplot2 object. "pdf" or "png". if set to any other value, no plot will be saved.}
 
-\item{low_cutoff}{if fixed cutoffs, cutoff to use to define low-probability doublets}
+\item{verbose}{whether to print recap informations to the console}
 
-\item{high_cutoff}{if fixed cutoffs, cutoff to use to define high-probability doublets}
-
-\item{azimuth.ref}{reference used when running azimuth}
-
-\item{azimuth.column}{name of the column where azimuth calls are stored}
-
-\item{azimuth.Bcelltypes}{name of the B cell populations in the used azimuth reference (default for pbmc.ref, tonsil.ref and bonemarrow.ref are provided)}
-
-\item{scRNAseq.tech}{scRNA-seq technology used (one of 10X or BD)}
-
-\item{assay}{name of the column containing assay information.}
-
-\item{productive}{name of the column containing sequence productivity information.}
-
-\item{complete_vdj}{name of the column containing sequence completeness information.}
-
-\item{sequence_id}{name of the column containing the sequence_id.}
-
-\item{consensus_count}{name of the column containing consensus count.}
-
-\item{junction}{name of the column containing junction (nucleotide format).}
-
-\item{junction_aa}{name of the column containing junction (amino-acid format).}
-
-\item{sequence}{name of the column containing the full sequence.}
-
-\item{v_call}{name of the column containing the v_call.}
-
-\item{d_call}{name of the column containing the d_call.}
-
-\item{j_call}{name of the column containing the j_call.}
-
-\item{c_call}{name of the column containing the c_call.}
+\item{...}{arguments to pass to homotypicVDJdoublets or heterotypicVDJdoublets.}
 }
 \description{
 \code{flagVDJdoublets} flag potential B and nonB doublets.
