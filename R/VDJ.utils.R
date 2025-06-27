@@ -3668,7 +3668,7 @@ scImportVDJ <- function(vdj_files,
 
   time_and_log({
     print(sessionInfo())
-  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = open_mode)
+  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = "a")
   
   end <- Sys.time()
   if(verbose){cat(sprintf("Total running time: %.2f %s", end-start, units(difftime(end, start))),"\n")}
@@ -4800,7 +4800,7 @@ scFindClones <- function(db,
   
   time_and_log({
     print(sessionInfo())
-  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = open_mode)
+  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = "a")
   
   end <- Sys.time()
   if(verbose){cat(paste0("Total running time: ", sprintf("%.2f %s", end-start, units(difftime(end, start))), ".\n"))}
