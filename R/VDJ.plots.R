@@ -1,8 +1,339 @@
 
+#### Plotting function for QC graph (flagVDJdoublets and flagNonBdoublets) ####
+#' plot QC graph
+#'
+#' \code{vdjQCplot} plot QC graph
+#'
+#' @param db            a data table
+#' @param seq_type      type of sequences to be plotted: 'Ig' or 'TCR' [default = "Ig"].
+#' @param use_chains    which chain(s) to use between "all" or "heavy" only
+#' @param heavy         heavy chains to be used. if set to NULL, will default to IGH for Ig and TRB/TRD for TCR.
+#' @param light         light chains to be used. if set to NULL, will default to IGL/IGK for Ig and TRA/TRG for TCR.
+#' @param split.by      name of the column to use to group cells and learn dataset-specific distributions
+#' @param type          whether to plot graphs related to B/B doublets or B/non-B doublets
+#' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
+#' @param plot_cutoff   whether to plot cut_off on graph
+#' @param variable_cutoff   whether to use dataset-specific cut-offs
+#' @param high_cutoff   if fixed cutoffs, value to use to mark high probability heavy chain doublets.
+#' @param low_cutfoff   if fixed cutoffs, value to use to mark low-probability doublets
+#' @param analysis_name suffix for final plot(s) name
+#' @param na_name       name to use for NA values in colour.by
+#' @param colour.by     parameter to use for coloring of dots
+#' @param colour_code   colors to use for coloring of dots
+#' @param locus         name of the column containing locus informations
+#' @param heavy         locus value to use for heavy chain identification
+#' @param cell_id       name of the column containing cell_ids
+#' @param umi_count     name of the column containing umi_count informations
+#' @param second_umi_count name of the column containing second_umi_count informations
+#' @param save_plot     format to save the final ggplot2 object. "pdf" or "png". if set to any other value, no plot will be saved.
+#' @param return_plot   whether to return the ggplot2 object
+#'
+#' @return   a pdf plot in the output folder if export = "pdf" and/or a ggplot object if export = "graph"
+#'
+#' @keywords internal
+#'
+#' @import dplyr
+
+vdjQCplot <- function(db,
+                      use_chains = "all",
+                      seq_type = c("Ig", "TCR"),
+                      heavy = NULL,
+                      light = NULL,
+                      split.by = NULL,
+                      type = c("vdj_doublet", "nonB_vdj_doublet", "nonT_vdj_doublet"),
+                      output_folder = NULL,
+                      analysis_name = "All_sequences",
+                      plot_cutoff = FALSE,
+                      variable_cutoff = TRUE,
+                      low_cutfoff = 10,
+                      high_cutoff = 250,
+                      na_name = "unknown",
+                      colour.by = list("vdj_doublet" = "is.VDJ_doublet.confidence",
+                                       "nonB_vdj_doublet" = "is.nonB_VDJ_doublet.confidence",
+                                       "nonT_vdj_doublet" = "is.nonT_VDJ_doublet.confidence"),
+                      colour_code = list("vdj_doublet" = c("high"="darkred", "low" ="darkorange", "not a doublet"="darkgreen"),
+                                         "nonB_vdj_doublet" = c("high"="darkred", "low" ="darkorange", "ambient RNA"="darkgreen", "B cell" = "grey"),
+                                         "nonT_vdj_doublet" = c("high"="darkred", "low" ="darkorange", "ambient RNA"="darkgreen", "T cell" = "grey")),
+                      locus = "locus",
+                      cell_id = "cell_id",
+                      umi_count = "umi_count",
+                      second_umi_count = "second_umi_count",
+                      save_plot = c("pdf", "png"),
+                      return_plot = FALSE){
+  
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    message("Optional: 'ggplot2' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(ggplot2))
+  
+  if (!requireNamespace("patchwork", quietly = TRUE)) {
+    message("Optional: 'patchwork' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  save_plot <- match.arg(save_plot)
+  seq_type <- match.arg(seq_type)
+  
+  if(is.null(heavy)){
+    if(seq_type == "Ig"){
+      heavy <- "IGH"
+    }
+    if(seq_type == "TCR"){
+      heavy <- c("TRB","TRD")
+    }
+  }
+  
+  if(is.null(light)){
+    if(seq_type == "Ig"){
+      light <- c("IGK","IGL")
+    }
+    if(seq_type == "TCR"){
+      light <- c("TRA","TRG")
+    }
+  }
+  
+  if(!use_chains %in% c("all", "heavy")){
+    stop("use_chains argument must be one of 'all' or 'heavy'")
+  } else {
+    if(use_chains == "all"){
+      chains = c("heavy", "light")
+    } else {
+      chains = "heavy"
+    }
+  }
+  
+  if(!is.null(split.by)){
+    groups = levels(as.factor(db[[split.by]]))
+  } else {
+    db <- db %>%
+      dplyr::mutate(
+        split.by = "all_sequences"
+      )
+    split.by = "split.by"
+    groups = "all_sequences"
+  }
+  
+  colour.group = colour.by[[type]]
+  col = c(colour_code[[type]], na_name = "blue")
+  
+  db <- db %>%
+    dplyr::mutate(
+      locus_simplified <- ifelse(locus %in% heavy, "heavy", ifelse(locus %in% heavy, "light", "other"))
+    ) %>%
+    dplyr::filter(locus_simplified %in% chains)
+    
+  table(db$locus_simplified)
+  
+  # generate recap plots for each sample:
+  combined.plots <- lapply(groups, FUN=function(group){
+    # check color groups are well defined
+    group_db <- db %>%
+      dplyr::filter(!!rlang::sym(split.by) == group) %>%
+      dplyr::mutate(
+        !!rlang::sym(colour.group) := forcats::fct_na_value_to_level(!!rlang::sym(colour.group), level = na_name),
+      )
+    group_db[[colour.group]] <- factor(group_db[[colour.group]], levels = names(col))
+    group_db <- group_db %>% 
+      dplyr::arrange(desc(!!rlang::sym(colour.group)))
+    
+    # generate dominant versus second umi plots for each chain
+    if(type == "vdj_doublet"){
+      if(plot_cutoff){
+        if(variable_cutoff) {
+          # if not already in the dataframe, learn dataset (split.by) and locus specific cutoffs (adapted to library depth):
+          # 1st quartile of dominant VDJ umi_count (in 75% of doublets the second VDJ should be above this value) and minimum of 10 and 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
+          if(!(all(c("upper_cutoff", "lower_cutoff") %in% colnames(group_db)))){
+            group_db <- group_db %>%
+              dplyr::group_by(locus_simplified) %>%
+              dplyr::mutate(
+                upper_cutoff = quantile(!!rlang::sym(umi_count), 0.25, na.rm = TRUE),
+                lower_cutoff = ceiling(median(!!rlang::sym(umi_count), na.rm = TRUE)/10)
+              ) %>%
+              dplyr::ungroup()
+          }
+        } else { # otherwise, use provided cutoffs
+          group_db <- group_db %>%
+            dplyr::mutate(
+              upper_cutoff = high_cutoff,
+              lower_cutoff = low_cutoff
+            )
+        }
+        
+        plots.list <- lapply(chains, FUN=function(chain){
+          plot_data <- group_db %>%
+            dplyr::filter(locus_simplified %in% chain) %>%
+            dplyr::mutate(
+              !!rlang::sym(second_umi_count) := ifelse(is.na(!!rlang::sym(second_umi_count)), 0.1, !!rlang::sym(second_umi_count))
+            )
+          
+          max = max(plot_data[[umi_count]])
+          upper_cutoff = max(na.omit(plot_data[["upper_cutoff"]]))
+          lower_cutoff = max(na.omit(plot_data[["lower_cutoff"]]))
+          
+          line1 = data.frame(x = seq(0.1, 3*upper_cutoff))
+          line1$y = line1$x/3
+          line2 = data.frame(x = seq(3*lower_cutoff, max))
+          line2$y = lower_cutoff
+          line3 = data.frame(x = seq(3*upper_cutoff, max))
+          line3$y = upper_cutoff
+          
+          if(chain == "heavy"){
+            full_chain_list <- paste(heavy, collapse = "-")
+          } else {
+            full_chain_list <- paste(light, collapse = "-")
+          }
+
+          p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = !!rlang::sym(umi_count), y = !!rlang::sym(second_umi_count), colour = !!rlang::sym(colour.group))) +
+            ggplot2::geom_point() +
+            ggplot2::geom_abline(intercept = 0, slope = 1, color = "black", linetype = "dashed") +
+            ggplot2::geom_line(data = line1, aes(x = x, y = y), color = "black", linetype = "dashed") +
+            ggplot2::geom_line(data = line2, aes(x = x, y = y), color = "black", linetype = "dashed") +
+            ggplot2::geom_line(data = line3, aes(x = x, y = y), color = "black", linetype = "dashed") +
+            ggplot2::scale_color_manual(values = col) +
+            ggplot2::labs(title = paste0(group, " - ", analysis_name),
+                          x = paste0(full_chain_list, " Dominant contig"),
+                          y = paste0(full_chain_list, " Secondary contig")) +
+            scale_x_log10() +
+            scale_y_log10()
+          
+          return(p)
+        })
+        names(plots.list) = chains
+      } else {
+        plots.list <- lapply(chains, FUN=function(chain){
+          plot_data <- group_db %>%
+            dplyr::filter(locus_simplified %in% chain) %>%
+            dplyr::mutate(
+              !!rlang::sym(second_umi_count) := ifelse(is.na(!!rlang::sym(second_umi_count)), 0.1, !!rlang::sym(second_umi_count))
+            )
+          p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = !!rlang::sym(umi_count), y = !!rlang::sym(second_umi_count), colour = !!rlang::sym(colour.group))) +
+            ggplot2::geom_point() +
+            ggplot2::geom_abline(intercept = 0, slope = 1, color = "black", linetype = "dashed") +
+            ggplot2::scale_color_manual(values = col) +
+            ggplot2::labs(title = paste0(group, " - ", analysis_name),
+                          x = paste0(paste(unlist(mget(chain)), collapse = "-"), " Dominant contig"),
+                          y = paste0(paste(unlist(mget(chain)), collapse = "-"), " Secondary contig")) +
+            scale_x_log10() +
+            scale_y_log10()
+          return(p)
+        })
+        names(plots.list) = chains
+      }
+    }
+    
+    # generate heavy versus light plots
+    HvsL_plot_db <- group_db %>%
+      dplyr::select(!!rlang::sym(cell_id), locus_simplified, !!rlang::sym(umi_count), !!rlang::sym(colour.group)) %>%
+      tidyr::pivot_wider(names_from = locus_simplified, values_from = !!rlang::sym(umi_count))
+    
+    if("heavy" %in% colnames(HvsL_plot_db)){
+      HvsL_plot_db <- HvsL_plot_db %>%
+        dplyr::mutate(
+          heavy = ifelse(is.na(heavy), 0.1, heavy)
+        )
+    }
+    if("light" %in% colnames(HvsL_plot_db)){
+      HvsL_plot_db <- HvsL_plot_db %>%
+        dplyr::mutate(
+          light = ifelse(is.na(light), 0.1, light)
+        )
+    }
+    
+    if(type == "vdj_doublet"){
+      secondary_plot_db <- group_db %>%
+        dplyr::filter(!is.na(!!rlang::sym(second_umi_count))) %>%
+        dplyr::select(!!rlang::sym(cell_id), locus_simplified, !!rlang::sym(second_umi_count), !!rlang::sym(colour.group)) %>%
+        tidyr::pivot_wider(names_from = locus_simplified, values_from = !!rlang::sym(second_umi_count)) 
+      
+      if("heavy" %in% colnames(secondary_plot_db)){
+        secondary_plot_db <- secondary_plot_db %>%
+          dplyr::mutate(
+            heavy = ifelse(is.na(heavy), 0.1, heavy)
+          )
+      }
+      if("light" %in% colnames(secondary_plot_db)){
+        secondary_plot_db <- secondary_plot_db %>%
+          dplyr::mutate(
+            light = ifelse(is.na(light), 0.1, light)
+          )
+      }
+      
+      col = c(col, "primary_umi_counts" = "grey")
+      HvsL_plot_db <- HvsL_plot_db %>%
+        dplyr::mutate(
+          !!rlang::sym(colour.group) := "primary_umi_counts"
+        ) %>%
+        dplyr::bind_rows(secondary_plot_db)
+    }
+    
+    p2 <- ggplot2::ggplot(HvsL_plot_db, ggplot2::aes(x = heavy, y = light, colour = !!rlang::sym(colour.group))) +
+      ggplot2::geom_point() +
+      ggplot2::scale_color_manual(values = col) +
+      ggplot2::labs(title = paste0(group, " - ", analysis_name),
+                    x = paste0(paste(heavy, collapse = "-"), " - UMI Count"),
+                    y = paste0(paste(light, collapse = "-"), " - UMI Count")) +
+      scale_x_log10() +
+      scale_y_log10()
+    
+    if(type == "vdj_doublet"){
+      plots.list[[length(chains)+1]] <- p2
+      # organize final page
+      combined_plot <- plots.list[[1]] + plots.list[[2]]
+      if(length(chains)>1){
+        for(i in 3:(length(chains)+1)){
+          combined_plot <- combined_plot + plots.list[[i]]
+        }
+        combined_plot <- combined_plot + patchwork::plot_layout(ncol = 2)
+      } else {combined_plot <- combined_plot + patchwork::plot_layout(ncol = 1)}
+    } else {
+      combined_plot <- p2 + patchwork::plot_layout(ncol = 1)
+    }
+    return(combined_plot)
+  })
+  names(combined.plots) <- groups
+  
+  if(save_plot %in% c("pdf", "png")){
+    if(!is.null(output_folder)){
+      if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
+      if(!dir.exists(output_folder)){
+        dir.create(output_folder)
+      }
+    }
+    if(type == "vdj_doublet"){
+      filename <- paste0(output_folder, analysis_name, "_VDJ_doublets_QC_plots.pdf")
+    }
+    if(type == "nonB_vdj_doublet"){
+      filename <- paste0(output_folder, analysis_name, "_nonB_VDJ_doublets_QC_plots.pdf")
+    }
+    if(type == "nonT_vdj_doublet"){
+      filename <- paste0(output_folder, analysis_name, "_nonT_VDJ_doublets_QC_plots.pdf")
+    }
+    
+    if(save_plot == "pdf"){
+      pdf(filename, width = 11.69, height = 8.27)
+      for(group in groups){
+        print(combined.plots[[group]])
+      }
+      dev.off()
+    }
+    
+    if(save_plot == "png"){
+      png(filename, width = 11.69, height = 8.27)
+      for(group in groups){
+        print(combined.plots[[group]])
+      }
+      dev.off()
+    }
+  }
+  if(return_plot){
+    return(combined.plots)
+  }
+}
+
 #### Rapid function to plot histogram (with or without density) ####
 #' Plot a basic histogram
 #'
-#' \code{plotHisto}
+#' \code{plotHistogram}
 #' @param df        a data frame with at least the feature column
 #' @param feature   which column to use for plotting
 #' @param density   whether to add a density curve
@@ -16,7 +347,7 @@
 #'
 #' @export
 
-plotHisto <- function(df, density = TRUE, feature, label_column, vline) {
+plotHistogram <- function(df, density = TRUE, feature, label_column, vline) {
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("Optional: 'ggplot2' not installed — skipping plot.")
     return(invisible(NULL))
@@ -41,12 +372,15 @@ plotHisto <- function(df, density = TRUE, feature, label_column, vline) {
 #### Function to plot Donut Plots  ####
 #' Plots multiple donut plots and save them as pdf
 #'
-#' \code{DonutPlotClonotypes3D} Plots multiple donut plots and save them as pdf
+#' \code{DonutPlotClonotypes} Plots multiple donut plots and save them as pdf
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
-#' @param ...       arguments to be passed to DonutPlotClonotypes()
+#' @param ...       arguments to be passed to SingleDonutPlotClonotypes()
 #'
-#' @return multiple pdf donut plots
+#' @return 
+#' saved pdf for as many donut plots as there are groups in the dataframe as defined by the split.by argument. 
+#' if the split.by argument points to more than one column, will group the dataset based on the first element(s) of the split.by argument 
+#' and keep only the last as split.by argument of the SingleDonutPlotClonotypes function.
 #'
 #' @details
 #' db should be an AIRR formated database with a defined "clone_id" column
@@ -67,27 +401,29 @@ plotHisto <- function(df, density = TRUE, feature, label_column, vline) {
 #'
 #' @export
 
-DonutPlotClonotypes3D <- function(db,
-                                  split.by = NULL,
-                                  prefix = NULL,
-                                  ...){
-
+DonutPlotClonotypes <- function(db,
+                                split.by = NULL,
+                                prefix = NULL,
+                                ...){
+                                  
   #library(dplyr, quiet = TRUE)
 
   if(is.null(split.by)){
     db$origin <- "all"
-    DonutPlotClonotypes(db,
-                        split.by = "origin",
-                        ...)
+    SingleDonutPlotClonotypes(db,
+                              split.by = "origin",
+                              ...)
+                        
     return(plots.list)
   }
   if(length(split.by) == 1){
     if(!split.by %in% colnames(db)){
       stop("split.by column does not exist in provided dataframe")
     }
-    DonutPlotClonotypes(db,
-                        split.by = split.by,
-                        ...)
+    SingleDonutPlotClonotypes(db,
+                              split.by = split.by,
+                              ...)
+                        
     return(plots.list)
   }
   if(length(split.by) > 1){
@@ -114,10 +450,11 @@ DonutPlotClonotypes3D <- function(db,
       }
       
       # Plot data
-      DonutPlotClonotypes(data,
-                          split.by = origin,
-                          prefix = paste(c(prefix, group_name), collapse = "_"),
-                          ...)
+      SingleDonutPlotClonotypes(data,
+                                split.by = origin,
+                                prefix = paste(c(prefix, group_name), collapse = "_"),
+                                ...)
+                          
     }
     db <- db %>%
       dplyr::group_by(!!!rlang::syms(split.by)) %>%
@@ -129,7 +466,7 @@ DonutPlotClonotypes3D <- function(db,
 #### Function to plot Donut Plots  ####
 #' Plots individual donut plots and save as pdf
 #'
-#' \code{DonutPlotClonotypes} Plots individual donut plots and save as pdf
+#' \code{SingleDonutPlotClonotypes} Plots individual donut plots and save as pdf
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
 #' @param prefix    prefix to use for saved files
@@ -148,31 +485,31 @@ DonutPlotClonotypes3D <- function(db,
 #' @param height    height of saved plot
 #' @param width     width of saved plot
 #'
-#' @return a seurat object with additional metadata imported from the vdj_db dataframe.
+#' @return saved pdf for as many donut plots as there are groups in the dataframe as defined by the split.by argument
 #'
 #' @import dplyr
 #'
 #' @export
 
-DonutPlotClonotypes <- function(db,
-                                split.by = NULL,
-                                prefix = NULL,
-                                use_chain = "IGH",
-                                locus = "locus",
-                                cell_id = "cell_id",
-                                clone_id = "clone_id",
-                                groups_to_plot = "all",
-                                col.line = "black",
-                                plots_folder = "Donut_plots",
-                                antigen,
-                                highlight = c("shared", "clone_size", "clone_rank"),
-                                highlight_col = NULL, 
-                                external_bar = c("expanded", "top5", "none"),
-                                productive = "productive",
-                                productive_only = TRUE,
-                                height = 3,
-                                width = 3){
-
+SingleDonutPlotClonotypes <- function(db,
+                                      split.by = NULL,
+                                      prefix = NULL,
+                                      use_chain = "IGH",
+                                      locus = "locus",
+                                      cell_id = "cell_id",
+                                      clone_id = "clone_id",
+                                      groups_to_plot = "all",
+                                      col.line = "black",
+                                      plots_folder = "Donut_plots",
+                                      antigen,
+                                      highlight = c("shared", "clone_size", "clone_rank"),
+                                      highlight_col = NULL, 
+                                      external_bar = c("expanded", "top5", "none"),
+                                      productive = "productive",
+                                      productive_only = TRUE,
+                                      height = 3,
+                                      width = 3){
+                                
   
   if (!requireNamespace("circlize", quietly = TRUE)) {
     message("Optional: 'circlize' not installed — skipping plot.")
@@ -270,9 +607,10 @@ DonutPlotClonotypes <- function(db,
   if(highlight == "shared"){
     #each shared clone gets its own color
     shared_clones <- Clones_by_groups_to_plot[Clones_by_groups_to_plot$shared, clone_id]
-    if(length(shared_clones) > length(highlight_col)){
-      col_shared <- grDevices::colorRampPalette(highlight_col)(length(shared_clones))
-    } else {col_shared <- highlight_col[1:(length(shared_clones))]}
+    col_shared <- grDevices::colorRampPalette(highlight_col)(length(shared_clones))
+    #if(length(shared_clones) > length(highlight_col)){
+    #  col_shared <- grDevices::colorRampPalette(highlight_col)(length(shared_clones))
+    #} else {col_shared <- highlight_col[1:(length(shared_clones))]}
     #optional: used random color
     #if (!requireNamespace("randomcoloR", quietly = TRUE)) {col_shared <- randomcoloR::randomColor(length(Shared_clones))}
     names(col_shared) <- shared_clones
@@ -317,7 +655,7 @@ DonutPlotClonotypes <- function(db,
                                   expanded = FALSE))
       }
       if(highlight == "clone_rank"){
-        #'each expanded clone gets its own color
+        #each expanded clone gets its own color
         expanded_clones <- data[data$expanded, clone_id]
         if(length(expanded_clones) > length(highlight_col)){
           extra_basic_color <- RColorBrewer::brewer.pal(n = ceiling(length(expanded_clones)/5), name = "Set1")[-(1:5)]
@@ -331,7 +669,7 @@ DonutPlotClonotypes <- function(db,
           )
       }
       if(highlight == "clone_size"){
-        #'color is defined based on clone size
+        #color is defined based on clone size
         diff_sizes <- unique(data[data$expanded,]$clone_size_in_group)
         diff_sizes <- rev(diff_sizes[order(diff_sizes)])
         if(length(diff_sizes) > length(highlight_col)){
@@ -411,10 +749,10 @@ DonutPlotClonotypes <- function(db,
                            })
     
     
-    #'add nb sequences in the center:
+    #add nb sequences in the center:
     text(0,0, nb_seq)
     
-    #'highlight expanded or top_5 clones:
+    #highlight expanded or top_5 clones:
     if(external_bar == "expanded"){
       #add outside track highlighting expanded clones:
       expanded_clones <- Clones[Clones$expanded == TRUE,]
@@ -431,8 +769,8 @@ DonutPlotClonotypes <- function(db,
     }
     
     if(external_bar == "top5"){
-      #'add outside track highlighting top5 clones:
-      #'accounts for cases with less than five clones (excluding unique sequences of course), no unique sequences or only unique sequences
+      #add outside track highlighting top5 clones:
+      #accounts for cases with less than five clones (excluding unique sequences of course), no unique sequences or only unique sequences
       if("unique" %in% Clones$expanded){
         nb_top5_clones <- min(5, (length(Clones$clone_id)-1)) 
       } else {nb_top5_clones <- min(5, (length(Clones$clone_id)))}
@@ -475,7 +813,7 @@ DonutPlotClonotypes <- function(db,
 #### Function to plot hexmap from repertoire data ####
 #' Plots multiple hexmap plots and save as pdf
 #'
-#' \code{HexmapClonotypes3D} Plots multiple donut plots and save as pdf
+#' \code{HexmapClonotypes} Plots multiple donut plots and save as pdf
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
 #' @param ordered   whether to order clones based on size and highlighing parameter
@@ -508,31 +846,32 @@ DonutPlotClonotypes <- function(db,
 #'
 #' @export
 
-HexmapClonotypes3D <- function(db,
-                               split.by = NULL,
-                               ordered = TRUE,
-                               highlight = "c_call",
-                               highlight_col = list("c_call" = c("IGHM"= "green", "IGHD" = "lightgreen", "IGHA1"= "orange", "IGHA2"= "red",
-                                                                 "IGHG1" = "blue", "IGHG2" = "lightblue", "IGHG3" = "lightblue", "IGHG4" = "lightblue",
-                                                                 "IGHE"= "brown")),
-                               prefix = NULL,
-                               plots_folder = "Hexbin_plots",
-                               use_chain = "IGH",
-                               locus = "locus",
-                               cell_id = "cell_id",
-                               clone_id = "clone_id",
-                               productive = "productive",
-                               productive_only = TRUE,
-                               radius = 1,
-                               padding = 0.2,
-                               shape = c("hex", "circle"),
-                               seed = 42,
-                               save_plot = TRUE,
-                               save_as = c("pdf", "png"),
-                               height = 6,
-                               width = 6,
-                               return_plot = FALSE,
-                               return_coords = FALSE){
+HexmapClonotypes <- function(db,
+                             split.by = NULL,
+                             ordered = TRUE,
+                             highlight = "c_call",
+                             highlight_col = list("c_call" = c("IGHM"= "green", "IGHD" = "lightgreen", "IGHA1"= "orange", "IGHA2"= "red",
+                                                               "IGHG1" = "blue", "IGHG2" = "lightblue", "IGHG3" = "lightblue", "IGHG4" = "lightblue",
+                                                               "IGHE"= "brown")),
+                             prefix = NULL,
+                             plots_folder = "Hexbin_plots",
+                             use_chain = "IGH",
+                             locus = "locus",
+                             cell_id = "cell_id",
+                             clone_id = "clone_id",
+                             productive = "productive",
+                             productive_only = TRUE,
+                             radius = 1,
+                             padding = 0.2,
+                             shape = c("hex", "circle"),
+                             seed = 42,
+                             save_plot = TRUE,
+                             save_as = c("pdf", "png"),
+                             height = 6,
+                             width = 6,
+                             return_plot = FALSE,
+                             return_coords = FALSE){
+                               
 
   if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
     message("Optional: 'RColorBrewer' not installed — skipping plot.")
@@ -581,18 +920,19 @@ HexmapClonotypes3D <- function(db,
       title = paste("All_sequences_clones_by_", highlight)
       filename = paste0(plots_folder, "/All_sequences_by_", highlight,".pdf")
     }
-    p <- HexmapClonotypes(Plot_db,
-                          ordered = ordered,
-                          radius = radius,
-                          padding = padding,
-                          fill_col = "origin",
-                          cell_id = cell_id,
-                          clone_id = clone_id,
-                          title = title,
-                          shape = shape,
-                          palette = palette,
-                          seed = seed,
-                          return_coords = FALSE)
+    p <- SingleHexmapClonotypes(Plot_db,
+                                ordered = ordered,
+                                radius = radius,
+                                padding = padding,
+                                fill_col = "origin",
+                                cell_id = cell_id,
+                                clone_id = clone_id,
+                                title = title,
+                                shape = shape,
+                                palette = palette,
+                                seed = seed,
+                                return_coords = FALSE)
+                          
     pdf(file = filename, height = 6, width = 6)
     plot(p)
     dev.off()
@@ -609,18 +949,19 @@ HexmapClonotypes3D <- function(db,
           group_name <- paste0(group_name, "_", unique(data[[split.by[i]]]))
       }
       # Plot data
-      p <- HexmapClonotypes(data,
-                            ordered = ordered,
-                            radius = radius,
-                            padding = padding,
-                            fill_col = "origin",
-                            cell_id = cell_id,
-                            clone_id = clone_id,
-                            title = title,
-                            shape = shape,
-                            palette = palette,
-                            seed = seed,
-                            return_coords = FALSE)
+      p <- SingleHexmapClonotypes(data,
+                                  ordered = ordered,
+                                  radius = radius,
+                                  padding = padding,
+                                  fill_col = "origin",
+                                  cell_id = cell_id,
+                                  clone_id = clone_id,
+                                  title = title,
+                                  shape = shape,
+                                  palette = palette,
+                                  seed = seed,
+                                  return_coords = FALSE)
+                            
       
       if(save_plot){
         if(!is.null(prefix)){
@@ -664,7 +1005,7 @@ HexmapClonotypes3D <- function(db,
 #### Function to plot hexmap from repertoire data ####
 #' Plots individual hexmap plots and save as pdf
 #'
-#' \code{HexmapClonotypes} Plots individual hexmap plots and save as pdf
+#' \code{SingleHexmapClonotypes} Plots individual hexmap plots and save as pdf
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
 #' @param ordered   whether to order clones based on size and highlighing parameter
@@ -699,20 +1040,20 @@ HexmapClonotypes3D <- function(db,
 #'
 #' @export
 
-HexmapClonotypes <- function(data,
-                             ordered = TRUE,
-                             radius = 1,
-                             padding = 0.2,
-                             fill_col = "origin",
-                             cell_id = "cell_id",
-                             clone_id = "clone_id",
-                             title = "All_sequences",
-                             shape = c("hex", "circle"),
-                             palette = NULL,
-                             seed = 42,
-                             max_colors = 10,
-                             return_coords = FALSE) {
-
+SingleHexmapClonotypes <- function(data,
+                                   ordered = TRUE,
+                                   radius = 1,
+                                   padding = 0.2,
+                                   fill_col = "origin",
+                                   cell_id = "cell_id",
+                                   clone_id = "clone_id",
+                                   title = "All_sequences",
+                                   shape = c("hex", "circle"),
+                                   palette = NULL,
+                                   seed = 42,
+                                   max_colors = 10,
+                                   return_coords = FALSE) {
+                             
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("Optional: 'ggplot2' not installed — skipping plot.")
     return(invisible(NULL))
@@ -995,11 +1336,428 @@ plotCDR3logo <- function(db,
   }
 }
                              
+#### Function to plot shared clones between groups using a circosplot representation  ####
+#' Plots individual donut plots and save as pdf
+#'
+#' \code{CircosClonotypes} Plots individual donut plots and save as pdf
+#' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
+#' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
+#' @param prefix    prefix to use for saved files
+#' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
+#' @param locus     name of column containing locus values.
+#' @param cell_id   name of the column containing cell identifier.
+#' @param clone_id  name of the column containing cell identifier.
+#' @param groups_to_plot which groups to plot
+#' @param col.line  color for lines in donut plot
+#' @param plots_folder name for export folder [default: "Donut_plots"]
+#' @param highlight whether to highlight shared clones or clones based on clone_size or clone_rank.
+#' @param highlight_col color scheme to use for highlighed clones
+#' @param external_bar whether to add an external bar for "expanded" or "top5" clones.
+#' @param productive  name of column containing productive calls.
+#' @param productive_only whether to exclude non productive sequences [default: TRUE]
+#' @param height    height of saved plot
+#' @param width     width of saved plot
+#'
+#' @return a seurat object with additional metadata imported from the vdj_db dataframe.
+#'
+#' @import dplyr
+#'
+#' @export
+
+CircosClonotypes <- function(db, 
+                             split.by = NULL, 
+                             groups_to_plot = NULL, 
+                             clone_id = "clone_id",   
+                             order = TRUE,
+                             margin = 0.02, 
+                             track.height = 0.1, 
+                             label = TRUE,
+                             col = NULL, 
+                             col.line = "black", 
+                             highlight = NULL, 
+                             highlight_col = "red") {
+  
+  if (!requireNamespace("circlize", quietly = TRUE)) {
+    message("Optional: 'circlize' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(circlize))
+  
+  #TODO needs to be updated
+  
+  #library(data.table)
+  
+  if(any(!split.by %in% colnames(db))){
+    stop("the following columns could not be found in the provided dataframe: ", split.by[!split.by %in% colnames(db)])
+  }
+  
+  if(is.null(groups_to_plot)){
+    groups_to_plot <- levels(as.factor(db[, split.by]))
+  }
+  
+  if(is.null(col)){
+    library("RColorBrewer")
+    col <- brewer.pal(n = length(groups_to_plot), name = "Set1")
+  }
+  if(col.line == "match"){
+    col.line <- col
+  } else {col.line = rep(col.line, length(groups_to_plot))}
+  
+  #generate clone repartition table:
+  Clones_by_groups_to_plot <- as.data.frame.matrix(table(sc$clone_id, 
+                                                         sc@meta.data[, group_by]))
+  Clones_by_groups_to_plot <- Clones_by_groups_to_plot[, groups_to_plot]
+  Clones_by_groups_to_plot$overall_clone_size <- rowSums(Clones_by_groups_to_plot)
+  Clones_by_groups_to_plot$clone_id <- rownames(Clones_by_groups_to_plot)
+  
+  if(isTRUE(order)){
+    Clones_by_groups_to_plot <- arrange(Clones_by_groups_to_plot, desc(Clones_by_groups_to_plot$overall_clone_size))
+  }
+  
+  #dataframe defining the main sectors: 
+  df1 <- as.data.frame(colSums(Clones_by_groups_to_plot[, groups_to_plot]))
+  colnames(df1) <- "nb_cells"
+  df1$xmin <- 0
+  df1$xmax <- df1$nb_cells+1
+  
+  #list of dataframes defining the clone order and length of each sectors: 
+  groups <- as.list(groups_to_plot)
+  df2.list <- lapply(X = groups, FUN = function(i){
+    df <- Clones_by_groups_to_plot[Clones_by_groups_to_plot[,i] >=1, c("clone_id",i)]
+    colnames(df) <- c("clone_id", "nb_cells")
+    df <- arrange(df, desc(df$"nb_cells"))
+    df$clone_segments_start <- cumsum(df$nb_cells)-df$nb_cells+1
+    df$clone_segments_end <- cumsum(df$nb_cells)
+    return(df)
+  })
+  names(df2.list) <- groups_to_plot
+  
+  #list of dataframes defining the clonal relationships to plot as links: 
+  df3.list <- lapply(X = groups[1:length(groups)-1], FUN = function(i, g=groups_to_plot){
+    min <- match(i, g)+1
+    max <- length(g)
+    comparison <- g[min:max]
+    df.all <- data.frame(clone_id=character(),
+                         size_orig=integer(), 
+                         start_orig=numeric(),
+                         size_end=integer(), 
+                         start_end=numeric(),
+                         stringsAsFactors=FALSE)
+    for (k in 1:length(comparison)){
+      common_clones_k <- intersect(df2.list[[i]]$clone_id, df2.list[[comparison[k]]]$clone_id)
+      if(length(common_clones_k)>0){
+        is.common <- df2.list[[i]]$clone_id %in% common_clones_k
+        df <- df2.list[[i]][is.common, c("clone_id", "nb_cells", "clone_segments_start")]
+        colnames(df) <- c("clone_id", "size_orig", "start_orig")
+        df$orig <- i
+        df$end <- comparison[k]
+        df$size_end <- df2.list[[comparison[k]]]$nb_cells[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
+        df$start_end <- df2.list[[comparison[k]]]$clone_segments_start[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
+        df.all <- rbind(df.all, df)
+      }
+    }
+    return(df.all)
+  })
+  names(df3.list) <- unlist(groups[1:length(groups)-1])
+  df3 <- do.call(rbind, df3.list)
+  
+  ### Basic circos graphic parameters
+  par(mar=rep(1,4))
+  plot <- circos.clear()
+  
+  plot <- circos.par(cell.padding=c(0,0,0,0), track.margin=c(0, margin), start.degree = 90, gap.degree = 1)
+  
+  ##creating sector for each celltype based on nb of cells in a clone per cell_type:
+  plot <- circos.initialize(factors = rownames(df1), x = df1$nb_cells+1, xlim = cbind(df1$xmin, df1$xmax))
+  
+  ##plotting tracks:
+  plot <- circos.trackPlotRegion(ylim = c(0, 1), factors = rownames(df1), track.height=track.height,
+                                 #panel.fun for each sector
+                                 panel.fun = function(x, y) {
+                                   #select details of current sector
+                                   name = get.cell.meta.data("sector.index")
+                                   i = get.cell.meta.data("sector.numeric.index")
+                                   xlim = get.cell.meta.data("xlim")
+                                   ylim = get.cell.meta.data("ylim")
+                                   
+                                   #text direction (dd) and adjusments (aa)
+                                   theta = circlize(mean(xlim), 1.3)[1, 1] %% 360
+                                   dd <- ifelse(theta < 90 || theta > 270, "clockwise", "reverse.clockwise")
+                                   aa = c(1, 0.5)
+                                   if(theta < 90 || theta > 270)  aa = c(0, 0.5)
+                                   
+                                   #plot population labels
+                                   if(isTRUE(label)){
+                                     circos.text(x=mean(xlim), y=1.7, labels=name, facing = dd, cex=0.8,  adj = aa)
+                                   }
+                                   
+                                   #plot main sector
+                                   circos.rect(xleft=xlim[1], ybottom=ylim[1], xright=xlim[2], ytop=ylim[2], 
+                                               col = col[i], border= "black", lty = 1)
+                                   
+                                 })
+  
+  ## add segments based on clone size:
+  for (i in seq_along(groups)){
+    pop = groups[[i]]
+    plot <- circos.segments(x0 = df2.list[[pop]]$clone_segments_end, x1 = df2.list[[pop]]$clone_segments_end, y0 = 0.25, y1 = 0.75, sector.index = pop, col = "black", lwd = 0.5)
+  }
+  
+  ## plot links:
+  for(i in 1:nrow(df3)){
+    plot <- circos.link(sector.index1= df3$orig[i], point1=c(df3$start_orig[i], df3$start_orig[i] + df3$size_orig[i]-1),
+                        sector.index2= df3$end[i], point2=c(df3$start_end[i], df3$start_end[i] + df3$size_end[i]-1),
+                        col = col.line[match(df3$orig[i], groups_to_plot)], lwd = 0.5)
+  }
+  
+  if(!is.null(highlight)){
+    df4.list <- lapply(X = groups[1:length(groups)-1], FUN = function(i, g=groups_to_plot){
+      min <- match(i, g)+1
+      max <- length(g)
+      comparison <- g[min:max]
+      df.all <- data.frame(clone_id=character(),
+                           size_orig=integer(), 
+                           start_orig=numeric(),
+                           size_end=integer(), 
+                           start_end=numeric(),
+                           stringsAsFactors=FALSE)
+      for (k in 1:length(comparison)){
+        common_clones_k <- intersect(df2.list[[i]]$clone_id, df2.list[[comparison[k]]]$clone_id)
+        highlight_clones_k <- intersect(common_clones_k, highlight)
+        if(length(highlight_clones_k)>0){
+          is.common <- df2.list[[i]]$clone_id %in% highlight_clones_k
+          df <- df2.list[[i]][is.common, c("clone_id", "nb_cells", "clone_segments_start")]
+          colnames(df) <- c("clone_id", "size_orig", "start_orig")
+          df$orig <- i
+          df$end <- comparison[k]
+          df$size_end <- df2.list[[comparison[k]]]$nb_cells[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
+          df$start_end <- df2.list[[comparison[k]]]$clone_segments_start[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
+          df.all <- rbind(df.all, df)
+        }
+      }
+      return(df.all)
+    })
+    names(df4.list) <- unlist(groups[1:length(groups)-1])
+    df4 <- do.call(rbind, df4.list)
+    
+    #plot highlight links
+    for(i in 1:nrow(df4)){
+      plot <- circos.link(sector.index1= df4$orig[i], point1=c(df4$start_orig[i], df4$start_orig[i] + df4$size_orig[i]-1),
+                          sector.index2= df4$end[i], point2=c(df4$start_end[i], df4$start_end[i] + df4$size_end[i]-1),
+                          col = highlight_col, lwd = 0.5)
+    }
+  }
+  return(plot)
+}
 
 
+#### Plot frequencies of VH/VL pairing ####
+#' Plot frequencies of VH/VL pairing
+#'
+#' \code{plotVGenePairing} Plot frequencies of VH/VL pairing
+#' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
+#' @param split.by  name of column to use to group sequence.
+#' @param groups_to_plot which groups to plot
+#' @param prefix    prefix to use for saved files
+#' @param downsample_clones whether to reduce clone to one value
+#' @param locus     name of column containing locus values.
+#' @param heavy     which chain to use as heavy chain [default: "IGH"], each cell should only have one contig for this chain
+#' @param light     which chain to use as hlights chain [default: "IGH"], each cell should only have one contig for this chain
+#' @param v_call    name of column containing v calls.
+#' @param clone_id  name of column containing clone affiliations.
+#' @param plot_freq whether to plot frequenceis (TRUE) or absolute counts (FALSE) [#TODO]
+#' @param plot_significance whether to highlight significant differences between group 1 and other groups (red borders for dots)
+#' @param save_plot whether to save the plot as a pdf [#TODO].
+#' @param return_plot whether to return the plot as a ggplot object
+#'
+#' @return a ggplot object with associated frequency and binomial test results for inputed data.
+#'
+#' @import dplyr
+#' @import tidyr
+#' @import tibble
+#'
+#' @export
 
-
-
-
+plotVGenePairing <- function(db,
+                             split.by = NULL, #max one column
+                             groups_to_plot = NULL,
+                             prefix = NULL,
+                             downsample_clones = TRUE,
+                             locus = "locus",
+                             heavy = "IGH",
+                             light = c("IGK", "IGL"),
+                             v_call = "v_call",
+                             clone_id = "clone_id",
+                             plot_freq = TRUE,
+                             plot_significance = FALSE,
+                             save_plot = FALSE,
+                             return_plot = TRUE){
+  
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    message("Optional: 'ggplot2' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(ggplot2))
+  
+  if(is.null(split.by)){
+    split.by <- "all"
+    df$all <- "all sequences"
+  }
+  if(is.null(groups_to_plot)){
+    groups_to_plot <- levels(as.factor(df[[split.by]]))
+  }
+  
+  # Reformat the dataframe
+  df <- db %>%
+    dplyr::ungroup() %>%
+    dplyr::filter(!!rlang::sym(split.by) %in% groups_to_plot) %>%
+    dplyr::mutate(
+      v_gene =  alakazam::getGene(v_call, first = TRUE, collapse = TRUE, strip_d = TRUE, omit_nl = FALSE, sep = ","),
+      locus_simplified = ifelse(locus %in% heavy, "VH", ifelse(locus %in% light, "VL", NA))
+    ) 
+  
+  if(any(is.na(df$locus_simplified))){
+    n_NA <- length(df$locus_simplified[is.na(df$locus_simplified)])
+    df <- df %>%
+      dplyr::filter(is.na(locus_simplified))
+    warning(n_NA, " contigs removed as non ", paste(heavy, collapse = ", " )," or ", paste(light, collapse = ", " ))
+  }
+  
+  # [optional] Select only only representant per clone:
+  if(downsample_clones){
+    df <- df %>%
+      dplyr::select(cell_id, v_gene, locus_simplified, !!rlang::sym(split.by), clone_id) %>%
+      dplyr::group_by(clone_id, locus_simplified) %>%
+      dplyr::summarise(
+        cell_id = unique(cell_id)[1],
+        !!rlang::sym(split.by) := unique(!!rlang::sym(split.by))[1],
+        v_gene = unique(v_gene)[1],
+        locus_simplified = unique(locus_simplified)[1],
+        .groups = "drop"
+      )
+  } else {
+    df <- df %>%
+      dplyr::select(cell_id, v_gene, locus_simplified, !!rlang::sym(split.by))
+  }
+  
+  # Calculate pairing frequencies in cells with paired VH and VL:
+  df_wide <- df %>%
+    tidyr::pivot_wider(names_from = locus_simplified, values_from = v_gene) %>%
+    tidyr::drop_na(VH, VL, !!rlang::sym(split.by))
+  
+  #pair_counts <- df_wide %>%
+  #  dplyr::count(heavy, light)
+  
+  pair_freq <- df_wide %>%
+    dplyr::count(!!rlang::sym(split.by), VH, VL) %>%
+    dplyr::group_by(!!rlang::sym(split.by)) %>%
+    dplyr::mutate(freq = n / sum(n)) %>%
+    dplyr::ungroup()
+  
+  # Ensure full VH-VL grid for both groups (fill missing with 0 freq)
+  all_combinations <- tidyr::expand_grid(
+    donor_group = unique(pair_freq[[split.by]]),
+    VH = unique(pair_freq$VH),
+    VL = unique(pair_freq$VL)
+  )
+  
+  pair_freq_complete <- all_combinations %>%
+    dplyr::left_join(pair_freq, by = c(split.by, "VH", "VL")) %>%
+    tidyr::replace_na(list(freq = 0))
+  
+  # Create expected frequency matrix from the first group in the list:
+  
+  expected_df <- pair_freq_complete %>%
+    dplyr::filter(!!rlang::sym(split.by) == groups_to_plot[1]) %>%
+    dplyr::group_by(VH, VL) %>%
+    dplyr::mutate(
+      total = ifelse(is.na(n), 0, n),
+      expected_p = freq
+    )
+  
+  #TODO add possibility to import external Expected_freq_matrix (and then do binomial test on all groups)
+  # Convert to a matrix for lookup
+  expected_freq_matrix <- expected_df %>%
+    dplyr::select(VH, VL, expected_p) %>%
+    tidyr::pivot_wider(names_from = VL, values_from = expected_p) %>%
+    tibble::column_to_rownames("VH") %>%
+    as.matrix()
+  
+  # Apply binomial tests to Group 2
+  # Total counts for group B
+  df_b_list <- lapply(groups_to_plot[-1], FUN=function(group){
+    total_group <- pair_freq_complete %>%
+      dplyr::filter(!!rlang::sym(split.by) == group) %>%
+      dplyr::mutate(
+        total = ifelse(is.na(n), 0, n)
+      ) %>%
+      dplyr::pull(total)
+    
+    df_group <- pair_freq_complete %>%
+      dplyr::filter(!!rlang::sym(split.by) == group) %>%
+      dplyr::rowwise() %>%
+      dplyr::mutate(
+        n = ifelse(is.na(n), 0, n),
+        expected_p = expected_freq_matrix[VH, VL],
+        pval = binom.test(x = n, n = sum(total_group), p = expected_p, alternative = "two.sided")$p.value
+      ) %>%
+      dplyr::ungroup() %>%
+      dplyr::mutate(
+        pval_adj = p.adjust(pval, method = "fdr"),
+        'Significance (p < 0.05)' = pval_adj < 0.05
+      )
+    return(df_group)
+  })
+  
+  df_plot <- pair_freq_complete %>%
+    dplyr::filter(!!rlang::sym(split.by) == groups_to_plot[1]) %>%
+    dplyr::mutate(pval = NA, pval_adj = NA, 'Significance (p < 0.05)' = FALSE) %>%
+    dplyr::bind_rows(df_b_list)
+  
+  if(plot_significance){
+    p <- ggplot2::ggplot(df_plot %>% dplyr::filter(freq > 0), ggplot2::aes(x = VL, y = VH)) +
+      ggplot2::geom_point(ggplot2::aes(size = freq, fill = freq, color = !!rlang::sym("Significance (p < 0.05)")), shape = 21, stroke = 0.6) +
+      ggplot2::scale_color_manual(
+        values = c("TRUE" = "red", "FALSE" = "black"),
+        guide = "legend")
+  } else {
+    p <- ggplot2::ggplot(df_plot %>% dplyr::filter(freq > 0), ggplot2::aes(x = light, y = heavy)) +
+      ggplot2::geom_point(ggplot2::aes(size = freq, fill = freq), shape = 21, stroke = 0.6)
+  }
+  p <- p +
+    #scale_fill_gradientn(
+    #  colors = c("white", "cornflowerblue", "yellow", "red"),
+    #  values = scales::rescale(c(0, 0.25, 0.5, 1)),
+    #  limits = c(0, max(pair_freq_complete$freq)),
+    #  name = "Frequency"
+    #) +
+    ggplot2::scale_fill_viridis_c(
+      option = "D", 
+      direction = 1,
+      limits = c(0, max(pair_freq_complete$freq)),
+      name = "Frequency"
+    ) +
+    ggplot2::scale_size(range = c(2, 6), name = "Frequency") +
+    ggplot2::scale_y_discrete(limits = rev)  +
+    ggplot2::facet_wrap(vars(!!rlang::sym(split.by))) +
+    ggplot2::labs(
+      title = "VH–VL Pairing",
+      x = "VL", y = "VH"
+    ) +
+    ggplot2::theme_minimal() +
+    ggplot2::theme(
+      panel.border = element_rect(color = "black", fill = NA, linewidth = 0.8),
+      axis.text.x = element_text(angle = 45, hjust = 1),
+      legend.position = "right"
+    )
+  
+  if(save_plot){
+    #TODO  
+  }
+  
+  if(return_plot){
+    return(p)
+  }  
+}
 
 

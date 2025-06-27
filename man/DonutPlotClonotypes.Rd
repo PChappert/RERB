@@ -2,77 +2,36 @@
 % Please edit documentation in R/VDJ.plots.R
 \name{DonutPlotClonotypes}
 \alias{DonutPlotClonotypes}
-\title{Plots individual donut plots and save as pdf}
+\title{Plots multiple donut plots and save them as pdf}
 \usage{
-DonutPlotClonotypes(
-  db,
-  split.by = NULL,
-  prefix = NULL,
-  use_chain = "IGH",
-  locus = "locus",
-  cell_id = "cell_id",
-  clone_id = "clone_id",
-  groups_to_plot = "all",
-  col.line = "black",
-  plots_folder = "Donut_plots",
-  antigen,
-  highlight = c("shared", "clone_size", "clone_rank"),
-  highlight_col = list(shared = c("Paired", "random"), clone_size = c("Set1"), clone_rank
-    = c("Set1")),
-  external_bar = c("expanded", "top5", "none"),
-  productive = "productive",
-  productive_only = TRUE,
-  save_plot = TRUE,
-  save_as = c("pdf", "png"),
-  height = 3,
-  width = 3,
-  return_plot = FALSE
-)
+DonutPlotClonotypes(db, split.by = NULL, prefix = NULL, ...)
 }
 \arguments{
 \item{db}{an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.}
 
 \item{split.by}{name of column to use to group sequence when calculating clone size and frequencies.}
 
-\item{prefix}{prefix to use for saved files}
-
-\item{use_chain}{which chain to use [default: "IGH"], each cell should only have one contig for this chain}
-
-\item{locus}{name of column containing locus values.}
-
-\item{cell_id}{name of the column containing cell identifier.}
-
-\item{clone_id}{name of the column containing cell identifier.}
-
-\item{groups_to_plot}{which groups to plot}
-
-\item{col.line}{color for lines in donut plot}
-
-\item{plots_folder}{name for export folder [default: "Donut_plots"]}
-
-\item{highlight}{whether to highlight shared clones or clones based on clone_size or clone_rank. Also possible to pre-classify cells prior and set that column in highlight + a color scheme in highlight_col}
-
-\item{highlight_col}{color scheme to use for highlighed clones}
-
-\item{external_bar}{whether to add an external bar for "expanded" or "top5" clones.}
-
-\item{productive}{name of column containing productive calls.}
-
-\item{productive_only}{whether to exclude non productive sequences [default: TRUE]}
-
-\item{save_plot}{whether to save the plots [default: TRUE]}
-
-\item{save_as}{format to save the plot ("pdf", or "png") [default: pdf]}
-
-\item{height}{height of saved plot}
-
-\item{width}{width of saved plot}
-
-\item{return_plot}{whether to retrun the plots [default: FALSE]}
+\item{...}{arguments to be passed to SingleDonutPlotClonotypes()}
 }
 \value{
-a seurat object with additional metadata imported from the vdj_db dataframe.
+saved pdf for as many donut plots as there are groups in the dataframe as defined by the split.by argument. 
+if the split.by argument points to more than one column, will group the dataset based on the first element(s) of the split.by argument 
+and keep only the last as split.by argument of the SingleDonutPlotClonotypes function.
 }
 \description{
-\code{DonutPlotClonotypes} Plots individual donut plots and save as pdf
+\code{DonutPlotClonotypes} Plots multiple donut plots and save them as pdf
+}
+\details{
+db should be an AIRR formated database with a defined "clone_id" column
+Defines clones to plot and colors based on clones properties:
+Expanded clone = clone size >1 in one donor
+Shared clone = clone found in at least two donors
+Persisting clone = clone found in at least two time points and/or pop
+Color choice:
+Single Greys scale based on clone size in that donor (to account for sampling): "white" = singlets, "black"= biggest clone in all donors
+Color for shared clones between donors
+highlight = c("expanded", "top5")
+Consistent color throughout time-points for persisting-expanded clones
+Grey for non-persisting expanded clones
+White for non expanded clones and regroup all sequences found only once in the dataset (non-persisting/non-expanded)
 }

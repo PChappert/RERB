@@ -2,44 +2,42 @@
 % Please edit documentation in R/VDJ.plots.R
 \name{HexmapClonotypes}
 \alias{HexmapClonotypes}
-\title{Plots individual hexmap plots and save as pdf}
+\title{Plots multiple hexmap plots and save as pdf}
 \usage{
 HexmapClonotypes(
-  data,
+  db,
+  split.by = NULL,
   ordered = TRUE,
-  radius = 1,
-  padding = 0.2,
-  fill_col = "origin",
+  highlight = "c_call",
+  highlight_col = list(c_call = c(IGHM = "green", IGHD = "lightgreen", IGHA1 = "orange",
+    IGHA2 = "red", IGHG1 = "blue", IGHG2 = "lightblue", IGHG3 = "lightblue", IGHG4 =
+    "lightblue", IGHE = "brown")),
+  prefix = NULL,
+  plots_folder = "Hexbin_plots",
+  use_chain = "IGH",
+  locus = "locus",
   cell_id = "cell_id",
   clone_id = "clone_id",
-  title = "All_sequences",
+  productive = "productive",
+  productive_only = TRUE,
+  radius = 1,
+  padding = 0.2,
   shape = c("hex", "circle"),
-  palette = NULL,
   seed = 42,
-  max_colors = 10,
+  save_plot = TRUE,
+  save_as = c("pdf", "png"),
+  height = 6,
+  width = 6,
+  return_plot = FALSE,
   return_coords = FALSE
 )
 }
 \arguments{
-\item{ordered}{whether to order clones based on size and highlighing parameter}
-
-\item{radius}{shape radius, passed to packcircles}
-
-\item{padding}{padding, passed to packcircles}
-
-\item{cell_id}{name of the column containing cell identifier.}
-
-\item{clone_id}{name of the column containing cell identifier.}
-
-\item{shape}{shape to use [default: hex]}
-
-\item{seed}{random seed for plotting}
-
-\item{return_coords}{whether to return the plots coordinates [default: FALSE]}
-
 \item{db}{an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.}
 
 \item{split.by}{name of column to use to group sequence when calculating clone size and frequencies.}
+
+\item{ordered}{whether to order clones based on size and highlighing parameter}
 
 \item{highlight}{name of the column use to color each clone [default: "c_call].}
 
@@ -47,19 +45,27 @@ HexmapClonotypes(
 
 \item{prefix}{prefix to use for saved files}
 
+\item{plots_folder}{name for export folder [default: "Donut_plots"]}
+
 \item{use_chain}{which chain to use [default: "IGH"], each cell should only have one contig for this chain}
 
 \item{locus}{name of column containing locus values.}
 
-\item{groups_to_plot}{which groups to plot}
+\item{cell_id}{name of the column containing cell identifier.}
 
-\item{col.line}{color for lines in donut plot}
-
-\item{plots_folder}{name for export folder [default: "Donut_plots"]}
+\item{clone_id}{name of the column containing cell identifier.}
 
 \item{productive}{name of column containing productive calls.}
 
 \item{productive_only}{whether to exclude non productive sequences [default: TRUE]}
+
+\item{radius}{shape radius, passed to packcircles}
+
+\item{padding}{padding, passed to packcircles}
+
+\item{shape}{shape to use [default: hex]}
+
+\item{seed}{random seed for plotting}
 
 \item{save_plot}{whether to save the plots [default: TRUE]}
 
@@ -70,10 +76,16 @@ HexmapClonotypes(
 \item{width}{width of saved plot}
 
 \item{return_plot}{whether to return the plots [default: FALSE]}
+
+\item{return_coords}{whether to return the plots coordinates [default: FALSE]}
+
+\item{groups_to_plot}{which groups to plot}
+
+\item{col.line}{color for lines in donut plot}
 }
 \value{
 a hexmap plot
 }
 \description{
-\code{HexmapClonotypes} Plots individual hexmap plots and save as pdf
+\code{HexmapClonotypes} Plots multiple donut plots and save as pdf
 }
