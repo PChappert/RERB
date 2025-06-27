@@ -22,6 +22,8 @@ runAssignGenes(
 \arguments{
 \item{db}{a data frame containing at least a sequence and a sequence_id column.}
 
+\item{seq_type}{type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)}
+
 \item{igblast_dir}{path to igblast database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]}
 
 \item{imgt_dir}{path to imgt-gapped database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]}

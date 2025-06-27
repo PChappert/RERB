@@ -66,6 +66,10 @@ scImportVDJ(
 
 \item{analysis_name}{prefix to use for full fasta and tsv files being exported}
 
+\item{seq_type}{type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)}
+
+\item{organism}{organism (any of "human", "mouse", "rhesus_monkey; for other see https://changeo.readthedocs.io/en/stable/examples/igblast.html)}
+
 \item{igblast}{whether to run standalone IgBlast, can be set to c("filtered heavy" or "all") if not one of these three values, will be skipped with a warning. [default = "filtered heavy" for both 10X and BD: highly recommended for both to avoid issues at the createGermline() or observedMutation() steps due to different references databases used (10X) or missing imgt gaps in the sequence_alignment collumn (Both))]}
 
 \item{igblast_dir}{path to igblast database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]}

@@ -107,7 +107,7 @@ cloned_VDJ_db <- flagVDJdoublets(cloned_VDJ_db, analysis_name = analysis_name_BD
 -   to flag both homotypic (B/B) and heterotypic (B/non-B) doublets (1 heavy and 1 lights chain at a number of read expected based on overall distribution in the library but in a cell not labelled as a B cell by azimuth, use the **azimuth.ref** argument to point to the reference you used when running azimuth (<https://azimuth.hubmapconsortium.org/references/>). For now RER-B is automatically set-up to work with the following references: "pbmcref", "tonsilref" and "bonemarrowref"). If using another one, you will need to provide additional info using the **azimuth.column** (which level to use) and **azimuth.Bcelltypes** (which clusters correspond to B cells) arguments.
 
 ``` r
-cloned_VDJ_db <- flagVDJdoublets(cloned_VDJ_db, analysis_name = analysis_name_BD, split.by = "cartridge", azimuth.ref = "bonemarrowref")
+cloned_VDJ_db <- flagVDJdoublets(cloned_VDJ_db, analysis_name = analysis_name_BD, split.by = "cartridge", ref = "azimuth.bonemarrowref")
 ```
 
 Finally, you can import all VDJ metadata into your seurat object:
@@ -165,12 +165,12 @@ The **DonutPlotClonotypes3D()** function offers a flexible way to plot donut plo
 -   **prefix** can be set to whatever you want it to be.
 
 ``` r
-DonutPlotClonotypes3D(cloned_VDJ_db, 
-                      split.by = c("donor_id", "time_point"),
-                      highlight = "shared",
-                      prefix = "all",
-                      plots_folder = "VDJ_Clones/Donut_plots",
-                      external_bar = "none")
+DonutPlotClonotypes(cloned_VDJ_db, 
+                    split.by = c("donor_id", "time_point"),
+                    highlight = "shared",
+                    prefix = "all",
+                    plots_folder = "VDJ_Clones/Donut_plots",
+                    external_bar = "none")
 ```
 
 -   **Hexbin plots**:
@@ -184,7 +184,7 @@ The **HexmapClonotypes()** function offers a way to plot repertoire data as hexb
 -   As for DonutPlotClonotypes(), a **prefix** argument can be set to whatever you want it to be in the final naming of the plots.
 
 ``` r
-HexmapClonotypes3D(cloned_VDJ_db, highlight = "c_call", split.by = c("orig.ident", "predicted.celltype.l2"))
+HexmapClonotypes(cloned_VDJ_db, highlight = "c_call", split.by = c("orig.ident", "predicted.celltype.l2"))
 ```
 
 ## Guide to final "full_recap.xlsx" file:

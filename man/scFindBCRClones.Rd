@@ -4,14 +4,12 @@
 \alias{scFindBCRClones}
 \title{Full BCR analysis pipeline for heavy chain curated AIRR single-cell repertoire datasets}
 \usage{
-scFindBCRClones(db, chains = list(heavy = "IGH", light = c("IGK", "IGL")), ...)
+scFindBCRClones(db, ...)
 }
 \arguments{
 \item{db}{an AIRR formatted dataframe containing heavy and light chain sequences. Should contain only one heavy chain (IGH) per cell_id, if not run resolveMultiHC() first.}
 
 \item{...}{arguments to be passed to scFindClones}
-
-\item{locus}{name of column containing locus values.}
 }
 \value{
 an AIRR formatted dataframe with a new clone_id column and clone attribution for all BCR related data (see scFindClones).
