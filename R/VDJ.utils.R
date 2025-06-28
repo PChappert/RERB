@@ -3810,7 +3810,7 @@ scImportVDJ <- function(vdj_files,
 #' If split_by_light is set to TRUE, will also perform clonal partition correction based on observed light chain or heavy chain proximity to cell with known light chain.
 #' If update_germline and SHM are set to TRUE, will further update the germline alignment columns based on other contigs in the same clonal group, add a germline_d_mask column,
 #' and then analyse the number and frequency of mutation in VH and VL genes, if split_by_light is set to TRUE or only the VH gene if not.
-#' Creates a bcr_info columns with three possible values: "full" (if both heavy and light contigs are found for a given cell_id), "heavy_only" or "light_only".
+#' Creates a bcr_info or tcr_info columns with three possible values: "full" (if both heavy and light contigs are found for a given cell_id), "heavy_only" or "light_only".
 #' Creates an expanded_clone (>1 cell_id) and a shared_clone (between scRNAseq and Sanger), see shared.tech argument.
 #' Also outputs a graph for minimum distance between and maximal distance inside heavy clones for each tested threshold, all intermediate results for each step in the analysis and a final recap table which include all chosen parameters for the analysis as sheet 2.
 #'
@@ -5019,8 +5019,8 @@ scFindTCRClones <- function(db,
 #' @export
 
 addAIRRmetadata <- function(sc, vdj_db = NULL,
-                            type = c("BCR", "TCR"),
-                            import = c("bcr_info", "clone_id", "expanded_clone", "sequence_id", "consensus_count", "umi_count", "locus",
+                            seq_type = c("Ig", "TCR"),
+                            import = c("bcr_info", "tcr_info", "clone_id", "expanded_clone", "sequence_id", "consensus_count", "umi_count", "locus",
                                        "productive", "v_call", "d_call", "j_call", "c_call", "junction", "junction_aa", "junction_length",
                                        "mu_count", "mu_count_cdr_r", "mu_count_cdr_s", "mu_count_fwr_r", "mu_count_fwr_s",
                                        "is.VDJ_doublet", "is.VDJ_doublet.confidence", "is.nonB_VDJ_doublet", "is.nonB_VDJ_doublet.confidence"),
@@ -5028,15 +5028,25 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
                             cell_id = "cell_id",
                             clone_id = "clone_id",
                             split.by = NULL,
-                            commun_columns = c("bcr_info", "clone_id", "expanded_clone", "is.VDJ_doublet", "is.VDJ_doublet.confidence", "is.nonB_VDJ_doublet", "is.nonB_VDJ_doublet.confidence"),
+                            commun_columns = c("bcr_info", "tcr_info", "clone_id", "expanded_clone", "is.VDJ_doublet", "is.VDJ_doublet.confidence", "is.nonB_VDJ_doublet", "is.nonB_VDJ_doublet.confidence"),
                             chains = list(TCR = list(tcra = "TCRA", tcrb = "TCRB", tcrg = "TCRG", tcrd = "TCRD"),
                                          BCR = list(igheavy = "IGH", iglight = c("IGL", "IGK")))){
 
   #library(dplyr)
 
-  type <- match.arg(type)
-  if(!type %in% c("BCR", "TCR")){
-    stop("type should be one of TCR or BCR")
+  seq_type <- match.arg(seq_type)
+  if(!type %in% c("Ig", "TCR")){
+    stop("type should be one of TCR or Ig")
+  }
+  if(seq_type == "Ig"){
+    type = "BCR"
+    import <- import[!import == "tcr_info"]
+    commun_columns <- commun_columns[!commun_columns == "tcr_info"]
+  }
+  if(seq_type == "TCR"){
+    type = "TCR"
+    import <- import[!import == "bcr_info"]
+    commun_columns <- commun_columns[!commun_columns == "bcr_info"]
   }
 
   if(!cell_id %in% colnames(vdj_db)){
