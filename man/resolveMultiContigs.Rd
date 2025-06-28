@@ -7,7 +7,8 @@
 resolveMultiContigs(
   db,
   split.by = NULL,
-  chain = c("IGH", "IGL", "IGK"),
+  seq_type = c("Ig", "TCR"),
+  resolve_chain = c("heavy", "light"),
   assay = "assay",
   resolve_multi_CDR3 = TRUE,
   use_clone = FALSE,
@@ -39,7 +40,9 @@ resolveMultiContigs(
 
 \item{split.by}{name of the column in the dataframe to use to split the dataset prior to filtering heavy chain}
 
-\item{chain}{chain(s) to filter, should be one of "IGH", "IGL", "IGK" or c("IGL", "IGK"), will return one chain per cell for the selected chain(s).}
+\item{seq_type}{type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)}
+
+\item{resolve_chain}{chain(s) to filter, should be one of "heavy" or "light", will return one chain per cell for the selected chain(s).}
 
 \item{resolve_multi_CDR3}{whether to pool contigs with similar v_call, j_call and junction_aa in a given cell (cell_id)}
 

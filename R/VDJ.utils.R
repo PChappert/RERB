@@ -157,14 +157,14 @@ Ab1toAIRR <- function(files,
       if(file.exists(filename_igblast_fail)){
         failed_VDJ_db <- readr::read_tsv(filename_igblast_fail, show_col_types = FALSE)
       } else {
-        cat("file: ",filename_igblast_fail, " not found")
+        if(verbose){cat("file: ",filename_igblast_fail, " not found")}
         failed_VDJ_db <- NULL
       }
       filename_fail <- paste0(outfolder, "/", outfilename, "_QC-fail.tsv")
       if(file.exists(filename_fail)){
         QC_failed <- readr::read_tsv(filename_fail, show_col_types = FALSE)
       } else {
-        cat("file: ",filename_fail, " not found")
+        if(verbose){cat("file: ",filename_fail, " not found")}
         QC_failed <- NULL
       }
     }
@@ -215,14 +215,14 @@ Ab1toAIRR <- function(files,
           if(verbose){cat("opening", filename_pass, "\n")}
           VDJ_db <- readr::read_tsv(filename_pass, show_col_types = FALSE)
         } else {
-          cat("file: ",filename_pass, " not found")
+          if(verbose){cat("file: ",filename_pass, " not found")}
           VDJ_db <- NULL
         }
         filename_fail <- paste0(outfolder, "/", outfilename, "_QC-fail.tsv")
         if(file.exists(filename_fail)){
           QC_failed <- readr::read_tsv(filename_fail, show_col_types = FALSE)
         } else {
-          cat("file: ",filename_fail, " not found")
+          if(verbose){cat("file: ",filename_fail, " not found")}
           QC_failed <- NULL
         }
       }
@@ -493,11 +493,11 @@ runAb1QC <- function(Ab1_folder,
   }
 
   if(is.null(outfolder)){
-    cat("output folder not defined; exporting to the provided data folder: ", Ab1_folder)
+    if(verbose){cat("output folder not defined; exporting to the provided data folder: ", Ab1_folder)}
     outfolder <- Ab1_folder
   }
   if(is.null(outfilename)){
-    cat("output filename not defined; exporting to the provided data folder: ", Ab1_folder)
+    if(verbose){cat("output filename not defined; exporting to the provided data folder: ", Ab1_folder)}
     outfilename <- Ab1_folder
   }
 
@@ -927,12 +927,12 @@ binContigs <- function(data,
 #'
 #' @param db            a dataframe containing heavy and light chain sequences, cell_ids, umi_counts, consensus counts (reads), productive and complete_vdj (or frw/cdr infos) columns.
 #' @param cell_id       name of the column containing cell identifier.
+#' @param seq_type      type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)
+#' @param resolve_chain chain(s) to filter, should be one of "heavy" or "light", will return one chain per cell for the selected chain(s).
 #' @param resolve_multi_CDR3 whether to pool contigs with similar v_call, j_call and junction_aa in a given cell (cell_id)
 #' @param use_clone     whether to use prior clustering knowledge, a clone_id column should be present.
 #' @param clone_id      name of the column containing cell identifier.#'
 #' @param split.by      name of the column in the dataframe to use to split the dataset prior to filtering heavy chain
-#' @param chain         chain(s) to filter, should be one of "IGH", "IGL", "IGK" or c("IGL", "IGK"), will return one chain per cell for the selected chain(s).
-#'
 #' @param output        whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. If set to FALSE, only the corrected database is returned.
 #' @param output_folder name of the folder in which graph for light chain clustering will be saved.
 #' @param analysis_name name to use for outputs prefixes.
@@ -980,19 +980,32 @@ binContigs <- function(data,
 #'
 #' @export
 
-
 resolveMultiContigs <- function(db,
-                               split.by = NULL,
-                               chain = c("IGH", "IGL", "IGK"),
-                               assay = "assay",
-                               resolve_multi_CDR3 = TRUE,
-                               use_clone = FALSE,
-                               analysis_name = "All_sequences",
-                               output = TRUE,
-                               output_folder = "VDJ_QC/",
-                               second_columns = c("sequence_id", "locus", "umi_count", "consensus_count", "sequence", "v_call", "d_call", "j_call", "c_call", "junction", "junction_aa", "productive", "complete_vdj"),
-                               cell_id = "cell_id", sequence_id = "sequence_id", locus = "locus", consensus_count = "consensus_count", umi_count = "umi_count", v_call = "v_call", j_call = "j_call", c_call = "c_call", junction = "junction", junction_aa = "junction_aa",
-                               dominant = "dominant", productive = "productive", complete_vdj = "complete_vdj", clone_id = "clone_id", nproc = 1){
+                                split.by = NULL,
+                                seq_type = c("Ig", "TCR"),
+                                resolve_chain = c("heavy", "light"),
+                                assay = "assay",
+                                resolve_multi_CDR3 = TRUE,
+                                use_clone = FALSE,
+                                analysis_name = "All_sequences",
+                                output = TRUE,
+                                output_folder = "VDJ_QC/",
+                                second_columns = c("sequence_id", "locus", "umi_count", "consensus_count", "sequence", "v_call", "d_call", "j_call", "c_call", "junction", "junction_aa", "productive", "complete_vdj"),
+                                cell_id = "cell_id", 
+                                sequence_id = "sequence_id", 
+                                locus = "locus", 
+                                consensus_count = "consensus_count", 
+                                umi_count = "umi_count", 
+                                v_call = "v_call", 
+                                j_call = "j_call", 
+                                c_call = "c_call", 
+                                junction = "junction", 
+                                junction_aa = "junction_aa",
+                                dominant = "dominant", 
+                                productive = "productive", 
+                                complete_vdj = "complete_vdj", 
+                                clone_id = "clone_id", 
+                                nproc = 1){
 
   #suppressMessages(library(dplyr))
 
@@ -1002,8 +1015,29 @@ resolveMultiContigs <- function(db,
       dir.create(output_folder)
     }
   }
-  log_file <- paste0(output_folder, Sys.time(), "_", analysis_name, "_", paste(chain, collapse = "-"), "_filtration_logfile.txt")
-  log_connection <- file(log_file, open = "a")  # a for apending or w for erasing onto previous log
+  
+  seq_type <- match.arg(seq_type)
+  resolve_chain <- match.arg(resolve_chain)
+  
+  if(seq_type == "Ig"){
+    if(resolve_chain == "heavy"){
+      chain <- "IGH"
+    }
+    if(resolve_chain == "light"){
+      chain <- c("IGL", "IGK")
+    }
+  }
+  if(seq_type == "TCR"){
+    if(resolve_chain == "heavy"){
+      chain <- c("TRB", "TRD")
+    }
+    if(resolve_chain == "light"){
+      chain <- c("TRA", "TRG")
+    }
+  }
+  
+  #log_file <- paste0(output_folder, Sys.time(), "_", analysis_name, "_", paste(chain, collapse = "-"), "_filtration_logfile.txt")
+  #log_connection <- file(log_file, open = "a")  # a for apending or w for erasing onto previous log
 
   required_columns <- c(cell_id, second_columns)
   if(use_clone){required_columns <- c(required_columns, clone_id)}
@@ -1088,9 +1122,11 @@ resolveMultiContigs <- function(db,
     ) %>%
     dplyr::filter(pct_of_reads>=20) %>%
     ungroup()
+  
+  #TODO add preferred selection of TRA if TRB is the dominant contig in a T cell? (same for TRG/TRD)
 
   # if use_clone = TRUE, look for shared seq inside clone (to be used for light chains but could work for heavy chain also - to be investigated):
-  if(use_clone & all(chain %in% c("IGL", "IGK"))){
+  if(use_clone & resolve_chain == "light"){
     # we then check for cells with no clone_id:
     if(any(is.na(db_filtered[[clone_id]]))){
       no_clone_id <- dplyr::filter(db_filtered, is.na(!!rlang::sym(clone_id)))
@@ -1098,7 +1134,6 @@ resolveMultiContigs <- function(db,
       db_filtered <- dplyr::filter(db_filtered, !is.na(!!rlang::sym(clone_id)))
       no_clone_log_message <- paste0(missing_clone_id, " cells without clone_id, processed as non expanded clones.\n")
       cat(no_clone_log_message)
-      cat(no_clone_log_message, file = log_connection)
     } else {missing_clone_id <- 0}
 
     # we further separate singlets from expanded clones:
@@ -1121,10 +1156,17 @@ resolveMultiContigs <- function(db,
       if("light_clone" %in% colnames(cloned_exp_db)){
         cloned_exp_db$light_clone <- NULL
       }
+      
+      if(seq_type == "Ig"){
+        threshold <- 0.1
+      }
+      if(seq_type == "TCR"){
+        threshold <- 0
+      }
       message(paste0("clustering ", paste(chain, collapse = "-")," contigs"))
       suppressMessages(
         cloned_exp_db_analysis <- scoper::hierarchicalClones(cloned_exp_db,
-                                                             threshold = 0.1,
+                                                             threshold = threshold,
                                                              method = "nt",
                                                              normalize = "len",
                                                              linkage = "single",
@@ -1262,15 +1304,14 @@ resolveMultiContigs <- function(db,
     lowest_umi_count_more_productive <- nrow(dplyr::filter(cells_with_issues, !highest_umi_count, !more_complete, more_productive))
     lowest_umi_count_more_complete <- nrow(dplyr::filter(cells_with_issues, !highest_umi_count, more_complete, !more_productive))
 
-    if(use_clone & all(chain %in% c("IGL", "IGK"))){
+    if(use_clone & resolve_chain == "light"){
       # other cases
       highest_freq <- nrow(dplyr::filter(cells_with_issues, !highest_umi_count, !more_complete, !more_productive, highest_freq, !shared_seq))
       toss_up <- nrow(dplyr::filter(cells_with_issues, toss_up, !shared_seq))
       true_issue <- nrow(dplyr::filter(cells_with_issues, !highest_umi_count, !more_complete, !more_productive, !highest_freq, !toss_up, !shared_seq))
       shared_seq <- nrow(dplyr::filter(cells_with_issues, !highest_umi_count, shared_seq))
 
-      log_message <- paste0(Sys.time(), "\n",
-                            "out of ", total_cells," cells with ", paste(chain, collapse = "-")," contigs submitted from BD rhapsody pipeline:\n\n",
+      log_message <- paste0("out of ", total_cells," cells with ", paste(chain, collapse = "-")," contigs submitted from BD rhapsody pipeline:\n\n",
                             same_seq/total_cells*100, "% (n = ",same_seq,") in full agreement with SevenBridges filtration;\n\n",
                             best_all/total_cells*100, "% (n = ",best_all,") selected based on highest umi_count, productive and complete as compared to SevenBridges filtration (likely pooled CDR3);\n\n",
                             highest_umi_count_more_productive/total_cells*100, "% (n = ",highest_umi_count_more_productive,") selected based on highest umi_count and productive as compared to SevenBridges filtration (likely pooled CDR3);\n\n",
@@ -1289,7 +1330,7 @@ resolveMultiContigs <- function(db,
         log_message <- paste0(log_message, true_issue/total_cells*100, "% (n = ",true_issue,") represent unexplainable selection (check code?);\n\n")
       }
 
-      cat(log_message, file = log_connection)  # Write to file
+      cat(log_message)
 
     } else {
       # other cases
@@ -1297,8 +1338,7 @@ resolveMultiContigs <- function(db,
       toss_up <- nrow(dplyr::filter(cells_with_issues, toss_up))
       true_issue <- nrow(dplyr::filter(cells_with_issues, !highest_umi_count, !more_complete, !more_productive, !highest_freq, !toss_up))
 
-      log_message <- paste0(Sys.time(), "\n",
-                            "out of ", total_cells," cells with ", paste(chain, collapse = "-")," contigs submitted:\n\n",
+      log_message <- paste0("out of ", total_cells," cells with ", paste(chain, collapse = "-")," contigs submitted:\n\n",
                             same_seq/total_cells*100, "% (n = ",same_seq,") in full agreement with SevenBridges filtration;\n\n",
                             best_all/total_cells*100, "% (n = ",best_all,") selected based on highest umi_count, productive and complete as compared to SevenBridges filtration (likely pooled CDR3);\n\n",
                             highest_umi_count_more_productive/total_cells*100, "% (n = ",highest_umi_count_more_productive,") selected based on highest umi_count and productive as compared to SevenBridges filtration (likely pooled CDR3);\n\n",
@@ -1315,7 +1355,7 @@ resolveMultiContigs <- function(db,
         log_message <- paste0(log_message, true_issue/total_cells*100, "% (n = ",true_issue,") represent unexplainable selection (check code?);\n\n")
       }
 
-      cat(log_message, file = log_connection)  # Write to file
+      cat(log_message)
     }
   }
 
@@ -1336,8 +1376,7 @@ resolveMultiContigs <- function(db,
                                 "contigs shared inside a given clones were selected in priority.\n")
   }
 
-  cat(final_log_message, file = log_connection) # Write to file
-  close(log_connection)  # Close file connection
+  cat(final_log_message) 
 
   resolved_db <- db_filtered %>%
     dplyr::bind_rows(db_not_to_filter) %>%
@@ -2132,7 +2171,7 @@ heterotypicVDJdoublets <- function(db,
   }
   
   cutoffs <- flagged_db %>%
-    dplyr::group_by(orig.ident, locus_simplified) %>%
+    dplyr::group_by(!!rlang::sym(split.by), locus_simplified) %>%
     dplyr::summarise(dplyr::across(
       dplyr::starts_with("upper_cutoff") | dplyr::starts_with("lower_cutoff"),
       ~ max(.x, na.rm = TRUE),
@@ -2151,7 +2190,7 @@ heterotypicVDJdoublets <- function(db,
     tidyr::pivot_wider(names_from = locus_simplified, 
                        values_from = c(!!rlang::sym(umi_count), upper_cutoff, lower_cutoff),
                        values_fill = setNames(list(0), umi_count)) %>%
-    dplyr::left_join(cutoffs, by = "orig.ident") %>%
+    dplyr::left_join(cutoffs, by = split.by) %>%
     dplyr::mutate(across(
       dplyr::starts_with("upper_cutoff") | dplyr::starts_with("lower_cutoff"),
       ~ ifelse(is.na(.x), get(paste0(cur_column(), "_max")), .x)
@@ -3326,7 +3365,20 @@ scImportVDJ <- function(vdj_files,
     }
   }
 
+  #initiate log file:
   log_file <- paste0(output_folder, analysis_name, "_scImportVDJ_logfile.txt")
+  time_and_log({
+    cat("analysis_name: ", analysis_name, "\n")
+    cat("tech: ", tech, "\n")
+    cat("imported columns from seurat object: ", import_from_seurat, "\n")
+    cat("igblast: ", igblast, " contigs\n")
+    cat("organism: ", organism, "\n")
+    cat("seq_type: ", seq_type, "\n")
+    cat("igblast: ", igblast, "\n")
+    cat("update_c_call: ", update_c_call, "\n")
+    cat("clean_HC: ", clean_HC, "\n")
+  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "scImportVDJ", open_mode = "wt")
+  
   #log_file <- paste0(output_folder, Sys.time(), "_", analysis_name, "_scImportVDJ_logfile.txt")
   #log_connection <- file(log_file, open = "a")  # a for appending or w for erasing onto previous log
 
@@ -3431,6 +3483,9 @@ scImportVDJ <- function(vdj_files,
       data <- dplyr::filter(data, (!!rlang::sym(cell_id) %in% cells_to_keep))
       if(nrow(data)==0){
         warning(paste0(sample, " : no VDJ contigs corresponding to cell_ids present in the provided seurat object. Check cell_id format!"))
+        time_and_log({
+          warning(paste0(sample, " : no VDJ contigs corresponding to cell_ids present in the provided seurat object. Check cell_id format!"))
+        }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = paste0(sample, " contigs import"), open_mode = "a")
         }
     }
     data$orig.ident <- sample
@@ -3501,7 +3556,7 @@ scImportVDJ <- function(vdj_files,
                                         imgt_dir = imgt_dir,
                                         sequence = sequence,
                                         sequence_id = sequence_id)
-    }, verbose = verbose, log_file = log_file, open_mode = "wt")
+    }, verbose = verbose, log_file = log_file, log_title = "running AssignGenes", open_mode = "a")
 
     VDJ_db <- igblast_results[["pass"]]
     VDJ_db$c_call_igblast <- VDJ_db$c_call
@@ -3539,14 +3594,31 @@ scImportVDJ <- function(vdj_files,
     message("Part ", step," of ", n,": splitting by ",split.by ," and performing heavy chain QC")
     message("------------")
     
-    VDJ_db <- resolveMultiContigs(VDJ_db, split.by = split.by, chain = heavy,
-                                 assay = "assay", resolve_multi_CDR3 = TRUE, use_clone = FALSE,
-                                 analysis_name = analysis_name,
-                                 output = output, output_folder = output_folder,
-                                 second_columns = c(sequence_id, locus, umi_count, consensus_count, sequence, v_call, d_call, j_call, c_call, junction, junction_aa, productive, complete_vdj),
-                                 cell_id = cell_id, sequence_id = sequence_id, locus = locus, consensus_count = consensus_count, umi_count = umi_count, v_call = v_call, j_call = j_call, c_call = c_call, junction_aa = junction_aa,
-                                 productive = productive, complete_vdj = complete_vdj)
-
+    time_and_log({
+      VDJ_db <- resolveMultiContigs(VDJ_db, 
+                                    split.by = split.by, 
+                                    seq_type = seq_type,
+                                    resolve_chain = "heavy",
+                                    assay = "assay", 
+                                    resolve_multi_CDR3 = TRUE, 
+                                    use_clone = FALSE,
+                                    analysis_name = analysis_name,
+                                    output = output, 
+                                    output_folder = output_folder,
+                                    second_columns = c(sequence_id, locus, umi_count, consensus_count, sequence, v_call, d_call, j_call, c_call, junction, junction_aa, productive, complete_vdj),
+                                    cell_id = cell_id, 
+                                    sequence_id = sequence_id, 
+                                    locus = locus, 
+                                    consensus_count = consensus_count, 
+                                    umi_count = umi_count, 
+                                    v_call = v_call, 
+                                    j_call = j_call, 
+                                    c_call = c_call, 
+                                    junction_aa = junction_aa,
+                                    productive = productive, 
+                                    complete_vdj = complete_vdj)
+    }, verbose = verbose, log_file = log_file, log_title = "running resolveMultiHC()", open_mode = "a")
+    
     filename <- paste0(filename, "_HCfilter-pass")
     if(!(igblast == "filtered heavy") & !(update_c_call %in% c("heavy", "all"))){#'we only save this file if no other analysis is performed
       readr::write_tsv(VDJ_db, file = paste0(filename, ".tsv.gz"))
@@ -3889,8 +3961,8 @@ scFindClones <- function(db,
     cat("organism: ", organism, "\n")
     cat("seq_type: ", seq_type, "\n")
     cat("igblast: ", igblast, "\n")
-    cat("igblast method: ", method, "\n")
-    cat("igblast threshold(s): ", threshold, "\n")
+    cat("clonal analysis method: ", method, "\n")
+    cat("clonal analysis threshold(s): ", threshold, "\n")
     cat("update_c_call: ", update_c_call, "\n")
     cat("clean_LC: ", clean_LC, "\n")
     cat("split_by_light: ", split_by_light, "\n")
@@ -3929,8 +4001,7 @@ scFindClones <- function(db,
   if("clone_id" %in% colnames(db)){
     clone_id_log <- paste0("clone_id collumn already present in the object, renamed preexisting_clone_id to avoid issue in defineClonesScoper().\n\n")
     if(verbose){cat(clone_id_lo)} # Write to console
-    cat(clone_id_lo, file = log_connection) # Write to file
-
+    
     db <- dplyr::rename(db, "preexisting_clone_id" = clone_id)
   }
   
@@ -3991,15 +4062,30 @@ scFindClones <- function(db,
 
   # check if remaining heavy chain multiplets:
   if(any(duplicated(h_db[[cell_id]]))){
-    cat("remaining cell_id with multiple HC: running resolveMultiHC()")
+    if(verbose){cat("remaining cell_id with multiple HC: running resolveMultiHC()")}
     time_and_log({
-      h_db <- resolveMultiContigs(h_db, split.by = split.by, chain = heavy,
-                                  assay = "assay", resolve_multi_CDR3 = TRUE, use_clone = FALSE,
+      h_db <- resolveMultiContigs(h_db, 
+                                  split.by = split.by, 
+                                  seq_type = seq_type,
+                                  resolve_chain = "heavy",
+                                  assay = "assay", 
+                                  resolve_multi_CDR3 = TRUE, 
+                                  use_clone = FALSE,
                                   analysis_name = analysis_name,
-                                  output = output, output_folder = paste0(output_folder, "/VDJ_QC"),
+                                  output = output, 
+                                  output_folder = paste0(output_folder, "/VDJ_QC"),
                                   second_columns = c(sequence_id, locus, umi_count, consensus_count, sequence, v_call, d_call, j_call, c_call, junction, junction_aa, productive, complete_vdj),
-                                  cell_id = cell_id, sequence_id = sequence_id, locus = locus, consensus_count = consensus_count, umi_count = umi_count, v_call = v_call, j_call = j_call, c_call = c_call, junction_aa = junction_aa,
-                                  productive = productive, complete_vdj = complete_vdj)
+                                  cell_id = cell_id, 
+                                  sequence_id = sequence_id, 
+                                  locus = locus, 
+                                  consensus_count = consensus_count, 
+                                  umi_count = umi_count, 
+                                  v_call = v_call, 
+                                  j_call = j_call, 
+                                  c_call = c_call, 
+                                  junction_aa = junction_aa,
+                                  productive = productive, 
+                                  complete_vdj = complete_vdj)
     }, verbose = verbose, log_file = log_file, log_title = "running resolveMultiHC()", open_mode = "a")
   }
 
@@ -4283,13 +4369,31 @@ scFindClones <- function(db,
       "------------\n"
     )
     time_and_log({
-      cloned_VDJ_db <- resolveMultiContigs(cloned_VDJ_db, split.by = split.by, chain = light,
-                                           assay = assay, resolve_multi_CDR3 = TRUE, use_clone = TRUE,
+      cloned_VDJ_db <- resolveMultiContigs(cloned_VDJ_db, 
+                                           split.by = split.by, 
+                                           seq_type = seq_type,
+                                           resolve_chain = "light",
+                                           assay = assay, 
+                                           resolve_multi_CDR3 = TRUE, 
+                                           use_clone = TRUE,
                                            analysis_name = analysis_name,
-                                           output = output, output_folder = output_folder,
+                                           output = output, 
+                                           output_folder = output_folder,
                                            second_columns = c(sequence_id, locus, umi_count, consensus_count, sequence, v_call, d_call, j_call, c_call, junction, junction_aa, productive, complete_vdj),
-                                           cell_id = cell_id, sequence_id = sequence_id, locus = locus, consensus_count = consensus_count, umi_count = umi_count, v_call = v_call, j_call = j_call, c_call = c_call, junction = junction, junction_aa = junction_aa,
-                                           productive = productive, complete_vdj = complete_vdj, clone_id = "clone_id", nproc = nproc)
+                                           cell_id = cell_id, 
+                                           sequence_id = sequence_id, 
+                                           locus = locus, 
+                                           consensus_count = consensus_count, 
+                                           umi_count = umi_count, 
+                                           v_call = v_call, 
+                                           j_call = j_call, 
+                                           c_call = c_call, 
+                                           junction = junction, 
+                                           junction_aa = junction_aa,
+                                           productive = productive, 
+                                           complete_vdj = complete_vdj, 
+                                           clone_id = "clone_id", 
+                                           nproc = nproc)
     }, verbose = verbose, log_file = log_file, log_title = "resolving LC multiplets", open_mode = "a")
     
     filename <- paste0(filename, "_LCresolved")
