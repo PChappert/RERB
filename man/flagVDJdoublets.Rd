@@ -33,6 +33,7 @@ flagVDJdoublets(
     "CD8 Effector 3", "CD8 Memory", 
      "CD8 Naive", "MAIT", "T proliferating")),
   save_plot = c("pdf", "png"),
+  save_tsv = TRUE,
   verbose = TRUE,
   ...
 )

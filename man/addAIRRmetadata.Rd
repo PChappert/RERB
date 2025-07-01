@@ -7,18 +7,19 @@
 addAIRRmetadata(
   sc,
   vdj_db = NULL,
-  type = c("BCR", "TCR"),
-  import = c("bcr_info", "clone_id", "expanded_clone", "sequence_id", "consensus_count",
-    "umi_count", "locus", "productive", "v_call", "d_call", "j_call", "c_call",
-    "junction", "junction_aa", "junction_length", "mu_count", "mu_count_cdr_r",
+  seq_type = c("Ig", "TCR"),
+  import = c("bcr_info", "tcr_info", "clone_id", "expanded_clone", "sequence_id",
+    "consensus_count", "umi_count", "locus", "productive", "v_call", "d_call", "j_call",
+    "c_call", "junction", "junction_aa", "junction_length", "mu_count", "mu_count_cdr_r",
     "mu_count_cdr_s", "mu_count_fwr_r", "mu_count_fwr_s", "is.VDJ_doublet",
     "is.VDJ_doublet.confidence", "is.nonB_VDJ_doublet", "is.nonB_VDJ_doublet.confidence"),
   locus = "locus",
   cell_id = "cell_id",
   clone_id = "clone_id",
   split.by = NULL,
-  commun_columns = c("bcr_info", "clone_id", "expanded_clone", "is.VDJ_doublet",
-    "is.VDJ_doublet.confidence", "is.nonB_VDJ_doublet", "is.nonB_VDJ_doublet.confidence"),
+  commun_columns = c("bcr_info", "tcr_info", "clone_id", "expanded_clone",
+    "is.VDJ_doublet", "is.VDJ_doublet.confidence", "is.nonB_VDJ_doublet",
+    "is.nonB_VDJ_doublet.confidence"),
   chains = list(TCR = list(tcra = "TCRA", tcrb = "TCRB", tcrg = "TCRG", tcrd = "TCRD"),
     BCR = list(igheavy = "IGH", iglight = c("IGL", "IGK")))
 )
@@ -27,8 +28,6 @@ addAIRRmetadata(
 \item{sc}{a seurat object on which to input vdj data, should include a cell_id column matching the cell_id column in the vdj_db dataframe.}
 
 \item{vdj_db}{an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.}
-
-\item{type}{either BCR or TCR, by default BCR.}
 
 \item{import}{list of columns to import, if set to "all" will import all columns not already included in the seurat object. If "clone_id" is present will calculate clone size and frequencies.}
 
@@ -43,6 +42,8 @@ addAIRRmetadata(
 \item{commun_columns}{name of columns commun between different chains. Will not be rename when all other chain specific columns will be renamed "chain_old name"}
 
 \item{chains}{description of chain pairing. list names will be used for renaming.}
+
+\item{type}{either BCR or TCR, by default BCR.}
 }
 \value{
 a seurat object with additional metadata imported from the vdj_db dataframe.

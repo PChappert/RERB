@@ -4,18 +4,26 @@
 \alias{DonutPlotClonotypes}
 \title{Plots multiple donut plots and save them as pdf}
 \usage{
-DonutPlotClonotypes(db, split.by = NULL, prefix = NULL, ...)
+DonutPlotClonotypes(
+  db,
+  split.by = NULL,
+  prefix = NULL,
+  return_plot = FALSE,
+  ...
+)
 }
 \arguments{
 \item{db}{an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.}
 
 \item{split.by}{name of column to use to group sequence when calculating clone size and frequencies.}
 
+\item{prefix}{prefix to use for saved files}
+
 \item{...}{arguments to be passed to SingleDonutPlotClonotypes()}
 }
 \value{
-saved pdf for as many donut plots as there are groups in the dataframe as defined by the split.by argument. 
-if the split.by argument points to more than one column, will group the dataset based on the first element(s) of the split.by argument 
+saved pdf for as many donut plots as there are groups in the dataframe as defined by the split.by argument.
+if the split.by argument points to more than one column, will group the dataset based on the first element(s) of the split.by argument
 and keep only the last as split.by argument of the SingleDonutPlotClonotypes function.
 }
 \description{

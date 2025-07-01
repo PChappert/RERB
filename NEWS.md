@@ -1,6 +1,7 @@
 ## Version 0.9.6: June 29, 2025
 
--   Initial release as a github R package
+-   Initial release on github
+-   added return_plot options to DonutPlotClonotypes
 -   new plotCDR3logo, plotVGenePairing and CircosClonotypes (beta) plotting functions
 -   All functions have been updated to be TCR compatible (!still beta version for the TCR part)
 -   flagBdoublets and flagNonBdoublets renamed as homotypivVDJdoublets et heterotypicVDJdoublets
