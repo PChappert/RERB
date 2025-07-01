@@ -2354,6 +2354,7 @@ flagVDJdoublets <- function(db,
                                                   "azimuth.tonsilref" = c("CD4 naive", "CD4 Non-TFH", "CD4 TCM", "CD4 TFH", "CD4 TFH Mem", "CD4 TREG", "CD8 naive", "CD8 T", "CD8 TCM", "Cycling T","dnT","MAIT/TRDV2+ gdT","non-TRDV2+ gdT"),
                                                   "azimuth.bonemarrowref" = c("CD4 Effector", "CD4 Memory", "CD4 Naive", "CD8 Effector 1", "CD8 Effector 2", "CD8 Effector 3", "CD8 Memory", "CD8 Naive", "MAIT", "T proliferating")),
                             save_plot = c("pdf", "png"),
+                            save_tsv = TRUE,
                             verbose = TRUE,
                             ...){
   
@@ -2428,7 +2429,7 @@ flagVDJdoublets <- function(db,
     cat("\n")
     print(sessionInfo())
   }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = open_mode)
-  
+    
   return(db)
 }
 
@@ -5035,7 +5036,7 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
   #library(dplyr)
 
   seq_type <- match.arg(seq_type)
-  if(!type %in% c("Ig", "TCR")){
+  if(!seq_type %in% c("Ig", "TCR")){
     stop("type should be one of TCR or Ig")
   }
   if(seq_type == "Ig"){
