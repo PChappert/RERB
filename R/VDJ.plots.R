@@ -815,6 +815,9 @@ SingleDonutPlotClonotypes <- function(db,
       # add nb sequences in the center:
       text(0, 0, nb_seq)
       
+      # add title:
+      title(names(Clones_by_groups_to_plot.list)[i], line = -1, cex.main = 1.5)
+      
       # highlight expanded or top_5 clones:
       if (external_bar == "expanded") {
         # add outside track highlighting expanded clones:
@@ -917,9 +920,7 @@ SingleDonutPlotClonotypes <- function(db,
         img_raster <- png::readPNG(filename)
       }
       grob <- grid::rasterGrob(img_raster, interpolate = TRUE)
-      title_grob <- grid::textGrob(names(Clones_by_groups_to_plot.list)[i], gp = grid::gpar(fontsize = 16, fontface = "bold"))
-      combined_grob <- gridExtra::arrangeGrob(title_grob, grob, ncol = 1, heights = c(0.25, 0.75))
-      grobs.list[[i]] <- combined_grob
+      grobs.list[[i]] <- grob
     }
     names(grobs.list) <- names(Clones_by_groups_to_plot.list)
     full_combined_grob <- gridExtra::arrangeGrob(grobs = grobs.list, ncol = length(grobs.list))
