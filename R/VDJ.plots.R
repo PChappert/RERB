@@ -880,7 +880,7 @@ SingleDonutPlotClonotypes <- function(db,
 
   if(return_plot){
     #for visualisation only as it is currently impossible to directly export a circlize plot 
-    # TODO check circlizePlus package to plot circos plots directly in ggplot2 way
+    # TODO check circlizePlus package to plot circos plots directly in ggplot2 
     
     if (!requireNamespace("magick", quietly = TRUE)) {
       message("Optional: 'magick' not installed — skipping plot.")
@@ -918,7 +918,7 @@ SingleDonutPlotClonotypes <- function(db,
       }
       grob <- grid::rasterGrob(img_raster, interpolate = TRUE)
       title_grob <- grid::textGrob(names(Clones_by_groups_to_plot.list)[i], gp = grid::gpar(fontsize = 16, fontface = "bold"))
-      combined_grob <- gridExtra::arrangeGrob(title_grob, grob, ncol = 1, heights = c(0.1, 0.3))
+      combined_grob <- gridExtra::arrangeGrob(title_grob, grob, ncol = 1, heights = c(0.25, 0.75))
       grobs.list[[i]] <- combined_grob
     }
     names(grobs.list) <- names(Clones_by_groups_to_plot.list)
