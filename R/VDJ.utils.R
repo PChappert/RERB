@@ -1693,9 +1693,9 @@ resolveLightChains2 <- function(data, nproc=1, minseq=1,locus="locus",heavy="IGH
 #' @param db            a AIRR formatted dataframe containing heavy and light chain sequences, cell_ids and umi_counts.
 #' @param split.by      name of the column in the dataframe to use to split the dataset prior to calculating variable cut-offs
 #' @param analysis_name name to use for outputs prefixes.
-#' @param use_chains     which chain to use to flag VDJ doublets, can de set to "IGH" or "all" [default = "all"].
+#' @param use_chains    which chain to use to flag VDJ doublets, can de set to "IGH" or "all" [default = "all"].
 #' @param locus         name of column containing locus values.
-#' @param seq_type      
+#' @param seq_type      'Ig' or 'TCR'
 #' @param heavy         heavy chains to be used. if set to NULL, will default to IGH for Ig and TRB/TRD for TCR.
 #' @param light         light chains to be used. if set to NULL, will default to IGL/IGK for Ig and TRA/TRG for TCR.
 #' @param assay         name of column containing assay values.
@@ -4890,12 +4890,13 @@ scFindClones <- function(db,
     
     openxlsx::addWorksheet(OUT, "Analysis parameters")
     openxlsx::writeData(OUT, sheet= "Analysis parameters", x=as.data.frame(analysis_parameters), colNames = FALSE, rowNames = TRUE)
-    openxlsx::saveWorkbook(OUT, file= paste0(output_folder, analysis_name,"_VDJ_full_recap.xlsx"), overwrite = TRUE)
+    openxlsx::saveWorkbook(OUT, file= paste0(output_folder, analysis_name,"_VDJ_final_recap.xlsx"), overwrite = TRUE)
+    readr::write_tsv(cloned_VDJ_db, file = paste0(output_folder, analysis_name,"_VDJ_final.tsv.gz"))
     
-    message("see exported recap file: ", getwd(), "/", output_folder, analysis_name,"_VDJ_full_recap.xlsx. \n")
+    message("see exported recap file: ", getwd(), "/", output_folder, analysis_name,"_VDJ_final_recap.xlsx. \n")
   } else {
     message("Optional: 'openxlsx' not installed — simply saving as tsv files")
-    readr::write_tsv(cloned_VDJ_db, file = paste0(output_folder, analysis_name,"_VDJ_full_recap.tsv"))
+    readr::write_tsv(cloned_VDJ_db, file = paste0(output_folder, analysis_name,"_VDJ_final.tsv.gz"))
   }
   
   if(nrow(other_chains_db) > 0){
