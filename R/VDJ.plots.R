@@ -558,19 +558,20 @@ SingleDonutPlotClonotypes <- function(db,
                                       save_plot = TRUE,
                                       save_as = c("pdf", "png"),
                                       return_plot = FALSE) {
-  
   save_as <- match.arg(save_as)
-  if(save_plot){
-    if(!save_as %in% c("pdf", "png")){
+  if (save_plot) {
+    if (!save_as %in% c("pdf", "png")) {
       warning("The only saving option are 'pdf' and 'png', defaulting to 'pdf'.")
       save_as <- "pdf"
     }
-    if(!stringr::str_ends(plots_folder, "/")){plots_folder = paste0(plots_folder, "/")}
+    if (!stringr::str_ends(plots_folder, "/")) {
+      plots_folder <- paste0(plots_folder, "/")
+    }
     if (isFALSE(dir.exists(plots_folder))) {
       dir.create(plots_folder)
     }
   }
-  
+
   if (!requireNamespace("circlize", quietly = TRUE)) {
     message("Optional: 'circlize' not installed — skipping plot.")
     return(invisible(NULL))
@@ -756,46 +757,46 @@ SingleDonutPlotClonotypes <- function(db,
   names(Clones_by_groups_to_plot.list) <- unlist(origins)
 
   ## Plot Circosplots:
-  if (save_plot){
+  if (save_plot) {
     for (i in seq_along(Clones_by_groups_to_plot.list)) {
       Clones <- Clones_by_groups_to_plot.list[[i]]
       df_name <- names(Clones_by_groups_to_plot.list)[i]
       nb_seq <- sum(as.numeric(Clones$clone_size_in_group))
-      
+
       # df for sectors to plot
       df1 <- as.data.frame(Clones$clone_size_in_group)
       names(df1) <- "nb_cells"
       df1$xmin <- 0
       df1$xmax <- df1$nb_cells
       df1$color <- Clones$color
-      
+
       # Plot Circosplot
       if (!is.null(prefix)) {
         filename <- paste0(plots_folder, prefix, "/", prefix, "_", names(Clones_by_groups_to_plot.list)[i], "_", highlight, ".pdf")
       } else {
         filename <- paste0(plots_folder, names(Clones_by_groups_to_plot.list)[i], "_", highlight, ".pdf")
       }
-      
-      if(save_as == "pdf"){
+
+      if (save_as == "pdf") {
         pdf(file = filename, height = height, width = width)
       }
-      if(save_as == "png"){
+      if (save_as == "png") {
         png(file = filename, height = height, width = width)
       }
-      
+
       par(mar = rep(0, 4))
-      
+
       circos.clear()
-      
+
       circos.par(
         cell.padding = c(0, 0, 0, 0), track.margin = c(0, 0.02),
         start.degree = 90, gap.degree = 0,
         canvas.xlim = c(-1.5, 1.5),
         canvas.ylim = c(-1.5, 1.5)
       )
-      
+
       circos.initialize(factors = rownames(df1), x = df1$nb_cells, xlim = cbind(df1$xmin, df1$xmax))
-      
+
       # plot track with clone sizes:
       circos.trackPlotRegion(
         ylim = c(0, 1), factors = rownames(df1), track.height = 0.6,
@@ -811,13 +812,13 @@ SingleDonutPlotClonotypes <- function(db,
           )
         }
       )
-      
+
       # add nb sequences in the center:
       text(0, 0, nb_seq)
-      
+
       # add title:
       title(names(Clones_by_groups_to_plot.list)[i], line = -1, cex.main = 1.5)
-      
+
       # highlight expanded or top_5 clones:
       if (external_bar == "expanded") {
         # add outside track highlighting expanded clones:
@@ -833,7 +834,7 @@ SingleDonutPlotClonotypes <- function(db,
         # add text:
         text(0.45, 1.15, paste0(pct_expanded, "%"))
       }
-      
+
       if (external_bar == "top5") {
         # add outside track highlighting top5 clones:
         # accounts for cases with less than five clones (excluding unique sequences of course), no unique sequences or only unique sequences
@@ -842,7 +843,7 @@ SingleDonutPlotClonotypes <- function(db,
         } else {
           nb_top5_clones <- min(5, (length(Clones$clone_id)))
         }
-        
+
         if (nb_top5_clones > 0) {
           top5_clones <- Clones[1:nb_top5_clones, ]
           size_of_last_top5_clone <- as.numeric(top5_clones[nb_top5_clones, ]$clone_size_in_group)
@@ -856,7 +857,7 @@ SingleDonutPlotClonotypes <- function(db,
           text(0.45, 1.15, paste0("0%"), col = "#002147")
         }
       }
-      
+
       ## draw legend
       if (highlight == "clone_size") {
         if (nrow(Clones[!duplicated(Clones$clone_size_in_group) & Clones$expanded == TRUE, ]) == 0) {
@@ -874,17 +875,17 @@ SingleDonutPlotClonotypes <- function(db,
           title = "clone size",
           border = "black"
         )
-        
+
         ComplexHeatmap::draw(lgd_clone, x = unit(0.2, "in"), y = unit(2.4, "in"), just = "left")
       }
       dev.off()
     }
   }
 
-  if(return_plot){
-    #for visualisation only as it is currently impossible to directly export a circlize plot 
-    # TODO check circlizePlus package to plot circos plots directly in ggplot2 
-    
+  if (return_plot) {
+    # for visualisation only as it is currently impossible to directly export a circlize plot
+    # TODO check circlizePlus package to plot circos plots directly in ggplot2
+
     if (!requireNamespace("magick", quietly = TRUE)) {
       message("Optional: 'magick' not installed — skipping plot.")
       return(invisible(NULL))
@@ -901,7 +902,7 @@ SingleDonutPlotClonotypes <- function(db,
       message("Optional: 'grid' not installed — skipping plot.")
       return(invisible(NULL))
     }
-    
+
     grobs.list <- list()
     for (i in seq_along(Clones_by_groups_to_plot.list)) {
       if (!is.null(prefix)) {
@@ -909,14 +910,14 @@ SingleDonutPlotClonotypes <- function(db,
       } else {
         filename <- paste0(plots_folder, names(Clones_by_groups_to_plot.list)[i], "_", highlight, ".pdf")
       }
-      
-      if(save_as == "pdf"){
+
+      if (save_as == "pdf") {
         img <- magick::image_read_pdf(filename, density = 150)
         tmp_png <- tempfile(fileext = ".png")
         magick::image_write(img, tmp_png)
         img_raster <- png::readPNG(tmp_png)
       }
-      if(save_as == "png"){
+      if (save_as == "png") {
         img_raster <- png::readPNG(filename)
       }
       grob <- grid::rasterGrob(img_raster, interpolate = TRUE)
@@ -991,7 +992,6 @@ HexmapClonotypes <- function(db,
                              width = 6,
                              return_plot = FALSE,
                              return_coords = FALSE) {
-  
   if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
     message("Optional: 'RColorBrewer' not installed — skipping plot.")
     return(invisible(NULL))
@@ -1010,7 +1010,9 @@ HexmapClonotypes <- function(db,
     stop(paste0("missing", clone_id, "collumn"))
   }
 
-  if(!stringr::str_ends(plots_folder, "/")){plots_folder = paste0(plots_folder, "/")}
+  if (!stringr::str_ends(plots_folder, "/")) {
+    plots_folder <- paste0(plots_folder, "/")
+  }
   if (save_plot) {
     if (isFALSE(dir.exists(plots_folder))) {
       dir.create(plots_folder)
@@ -1035,10 +1037,10 @@ HexmapClonotypes <- function(db,
 
   if (is.null(split.by)) {
     if (!is.null(prefix)) {
-      title <- paste0(prefix, "All_sequences\n (n=",nrow(Plot_db),")")
+      title <- paste0(prefix, "All_sequences\n (n=", nrow(Plot_db), ")")
       filename <- paste0(plots_folder, prefix, "/", prefix, "All_sequences_by_", highlight, ".pdf")
     } else {
-      title <- paste("All_sequences\n (n=",nrow(Plot_db),")")
+      title <- paste("All_sequences\n (n=", nrow(Plot_db), ")")
       filename <- paste0(plots_folder, "All_sequences_by_", highlight, ".pdf")
     }
     p <- SingleHexmapClonotypes(Plot_db,
@@ -1054,7 +1056,7 @@ HexmapClonotypes <- function(db,
       seed = seed,
       return_coords = FALSE
     )
-    
+
     if (save_plot) {
       if (save_as == "pdf") {
         pdf(file = filename, height = height, width = width)
@@ -1074,40 +1076,41 @@ HexmapClonotypes <- function(db,
 
     groups <- Plot_db %>%
       dplyr::group_by(!!!rlang::syms(split.by)) %>%
-      dplyr::group_nest() 
-    
+      dplyr::group_nest()
+
     groups$group_name <- groups[[split.by[1]]]
-    if(length(split.by)>1){
+    if (length(split.by) > 1) {
       for (i in seq(2, length(split.by))) {
         groups$group_name <- paste0(groups$group_name, "_", groups[[split.by[i]]])
       }
     }
-    
+
     plots <- list()
-    
-    for(i in 1:length(groups$group_name)){
+
+    for (i in 1:length(groups$group_name)) {
       group_name <- groups$group_name[i]
       data <- groups$data[[i]]
       if (!is.null(prefix)) {
-        title <- paste0(prefix, "_", group_name, "\n (n=",nrow(data),")")
+        title <- paste0(prefix, "_", group_name, "\n (n=", nrow(data), ")")
         filename <- paste0(plots_folder, prefix, "/", prefix, "_", group_name, "_by_", highlight, ".pdf")
       } else {
-        title <- paste(group_name, "\n (n=",nrow(data),")")
+        title <- paste(group_name, "\n (n=", nrow(data), ")")
         filename <- paste0(plots_folder, group_name, "_by_", highlight, ".pdf")
       }
       # Plot data
       p <- SingleHexmapClonotypes(data,
-                                  ordered = ordered,
-                                  radius = radius,
-                                  padding = padding,
-                                  fill_col = "origin",
-                                  cell_id = cell_id,
-                                  clone_id = clone_id,
-                                  title = title,
-                                  shape = shape,
-                                  palette = palette,
-                                  seed = seed,
-                                  return_coords = FALSE)
+        ordered = ordered,
+        radius = radius,
+        padding = padding,
+        fill_col = "origin",
+        cell_id = cell_id,
+        clone_id = clone_id,
+        title = title,
+        shape = shape,
+        palette = palette,
+        seed = seed,
+        return_coords = FALSE
+      )
       if (save_plot) {
         if (save_as == "pdf") {
           pdf(file = filename, height = height, width = width)
@@ -1123,7 +1126,7 @@ HexmapClonotypes <- function(db,
       plots[[i]] <- p
     }
     names(plots) <- groups$group_name
-    
+
     if (return_plot) {
       return(plots)
     }
@@ -1181,7 +1184,6 @@ SingleHexmapClonotypes <- function(data,
                                    seed = 42,
                                    max_colors = 10,
                                    return_coords = FALSE) {
-  
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("Optional: 'ggplot2' not installed — skipping plot.")
     return(invisible(NULL))
@@ -1373,21 +1375,28 @@ SingleHexmapClonotypes <- function(data,
 }
 
 
-#### Function to plot CDR3 logo from repertoire data ####
-#' Plots individual CDR3 logo plots and save as pdf
+#### Function to plot CDR3 logos from repertoire data ####
+#' Plots multiple individual CDR3 logo plots and save as pdf
 #'
-#' \code{plotCDR3logo} Plots individual hexmap plots and save as pdf
+#' \code{plotCDR3logos} Batch plot individual CDR3 logo plots and save as pdf
 #' @param db            an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by      name of column to use to group sequences.
 #' @param locus         name of the column containing locus identifier.
-#' @param chain         name of the chain to plot. [default: IGH]
+#' @param use_chains    name of the chain to plot. [default: heavy]
+#' @param seq_type      'Ig' or 'TCR'
+#' @param heavy         heavy chains to be used. if set to NULL, will default to IGH for Ig and TRB/TRD for TCR.
+#' @param light         light chains to be used. if set to NULL, will default to IGL/IGK for Ig and TRA/TRG for TCR.
+#' @param trim_junction whether to plot only the cdr3 when a junction is provided
+#' @param junction      name of the column were junction sequences are stored. a default list for AIRR junction and junction_aa column is provided.
+#' @param junction_type nt or aa
+#' @param method        pass to ggseqlogo, method to used for plotting logo [default: "prob"]
 #' @param plots_folder  path to folder for saving plots
 #' @param min_size      minimun size of clones to plot
 #' @param clone_id      name of the column containing clones identifier.
-#' @param junction_type nt or aa
+#' @param plot_all      whether to plot all sequence, avoids a warning message if no locus information is provided. 
 #' @param save_plot     whether to save the plot as a pdf
+#' @param save_as       whether to save as 'pdf' or 'png'
 #' @param return_plot   whether to return the ggplot object
-#' @param ...       additional arguments to pass to ggseqlogo
 #'
 #' @return a ggseqlogo plot
 #'
@@ -1395,17 +1404,174 @@ SingleHexmapClonotypes <- function(data,
 #'
 #' @export
 
-plotCDR3logo <- function(db,
+plotCDR3logos <- function(db,
                          split.by = NULL,
                          locus = "locus",
-                         use_chain = "IGH",
+                         seq_type = c("Ig", "TCR"),
+                         use_chains = c("heavy", "light", "all"),
+                         heavy = NULL,
+                         light = NULL,
+                         trim_junction = FALSE,
+                         junction = list("aa" = "junction_aa", "dna" = "junction"),
+                         junction_type = c("aa", "dna"),
+                         method = c("prob", "bits"),
                          plots_folder = "VDJ_Clones/CDR3_logo",
                          min_size = 1,
                          clone_id = "clone_id",
-                         junction_type = "aa",
+                         plot_all = FALSE,
                          save_plot = TRUE,
-                         return_plot = FALSE,
-                         ...) {
+                         save_as = c("pdf", "png"),
+                         return_plot = FALSE) {
+  seq_type <- match.arg(seq_type)
+
+  if (is.null(heavy)) {
+    if (seq_type == "Ig") {
+      heavy <- "IGH"
+    }
+    if (seq_type == "TCR") {
+      heavy <- c("TRB", "TRD")
+    }
+  }
+  if (is.null(light)) {
+    if (seq_type == "Ig") {
+      light <- c("IGK", "IGL")
+    }
+    if (seq_type == "TCR") {
+      light <- c("TRA", "TRG")
+    }
+  }
+
+  # define chains to be used:
+  use_chains <- match.arg(use_chains)
+
+  if (!use_chains %in% c("heavy", "light")) {
+    stop("use_chains must be one of heavy or light.")
+  } else {
+    if (use_chains == "heavy") {
+      chains <- heavy
+    } else {
+      chains <- light
+    }
+  }
+
+  if (!locus %in% colnames(db)) {
+    if (!plot_all) {
+      warning("No locus information provided, plotting all sequences")
+    }
+    db$locus <- "all"
+    chains <- "all"
+  }
+  
+  junction_type <- match.arg(junction_type)
+  if (!junction_type %in% c("aa", "dna")) {
+    stop("Choosen 'junction_type' should be one of 'aa' or 'dna', defaulting to 'prob'.")
+  }
+  if (is.list(junction)) {
+    junction_column <- junction[[junction_type]]
+  } else {
+    junction_column <- junction[1]
+  }
+  if (!junction_column %in% colnames(db)) {
+    stop("missing '", junction_column, "' column in provided dataframe")
+  }
+
+  if (is.null(split.by)) {
+    split <- FALSE
+    db <- db %>%
+      dplyr::mutate(
+        All_sequences = "all_sequences"
+      )
+    split.by <- "All_sequences"
+  } else {
+    split <- TRUE
+  }
+
+  # if clone_id is in split.by, make sure clone_id is always at the end and returns a warning if not all cdr3s in a clone are the same length
+  if (clone_id %in% split.by) {
+    split.by <- c(split.by[split.by != clone_id], clone_id)
+    warn_length <- TRUE
+  }
+
+  groups <- db %>%
+    dplyr::filter(!!rlang::sym(locus) %in% chains) %>%
+    dplyr::group_by(!!!rlang::syms(split.by)) %>%
+    dplyr::mutate(
+      group_size = n()
+    ) %>%
+    dplyr::filter(group_size >= min_size) %>%
+    dplyr::group_nest()
+
+  plots <- purrr::map(groups$data, ~ plotCDR3logo(
+    junctions = .x[[junction_column]],
+    trim_junction = trim_junction,
+    junction_type = junction_type,
+    method = method,
+    warn_length = warn_length,
+    return = "all"
+  ))
+
+  if (split) {
+    group_names <- groups %>%
+      dplyr::select(-data) %>%
+      dplyr::mutate(id = purrr::pmap_chr(., ~ paste(..., sep = "_"))) %>%
+      dplyr::pull(id)
+  } else {
+    group_names <- "All_sequences"
+  }
+
+  names(plots) <- group_names
+
+  if (save_plot) {
+    if (!stringr::str_ends(plots_folder, "/")) {
+      plots_folder <- paste0(plots_folder, "/")
+    }
+    if (isFALSE(dir.exists(plots_folder))) {
+      dir.create(plots_folder)
+    }
+    for (i in seq_along(plots)) {
+      g <- plots[[i]][[1]]
+      l <- plots[[i]][[2]]
+      name <- names(plots)[i]
+
+      save_as <- match.args(save_as)
+      if (save_as == "pdf") {
+        ggsave(g, filename = paste0(plots_folder, "/", name, "_CDR3_logo.pdf"), width = ((2 + l) / 4), height = 2)
+      }
+      if (save_as == "png") {
+        png(filename = paste0(plots_folder, "/", name, "_CDR3_logo.png"), width = ((2 + l) / 4), height = 2)
+        plot(g)
+        dev.off()
+      }
+    }
+  }
+  if (return_plot) {
+    return(plots)
+  }
+}
+
+#### Function to plot a single CDR3 logo from repertoire data ####
+#' returns one CDR3 logo plot
+#'
+#' \code{plotCDR3logo} returns one CDR3 logo plot
+#' @param junctions     a vector of sequences.
+#' @param junction_type nt or aa
+#' @param trim_junction whether to plot only the cdr3 when a junction is provided
+#' @param method        pass to ggseqlogo, method to used for plotting logo [default: "prob"]
+#' @param warn_length   whether to send a warning if sequences are of different lengths
+#' @param return        whether to simply return the ggplot object or a list containing the ggplot object [default: "plot"] as well as information regarding the sequences lengths ["all"]
+#'
+#' @return a ggseqlogo plot or a named list with a ggseqlogo plot, a recap table of the length of all sequences provided and a vector of all sequences provided
+#'
+#' @import dplyr
+#'
+#' @export
+
+plotCDR3logo <- function(junctions,
+                               junction_type = c("aa", "dna"),
+                               trim_junction = FALSE,
+                               method = c("prob", "bits"),
+                               warn_length = FALSE,
+                               return = c("plot", "all")) {
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("Optional: 'ggplot2' not installed — skipping plot.")
     return(invisible(NULL))
@@ -1416,55 +1582,77 @@ plotCDR3logo <- function(db,
     message("Optional: 'ggseqlogo' not installed — skipping plot.")
     return(invisible(NULL))
   }
-  junction <- paste0("junction_", junction_type)
-  if (!junction %in% colnames(db)) {
-    stop("missing '", junction, "' column in provided dataframe")
+
+  return <- match.arg(return)
+
+  method <- match.arg(method)
+  if (!method %in% c("prob", "bits")) {
+    warning("Choosen 'method' for ggseqlogo should be one of 'prob' or 'bits', defaulting to 'prob'.")
+    method <- "prob"
+  }
+  
+  junction_type <- match.arg(junction_type)
+  if (!junction_type %in% c("aa", "dna")) {
+    stop("Choosen 'junction_type' should be one of 'aa' or 'dna', defaulting to 'prob'.")
   }
 
-  plot_cdr3 <- function(data) {
-    junctions <- data[[junction]]
-    l <- nchar(junctions[1])
-    g <- ggseqlogo::ggseqlogo(junctions, seq_type = junction_type, method = "prob", ...)
-    p <- list(g, l)
-    names(p) <- c("cdr3_logo", "cdr3_length")
+  lengths <- as.data.frame(table(nchar(junctions))) %>%
+    dplyr::rename(
+      nb_seq = Freq,
+      cdr3_length = Var1
+    )
+  if (nrow(lengths) == 1) {
+    if (trim_junction) {
+      if (junction_type == "aa") {
+        junctions <- Biostrings::AAStringSet(junctions)
+        # removing first and last AA from junction
+        junctions <- subseq(junctions, start = 2, end = -2)
+        junctions <- as.character(junctions)
+      }
+      if (junction_type == "dna") {
+        junctions <- Biostrings::DNAStringSet(junctions)
+        # removing first three and last three AA from junction
+        junctions <- subseq(junctions, start = 4, end = -4)
+        junctions <- as.character(junctions)
+      }
+    }
+  }
+  if (nrow(lengths) > 1) {
+    method <- "bits" #using Prob doesn't take '-' generated by gaps in the alignments into consideration
+    if (warn_length) {
+      warning("presence of clones with different cdr3 length")
+    }
+    if (!requireNamespace("ggseqlogo", quietly = TRUE)) {
+      message("Alignement needed for cdr3s/junctions of variable length: 'msa' not installed — skipping plot. [try: BiocManager::install('msa')]")
+      return(invisible(NULL))
+    }
+    if (junction_type == "aa") {
+      junctions <- Biostrings::AAStringSet(junctions)
+      if (trim_junction) {
+        # removing first and last AA from junction
+        junctions <- subseq(junctions, start = 2, end = -2)
+      }
+      junctions <- msa::msa(junctions, method = "ClustalW")
+      junctions <- as.character(junctions)
+    }
+    if (junction_type == "dna") {
+      junctions <- Biostrings::DNAStringSet(junctions)
+      if (trim_junction) {
+        # removing first three and last three AA from junction
+        junctions <- subseq(junctions, start = 4, end = -4)
+      }
+      junctions <- msa::msa(junctions, method = "ClustalW")
+      junctions <- as.character(junctions)
+    }
+  }
+  g <- ggseqlogo::ggseqlogo(junctions, seq_type = junction_type, method = method)
+  p <- list(g, lengths, junctions)
+  names(p) <- c("cdr3_logo", "cdr3_length", "cdr3s")
+  if (return == "plot") {
+    return(g)
+  }
+  if (return == "all") {
     return(p)
-  }
-
-  # make sure clone_id is always at the end
-  split.by <- c(split.by[split.by != clone_id], clone_id)
-
-  groups <- db %>%
-    dplyr::filter(locus == use_chain) %>%
-    dplyr::group_by(!!!rlang::syms(split.by)) %>%
-    dplyr::mutate(
-      group_size = n()
-    ) %>%
-    dplyr::filter(group_size >= min_size) %>%
-    dplyr::group_nest()
-
-  plots <- purrr::map(groups$data, plot_cdr3)
-
-  group_names <- groups %>%
-    dplyr::select(-data) %>%
-    dplyr::mutate(id = purrr::pmap_chr(., ~ paste(..., sep = "_"))) %>%
-    dplyr::pull(id)
-
-  names(plots) <- group_names
-
-  if (save_plot) {
-    if(!stringr::str_ends(plots_folder, "/")){plots_folder = paste0(plots_folder, "/")}
-    if (isFALSE(dir.exists(plots_folder))) {
-      dir.create(plots_folder)
-    }
-    for (i in seq_along(plots)) {
-      g <- plots[[i]][[1]]
-      l <- plots[[i]][[2]]
-      name <- names(plots)[i]
-      ggsave(g, filename = paste0(plots_folder, "/", name, "_CDR3_logo.pdf"), width = ((2 + l) / 4), height = 2)
-    }
-  }
-  if (return_plot) {
-    return(plots)
   }
 }
 
@@ -1746,26 +1934,25 @@ plotVGenePairing <- function(db,
                              width = NULL,
                              return_plot = TRUE,
                              ncol = 2) {
-  
-  save_as = match.arg(save_as)
-  
+  save_as <- match.arg(save_as)
+
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("Optional: 'ggplot2' not installed — skipping plot.")
     return(invisible(NULL))
   }
   suppressMessages(library(ggplot2))
-  
+
   seq_type <- match.arg(seq_type)
-  
-  if(seq_type == "Ig"){
+
+  if (seq_type == "Ig") {
     heavy <- "IGH"
-    light <- c("IGK","IGL")
+    light <- c("IGK", "IGL")
   }
-  if(seq_type == "TCR"){
-    heavy <- c("TRB","TRD")
-    light <- c("TRA","TRG")
+  if (seq_type == "TCR") {
+    heavy <- c("TRB", "TRD")
+    light <- c("TRA", "TRG")
   }
-  
+
   if (!clone_id %in% colnames(db)) {
     stop(paste0("missing", clone_id, "collumn"))
   }
@@ -1774,10 +1961,10 @@ plotVGenePairing <- function(db,
     split.by <- "all"
     db$all <- "all sequences"
   }
-  
-  if(!is.null(groups_to_plot)) {
-    if(any(!groups_to_plot %in% levels(as.factor(db[[split.by]])))){
-      warning("The following group(s) to plot are not found in the ", split.by," column, will be removed.")
+
+  if (!is.null(groups_to_plot)) {
+    if (any(!groups_to_plot %in% levels(as.factor(db[[split.by]])))) {
+      warning("The following group(s) to plot are not found in the ", split.by, " column, will be removed.")
       groups_to_plot <- groups_to_plot[groups_to_plot %in% levels(as.factor(db[[split.by]]))]
     }
     db <- db %>%
@@ -1788,7 +1975,7 @@ plotVGenePairing <- function(db,
   }
 
   # Reformat the dataframe
-  db <- db %>% 
+  db <- db %>%
     dplyr::mutate(
       v_gene = alakazam::getGene(v_call, first = TRUE, collapse = TRUE, strip_d = TRUE, omit_nl = FALSE, sep = ","),
       locus_simplified = ifelse(locus %in% heavy, "VH", ifelse(locus %in% light, "VL", NA))
@@ -1844,10 +2031,10 @@ plotVGenePairing <- function(db,
     tidyr::replace_na(list(freq = 0))
 
   groups <- levels(as.factor(pair_freq_complete[[split.by]]))
-  if(any(is.null(ref), !ref %in% groups)){
-   ref <- groups[1]
+  if (any(is.null(ref), !ref %in% groups)) {
+    ref <- groups[1]
   }
-  
+
   # Create expected frequency matrix from the first group in the list:
   expected_db <- pair_freq_complete %>%
     dplyr::filter(!!rlang::sym(split.by) == ref) %>%
@@ -1936,7 +2123,9 @@ plotVGenePairing <- function(db,
     )
 
   if (save_plot) {
-    if(!stringr::str_ends(plots_folder, "/")){plots_folder = paste0(plots_folder, "/")}
+    if (!stringr::str_ends(plots_folder, "/")) {
+      plots_folder <- paste0(plots_folder, "/")
+    }
     if (isFALSE(dir.exists(plots_folder))) {
       dir.create(plots_folder)
     }
@@ -1945,9 +2134,9 @@ plotVGenePairing <- function(db,
     } else {
       filename <- paste0(plots_folder, "Vgene-pairing.pdf")
     }
-    if (any(is.null(height), is.null(width))){
-      width <- 8*ncol + 2
-      height <- 7*ceiling(length(groups)/2)
+    if (any(is.null(height), is.null(width))) {
+      width <- 8 * ncol + 2
+      height <- 7 * ceiling(length(groups) / 2)
     }
     if (save_as == "pdf") {
       pdf(file = filename, height = height, width = width)
