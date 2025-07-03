@@ -1378,7 +1378,7 @@ SingleHexmapClonotypes <- function(data,
 #### Function to plot CDR3 logos from repertoire data ####
 #' Plots multiple individual CDR3 logo plots and save as pdf
 #'
-#' \code{plotCDR3logos} Batch plot individual CDR3 logo plots and save as pdf
+#' \code{CDR3logo} Batch plot individual CDR3 logo plots and save as pdf
 #' @param db            an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by      name of column to use to group sequences.
 #' @param locus         name of the column containing locus identifier.
@@ -1404,24 +1404,25 @@ SingleHexmapClonotypes <- function(data,
 #'
 #' @export
 
-plotCDR3logos <- function(db,
-                          split.by = NULL,
-                          locus = "locus",
-                          seq_type = c("Ig", "TCR"),
-                          use_chains = c("heavy", "light", "all"),
-                          heavy = NULL,
-                          light = NULL,
-                          trim_junction = FALSE,
-                          junction = list("aa" = "junction_aa", "dna" = "junction"),
-                          junction_type = c("aa", "dna"),
-                          method = c("prob", "bits"),
-                          plots_folder = "VDJ_Clones/CDR3_logo",
-                          min_size = 1,
-                          clone_id = "clone_id",
-                          plot_all = FALSE,
-                          save_plot = TRUE,
-                          save_as = c("pdf", "png"),
-                          return_plot = FALSE) {
+CDR3logo <- function(db,
+                     split.by = NULL,
+                     locus = "locus",
+                     seq_type = c("Ig", "TCR"),
+                     use_chains = c("heavy", "light", "all"),
+                     heavy = NULL,
+                     light = NULL,
+                     trim_junction = FALSE,
+                     junction = list("aa" = "junction_aa", "dna" = "junction"),
+                     junction_type = c("aa", "dna"),
+                     method = c("prob", "bits"),
+                     plots_folder = "VDJ_Clones/CDR3_logo",
+                     min_size = 1,
+                     clone_id = "clone_id",
+                     plot_all = FALSE,
+                     save_plot = TRUE,
+                     save_as = c("pdf", "png"),
+                     return_plot = FALSE) {
+                          
   seq_type <- match.arg(seq_type)
 
   if (is.null(heavy)) {
@@ -1501,7 +1502,7 @@ plotCDR3logos <- function(db,
     dplyr::filter(group_size >= min_size) %>%
     dplyr::group_nest()
 
-  plots <- purrr::map(groups$data, ~ plotCDR3logo(
+  plots <- purrr::map(groups$data, ~ SingleCDR3logo(
     junctions = .x[[junction_column]],
     trim_junction = trim_junction,
     junction_type = junction_type,
@@ -1566,12 +1567,13 @@ plotCDR3logos <- function(db,
 #'
 #' @export
 
-plotCDR3logo <- function(junctions,
-                         junction_type = c("aa", "dna"),
-                         trim_junction = FALSE,
-                         method = c("prob", "bits"),
-                         warn_length = FALSE,
-                         return = c("plot", "all")) {
+SingleCDR3logo <- function(junctions,
+                           junction_type = c("aa", "dna"),
+                           trim_junction = FALSE,
+                           method = c("prob", "bits"),
+                           warn_length = FALSE,
+                           return = c("plot", "all")) {
+                         
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("Optional: 'ggplot2' not installed — skipping plot.")
     return(invisible(NULL))
