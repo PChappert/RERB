@@ -160,13 +160,13 @@ all intermediate and final results files will be stored inside the "path to your
 
 The **DonutPlotClonotypes()** function offers a flexible way to plot donut plots grouping data on multiple variables, well adapted to small repertoire sizes. By default, DonutPlotClonotypes3D() highlights shared clones (**highlight** = "shared") between groups. Below is an example where data is grouped first on donor_id and then time_point, and shared clones between time-points for individual donors are being highlighted (same color).
 
--   The **external_bar** argument can be "none", "expanded" or "top5".
+   The **external_bar** argument can be "none", "expanded" or "top5".
 
--   The **highlight** argument can be "shared", "clone_size" or "clone_rank".
+   The **highlight** argument can be "shared", "clone_size" or "clone_rank".
 
--   The **split.by** argument is use to split the data set in as many group as needed. In the below argument one plot will be automatically made for each time point in each donor. When using **highlight** = "shared", the last listed split.by argument, here "time_point", will be used to look for clonal relationship (here between time points for each given donor). When using other **highlight** arguments, all columns provided in the **split.by** argument are used for grouping and clone sizes/ranks are calculated inside each individual repertoires.
+   The **split.by** argument is use to split the data set in as many group as needed. In the below argument one plot will be automatically made for each time point in each donor. When using **highlight** = "shared", the last listed split.by argument, here "time_point", will be used to look for clonal relationship (here between time points for each given donor). When using other **highlight** arguments, all columns provided in the **split.by** argument are used for grouping and clone sizes/ranks are calculated inside each individual repertoires.
 
--   **prefix** can be set to whatever you want it to be.
+   **prefix** can be set to whatever you want it to be.
 
 ``` r
 DonutPlotClonotypes(cloned_VDJ_db, 
@@ -181,11 +181,11 @@ DonutPlotClonotypes(cloned_VDJ_db,
 
 The **HexmapClonotypes()** function offers a way to plot repertoire data as hexbin or circles, similar to the honeycomb plots in 10X enclone software or here for a similar python implementation: (<https://github.com/michael-swift/Bcell_memory_formation>); shape can be "hex" or "circle". It is better adapted to big repertoires.
 
--   The **highlight** argument points to the column to be use to color each hex or circle.
+   The **highlight** argument points to the column to be use to color each hex or circle.
 
--   The **split.by** argument is use to split the data set in as many group as needed. In the below argument one plot will be automatically made for each celltype in each sample ("orig.ident").
+   The **split.by** argument is use to split the data set in as many group as needed. In the below argument one plot will be automatically made for each celltype in each sample ("orig.ident").
 
--   As for DonutPlotClonotypes(), a **prefix** argument can be set to whatever you want it to be in the final naming of the plots.
+   As for DonutPlotClonotypes(), a **prefix** argument can be set to whatever you want it to be in the final naming of the plots.
 
 ``` r
 HexmapClonotypes(cloned_VDJ_db, highlight = "c_call", split.by = c("orig.ident", "predicted.celltype.l2"))
