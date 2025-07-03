@@ -1378,7 +1378,7 @@ SingleHexmapClonotypes <- function(data,
 #### Function to plot CDR3 logos from repertoire data ####
 #' Plots multiple individual CDR3 logo plots and save as pdf
 #'
-#' \code{CDR3logo} Batch plot individual CDR3 logo plots and save as pdf
+#' \code{CDR3logos} Batch plot individual CDR3 logo plots and save as pdf
 #' @param db            an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by      name of column to use to group sequences.
 #' @param locus         name of the column containing locus identifier.
@@ -1404,24 +1404,24 @@ SingleHexmapClonotypes <- function(data,
 #'
 #' @export
 
-CDR3logo <- function(db,
-                     split.by = NULL,
-                     locus = "locus",
-                     seq_type = c("Ig", "TCR"),
-                     use_chains = c("heavy", "light", "all"),
-                     heavy = NULL,
-                     light = NULL,
-                     trim_junction = FALSE,
-                     junction = list("aa" = "junction_aa", "dna" = "junction"),
-                     junction_type = c("aa", "dna"),
-                     method = c("prob", "bits"),
-                     plots_folder = "VDJ_Clones/CDR3_logo",
-                     min_size = 1,
-                     clone_id = "clone_id",
-                     plot_all = FALSE,
-                     save_plot = TRUE,
-                     save_as = c("pdf", "png"),
-                     return_plot = FALSE) {
+CDR3logos <- function(db,
+                      split.by = NULL,
+                      locus = "locus",
+                      seq_type = c("Ig", "TCR"),
+                      use_chains = c("heavy", "light", "all"),
+                      heavy = NULL,
+                      light = NULL,
+                      trim_junction = FALSE,
+                      junction = list("aa" = "junction_aa", "dna" = "junction"),
+                      junction_type = c("aa", "dna"),
+                      method = c("prob", "bits"),
+                      plots_folder = "VDJ_Clones/CDR3_logo",
+                      min_size = 1,
+                      clone_id = "clone_id",
+                      plot_all = FALSE,
+                      save_plot = TRUE,
+                      save_as = c("pdf", "png"),
+                      return_plot = FALSE) {
                           
   seq_type <- match.arg(seq_type)
 
@@ -1553,7 +1553,7 @@ CDR3logo <- function(db,
 #### Function to plot a single CDR3 logo from repertoire data ####
 #' returns one CDR3 logo plot
 #'
-#' \code{plotCDR3logo} returns one CDR3 logo plot
+#' \code{SingleCDR3logo} returns one CDR3 logo plot
 #' @param junctions     a vector of sequences.
 #' @param junction_type nt or aa
 #' @param trim_junction whether to plot only the cdr3 when a junction is provided
@@ -1918,24 +1918,28 @@ CircosClonotypes <- function(db,
 #' @export
 
 plotVGenePairing <- function(db,
-                             split.by = NULL, # max one column
-                             groups_to_plot = NULL,
-                             prefix = NULL,
-                             plots_folder = "Vgene_plots",
-                             downsample_clones = TRUE,
-                             locus = "locus",
-                             seq_type = c("Ig", "TCR"),
-                             v_call = "v_call",
-                             clone_id = "clone_id",
-                             plot_freq = TRUE,
-                             plot_significance = FALSE,
-                             ref = NULL,
-                             save_plot = FALSE,
-                             save_as = c("pdf", "png"),
-                             height = NULL,
-                             width = NULL,
-                             return_plot = TRUE,
-                             ncol = 2) {
+                         split.by = NULL, # max one column
+                         groups_to_plot = NULL,
+                         prefix = NULL,
+                         plots_folder = "Vgene_plots",
+                         downsample_clones = FALSE,
+                         locus = "locus",
+                         seq_type = c("Ig", "TCR"),
+                         v_call = "v_call",
+                         h_level = c("gene", "family", "allele"),
+                         l_level = c("gene", "family", "allele"),
+                         invert_axis = FALSE,
+                         clone_id = "clone_id",
+                         plot_freq = TRUE,
+                         plot_significance = FALSE,
+                         ref = NULL,
+                         save_plot = FALSE,
+                         save_as = c("pdf", "png"),
+                         height = NULL,
+                         width = NULL,
+                         return_plot = TRUE,
+                         ncol = 2) {
+                             
   save_as <- match.arg(save_as)
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
@@ -1954,7 +1958,20 @@ plotVGenePairing <- function(db,
     heavy <- c("TRB", "TRD")
     light <- c("TRA", "TRG")
   }
-
+  
+  h_level <- match.arg(h_level)
+  if(!h_level %in% c("gene", "family", "allele")){
+    warning("'h_level' must be one of allele, gene or family, defaulting to 'gene'")
+    h_level <- "gene"
+  }
+  if(h_level == "allele"){h_level <- "call"}
+  l_level <- match.arg(l_level)
+  if(!l_level %in% c("gene", "family", "allele")){
+    warning("'l_level' must be one of allele, gene or family, defaulting to 'gene'")
+    l_level <- "gene"
+  }
+  if(l_level == "allele"){l_level <- "call"}
+  
   if (!clone_id %in% colnames(db)) {
     stop(paste0("missing", clone_id, "collumn"))
   }
@@ -1980,7 +1997,8 @@ plotVGenePairing <- function(db,
   db <- db %>%
     dplyr::mutate(
       v_gene = alakazam::getGene(v_call, first = TRUE, collapse = TRUE, strip_d = TRUE, omit_nl = FALSE, sep = ","),
-      locus_simplified = ifelse(locus %in% heavy, "VH", ifelse(locus %in% light, "VL", NA))
+      v_family = alakazam::getFamily(v_call, first = TRUE, collapse = TRUE, strip_d = TRUE, omit_nl = FALSE, sep = ","),
+      locus_simplified = ifelse(locus %in% heavy, "heavy", ifelse(locus %in% light, "light", NA))
     )
 
   if (any(is.na(db$locus_simplified))) {
@@ -1993,23 +2011,29 @@ plotVGenePairing <- function(db,
   # [optional] Select only only representant per clone:
   if (downsample_clones) {
     db <- db %>%
-      dplyr::select(cell_id, v_gene, locus_simplified, !!rlang::sym(split.by), clone_id) %>%
+      dplyr::select(cell_id, v_call, v_gene, v_family, locus_simplified, !!rlang::sym(split.by), clone_id) %>%
       dplyr::group_by(clone_id, locus_simplified) %>%
       dplyr::summarise(
         cell_id = unique(cell_id)[1],
         !!rlang::sym(split.by) := unique(!!rlang::sym(split.by))[1],
+        v_call = unique(v_call)[1],
         v_gene = unique(v_gene)[1],
+        v_family = unique(v_family)[1],
         locus_simplified = unique(locus_simplified)[1],
         .groups = "drop"
       )
   } else {
     db <- db %>%
-      dplyr::select(cell_id, v_gene, locus_simplified, !!rlang::sym(split.by))
+      dplyr::select(cell_id, v_call, v_gene, v_family, locus_simplified, !!rlang::sym(split.by))
   }
 
   # Calculate pairing frequencies in cells with paired VH and VL:
   db_wide <- db %>%
-    tidyr::pivot_wider(names_from = locus_simplified, values_from = v_gene) %>%
+    tidyr::pivot_wider(names_from = locus_simplified, values_from = c(v_call, v_gene, v_family)) %>%
+    dplyr::rename(
+      VH = !!rlang::sym(paste0("v_", h_level, "_heavy")),
+      VL = !!rlang::sym(paste0("v_", l_level, "_light"))
+    ) %>%
     tidyr::drop_na(VH, VL, !!rlang::sym(split.by))
 
   # pair_counts <- df_wide %>%
@@ -2086,15 +2110,29 @@ plotVGenePairing <- function(db,
     dplyr::bind_rows(db_b_list)
 
   if (plot_significance) {
-    p <- ggplot2::ggplot(db_plot %>% dplyr::filter(freq > 0) %>% dplyr::arrange(freq), ggplot2::aes(x = VL, y = VH)) +
-      ggplot2::geom_point(ggplot2::aes(size = freq, fill = freq, color = !!rlang::sym("Significance (p < 0.05)")), shape = 21, stroke = 0.5) +
-      ggplot2::scale_color_manual(
-        values = c("TRUE" = "red", "FALSE" = "black"),
-        guide = "legend"
-      )
+    if(!invert_axis){
+      p <- ggplot2::ggplot(db_plot %>% dplyr::filter(freq > 0) %>% dplyr::arrange(freq), ggplot2::aes(x = VL, y = VH)) +
+        ggplot2::geom_point(ggplot2::aes(size = freq, fill = freq, color = !!rlang::sym("Significance (p < 0.05)")), shape = 21, stroke = 0.5) +
+        ggplot2::scale_color_manual(
+          values = c("TRUE" = "red", "FALSE" = "black"),
+          guide = "legend"
+        )
+    } else {
+      p <- ggplot2::ggplot(db_plot %>% dplyr::filter(freq > 0) %>% dplyr::arrange(freq), ggplot2::aes(x = VH, y = VL)) +
+        ggplot2::geom_point(ggplot2::aes(size = freq, fill = freq, color = !!rlang::sym("Significance (p < 0.05)")), shape = 21, stroke = 0.5) +
+        ggplot2::scale_color_manual(
+          values = c("TRUE" = "red", "FALSE" = "black"),
+          guide = "legend"
+        )
+    }
   } else {
-    p <- ggplot2::ggplot(db_plot %>% dplyr::filter(freq > 0) %>% dplyr::arrange(freq), ggplot2::aes(x = VL, y = VH)) +
-      ggplot2::geom_point(ggplot2::aes(size = freq, fill = freq), shape = 21, stroke = 0.5)
+    if(!invert_axis){
+      p <- ggplot2::ggplot(db_plot %>% dplyr::filter(freq > 0) %>% dplyr::arrange(freq), ggplot2::aes(x = VL, y = VH)) +
+        ggplot2::geom_point(ggplot2::aes(size = freq, fill = freq), shape = 21, stroke = 0.5)
+    } else {
+      p <- ggplot2::ggplot(db_plot %>% dplyr::filter(freq > 0) %>% dplyr::arrange(freq), ggplot2::aes(x = VH, y = VL)) +
+        ggplot2::geom_point(ggplot2::aes(size = freq, fill = freq), shape = 21, stroke = 0.5)
+    }
   }
   p <- p +
     # scale_fill_gradientn(
