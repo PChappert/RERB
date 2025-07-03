@@ -75,6 +75,7 @@ Suggests:
     graphics,
     magick,
     markdown,
+    msa,
     tidyselect,
     knitr,
     rmarkdown,
