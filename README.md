@@ -28,10 +28,11 @@ BiocManager::install("Biostrings")
 ```
 additional packages for parallel computing, plotting and recap options:
 ``` r
-install.packages("parallel", "openxlsx", "patchwork", "scales", "circlize", "ggforce", "ggrepel", "ggseqlogo", "gridExtra", "sangerseqR", "packcircles", "RColorBrewer") 
+install.packages("parallel", "openxlsx", "patchwork", "scales", "circlize", "ggforce", "ggrepel", "ggseqlogo", "magick", "gridExtra", "pdftools", "sangerseqR", "packcircles", "RColorBrewer") 
 if (!require("BiocManager", quietly = TRUE))
     install.packages("BiocManager")
 BiocManager::install("ComplexHeatmap")
+BiocManager::install("msa")
 ```
 
 5.  Download the "RERB" package to a folder of your choice and load the package using devtools:
@@ -83,7 +84,7 @@ You can also import additional plate-based Sanger sequencing data using **Import
 
 ``` r
 recap_scSanger <- openxlsx::read.xlsx("scTemplate_BDRhapsody_v1.0.xlsx", sheet="scSangerBCR-seq", rowNames = FALSE)                     
-VDJ_db <- ImportSangerVDJ(db = VDJ_db, sanger_files = recap_scSanger)
+VDJ_db <- importSangerVDJ(db = VDJ_db, sanger_files = recap_scSanger)
 ```
 
 You can then run the second step of the pipeline: find clones based on heavy chain first and then filter light chain multiplets, filter clones based on light chains, reconstruct germline alignments based on clones, calculate mutation loads and reconstruct full contigs to use in AlphaFold3 for example.
@@ -123,8 +124,8 @@ Of note, the **split.by** argument is used here to calculate the size and freque
 recap_scSanger <- openxlsx::read.xlsx("Recap_sorts_MPOX_01042025.xlsx", sheet="scSangerBCR-seq", rowNames = FALSE)
 recap_FJ <- openxlsx::read.xlsx("Recap_sorts_MPOX_01042025.xlsx", sheet="FlowJo_exports", rowNames = FALSE)
 
-VDJ_db <- ImportSangerVDJ(recap_scSanger, orig.ident = "sanger_plate_id")
-VDJ_db <- ImportFJGates(recap_FJ, VDJ_db)
+VDJ_db <- importSangerVDJ(recap_scSanger, orig.ident = "sanger_plate_id")
+VDJ_db <- importFJGates(recap_FJ, VDJ_db)
 cloned_VDJ_db <- scFindBCRClones(VDJ_db, analysis_name = "All_seq_MPOX", only_heavy = TRUE)
 ```
 
@@ -134,12 +135,15 @@ if you want to create dedicated worksheets in the final recap table on a particu
 cloned_VDJ_db <- scFindBCRClones(VDJ_db, analysis_name = "All_seq_MPOX", only_heavy = TRUE, recap.highlight = "specificity")
 ```
 
-**Option 3: If you only have a table with a raw sequence column** In this case you need to run igblast first using the **run_igblast()** function, indicating which column to use as sequence_id (should be a unique identifier). Below is an example were you import a excel table with only two columns with the following headers: "my_ids" and "my_sequences", with the data in the first worksheet and no blank rows or columns above or left of you data. Set output = TRUE only if you want to keep all intermediate results from igblast.
+**Option 3: If you only have a table with a raw sequence column**:\ 
+In this case you need to run igblast first using **runAssignGenes()**, indicating which column to use as sequence_id (should be a unique identifier).\
+Below is an example were you import a excel table with only two columns with the following headers: "my_ids" and "my_sequences", with the data in the first worksheet and no blank rows or columns above or left of you data.\
+Set output = TRUE only if you want to keep all intermediate results from igblast.
 
 ``` r
 setwd("path to your file/")
 simple_db <- openxlsx::read.xlsx("your_table.xlsx", sheet="1", rowNames = FALSE)
-igblast_results <- run_igblast(simple_db, sequence = "my_sequences", sequence_id = "my_ids", output = TRUE)
+igblast_results <- runAssignGenes(simple_db, sequence = "my_sequences", sequence_id = "my_ids", output = TRUE)
 ```
 
 then you can run **scFindBCRClones()**, adding **only_heavy = TRUE** if you only have heavy chain sequences.
@@ -154,7 +158,7 @@ all intermediate and final results files will be stored inside the "path to your
 
 -   **Donut plots**:
 
-The **DonutPlotClonotypes3D()** function offers a flexible way to plot donut plots grouping data on multiple variables, well adapted to small repertoire sizes. By default, DonutPlotClonotypes3D() highlights shared clones (**highlight** = "shared") between groups. Below is an example where data is grouped first on donor_id and then time_point, and shared clones between time-points for individual donors are being highlighted (same color).
+The **DonutPlotClonotypes()** function offers a flexible way to plot donut plots grouping data on multiple variables, well adapted to small repertoire sizes. By default, DonutPlotClonotypes3D() highlights shared clones (**highlight** = "shared") between groups. Below is an example where data is grouped first on donor_id and then time_point, and shared clones between time-points for individual donors are being highlighted (same color).
 
 -   The **external_bar** argument can be "none", "expanded" or "top5".
 
@@ -173,7 +177,7 @@ DonutPlotClonotypes(cloned_VDJ_db,
                     external_bar = "none")
 ```
 
--   **Hexbin plots**:
+-   **Hexbin/Honeycomb style plots**:
 
 The **HexmapClonotypes()** function offers a way to plot repertoire data as hexbin or circles, similar to the honeycomb plots in 10X enclone software or here for a similar python implementation: (<https://github.com/michael-swift/Bcell_memory_formation>); shape can be "hex" or "circle". It is better adapted to big repertoires.
 
