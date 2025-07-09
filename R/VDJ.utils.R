@@ -268,7 +268,7 @@ Ab1toAIRR <- function(files,
 
         VDJ_db <- dplyr::relocate(VDJ_db, c_call, .after = j_call)
 
-        if(nrow(failed_VDJ_db)>0){
+        if(!any(is.null(failed_VDJ_db), nrow(failed_VDJ_db)==0)){
           outfilename_fail <- paste0(outfilename, "_igblast-fail")
           readr::write_tsv(failed_VDJ_db, file = paste0(outfolder, "/", outfilename_fail, ".tsv.gz"))
         }
@@ -356,8 +356,8 @@ Ab1toAIRR <- function(files,
           return(db)
         }
         VDJ_db <- AddInfo(VDJ_db)
-        if(nrow(QC_failed)>0){QC_failed <- AddInfo(QC_failed)}
-        if(nrow(failed_VDJ_db)>0){failed_VDJ_db <- AddInfo(failed_VDJ_db)}
+        if(!any(is.null(QC_failed), nrow(QC_failed)==0)){QC_failed <- AddInfo(QC_failed)}
+        if(!any(is.null(failed_VDJ_db), nrow(failed_VDJ_db)==0)){failed_VDJ_db <- AddInfo(failed_VDJ_db)}
       }
 
       #remove unproductive sequences:
@@ -436,14 +436,14 @@ Ab1toAIRR <- function(files,
       if(verbose){cat(step, "\n","\n")}
 
     } else {
-      if(nrow(QC_failed)>0){
+      if(!any(is.null(QC_failed), nrow(QC_failed)==0)){
         if(verbose){
-          cat("nb total sequences: ", nrow(VDJ_db)+nrow(QC_failed), "\n")
+          cat("nb total sequences: ", nrow(QC_failed), "\n")
           cat(paste0("nb failing initial QC: ",nb_QC_failed), "\n")
           cat("final output folder: ", outfolder, "\n")
         }
         time_and_log({
-          cat("nb total sequences: ", nrow(VDJ_db)+nrow(QC_failed), "\n")
+          cat("nb total sequences: ", nrow(QC_failed), "\n")
           cat(paste0("nb failing initial QC: ",nb_QC_failed), "\n")
           cat("final output folder: ", outfolder, "\n")
         }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "Final recap", open_mode = "a")
