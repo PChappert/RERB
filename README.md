@@ -171,13 +171,17 @@ The **DonutPlotClonotypes()** function offers a flexible way to plot donut plots
 
    The **highlight** argument can be "shared", "clone_size" or "clone_rank".
 
-   The **split.by** argument is use to split the data set in as many group as needed. In the below argument one plot will be automatically made for each time point in each donor. When using **highlight** = "shared", the last listed split.by argument, here "time_point", will be used to look for clonal relationship (here between time points for each given donor). When using other **highlight** arguments, all columns provided in the **split.by** argument are used for grouping and clone sizes/ranks are calculated inside each individual repertoires.
+   The **split.by** argument is use to split the data set in as many group as needed. In the below argument one plot will be automatically made for each time point in each donor. 
+   When using **highlight** = "shared", the last listed split.by argument, here "time_point", will be used to look for clonal relationship (here between time points for each given donor). 
+   When using other **highlight** arguments, all columns provided in the **split.by** argument are used for grouping and clone sizes/ranks are calculated inside each individual repertoires. 
+   You can also use the groups_to_plot argument to select which of the final groups to keep (here which time points). 
 
    **prefix** can be set to whatever you want it to be.
 
 ``` r
 DonutPlotClonotypes(cloned_VDJ_db, 
                     split.by = c("donor_id", "time_point"),
+                    groups_to_plot = c("Visit1", "Visit2")
                     highlight = "shared",
                     prefix = "all",
                     plots_folder = "VDJ_Clones/Donut_plots",
@@ -190,7 +194,7 @@ The **HexmapClonotypes()** function offers a way to plot repertoire data as hexb
 
    The **highlight** argument points to the column to be use to color each hex or circle.
 
-   The **split.by** argument is use to split the data set in as many group as needed. In the below argument one plot will be automatically made for each celltype in each sample ("orig.ident").
+   The **split.by** argument is use to split the data set in as many group as needed. In the below argument one plot will be automatically made for each celltype in each sample ("orig.ident"). 
 
    As for DonutPlotClonotypes(), a **prefix** argument can be set to whatever you want it to be in the final naming of the plots.
 

@@ -598,7 +598,7 @@ SingleDonutPlotClonotypes <- function(db,
     }
   }
 
-  if (!any(use_chain %in% c("IGH", "IGL", "IGK"))) {
+  if (!any(use_chain %in% c("IGH", "IGL", "IGK", "TRB", "TRA", "TRD", "TRG"))) {
     stop("use_chain should be one or a combinaison of IGH, IGL and IGK, TRB and TRD, TRA and TRG")
   }
 
@@ -657,6 +657,13 @@ SingleDonutPlotClonotypes <- function(db,
 
   Plot_db <- db %>%
     dplyr::filter(!!rlang::sym(locus) %in% use_chain)
+  
+  if(!groups_to_plot == "all"){
+    if(any(groups_to_plot %in% levels(as.factor(Plot_db[[origin]])))){
+      Plot_db <- Plot_db %>%
+        dplyr::filter(!!rlang::sym(origin) %in% groups_to_plot)
+    }
+  }
 
   if (any(duplicated(Plot_db[[cell_id]]))) {
     stop("duplicated cell_id: ", paste(Plot_db[duplicated(Plot_db[[cell_id]]), cell_id], collapse = ", "))
