@@ -423,23 +423,43 @@ DonutPlotClonotypes <- function(db,
 
   if (is.null(split.by)) {
     db$origin <- "all"
-    SingleDonutPlotClonotypes(db,
-      split.by = "origin",
-      ...
-    )
-
-    return(plots.list)
+    if (!return_plot) {
+      SingleDonutPlotClonotypes(db,
+                                split.by = "origin",
+                                prefix = prefix,
+                                return_plot = FALSE,
+                                ...
+      )
+    } else {
+      grob <- SingleDonutPlotClonotypes(db,
+                                        split.by = "origin",
+                                        prefix = prefix,
+                                        return_plot = TRUE,
+                                        ...
+      )
+      return(grob)
+    }
   }
   if (length(split.by) == 1) {
     if (!split.by %in% colnames(db)) {
       stop("split.by column does not exist in provided dataframe")
     }
-    SingleDonutPlotClonotypes(db,
-      split.by = split.by,
-      ...
-    )
-
-    return(plots.list)
+    if (!return_plot) {
+      SingleDonutPlotClonotypes(db,
+                                split.by = split.by,
+                                prefix = prefix,
+                                return_plot = FALSE,
+                                ...
+      )
+    } else {
+      grob <- SingleDonutPlotClonotypes(db,
+                                        split.by = split.by,
+                                        prefix = prefix,
+                                        return_plot = TRUE,
+                                        ...
+      )
+      return(grob)
+    }
   }
   if (length(split.by) > 1) {
     if (any(!split.by %in% colnames(db))) {
