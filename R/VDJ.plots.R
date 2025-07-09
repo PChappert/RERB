@@ -567,7 +567,6 @@ SingleDonutPlotClonotypes <- function(db,
                                       groups_to_plot = "all",
                                       col.line = "black",
                                       plots_folder = "Donut_plots",
-                                      antigen,
                                       highlight = c("shared", "clone_size", "clone_rank"),
                                       highlight_col = NULL,
                                       external_bar = c("expanded", "top5", "none"),
@@ -663,6 +662,10 @@ SingleDonutPlotClonotypes <- function(db,
       Plot_db <- Plot_db %>%
         dplyr::filter(!!rlang::sym(origin) %in% groups_to_plot)
     }
+  }
+  if(productive_only){
+    Plot_db <- Plot_db %>%
+      dplyr::filter(!!rlang::sym(productive))
   }
 
   if (any(duplicated(Plot_db[[cell_id]]))) {
@@ -1042,11 +1045,6 @@ HexmapClonotypes <- function(db,
                              width = 6,
                              return_plot = FALSE,
                              return_coords = FALSE) {
-  if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
-    message("Optional: 'RColorBrewer' not installed — skipping plot.")
-    return(invisible(NULL))
-  }
-  suppressMessages(library(RColorBrewer))
 
   save_as <- match.arg(save_as)
 
@@ -1055,6 +1053,11 @@ HexmapClonotypes <- function(db,
   }
   Plot_db <- db %>%
     dplyr::filter(!!rlang::sym(locus) %in% use_chain)
+  
+  if(productive_only){
+    Plot_db <- Plot_db %>%
+      dplyr::filter(!!rlang::sym(productive))
+  }
 
   if (!clone_id %in% colnames(db)) {
     stop(paste0("missing", clone_id, "collumn"))
@@ -1079,8 +1082,21 @@ HexmapClonotypes <- function(db,
     Plot_db$origin <- ifelse(Plot_db[[highlight]] %in% names(palette), Plot_db[[highlight]], NA)
   } else {
     # palette <- NULL
+    if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+      message("'RColorBrewer' not installed — please provide you own color palette using the 'highlight_col' argument")
+      return(invisible(NULL))
+    }
     levels <- levels(as.factor(Plot_db[[highlight]]))
-    palette <- colorRampPalette(brewer.pal(n = 12, name = "Paired"))(length(levels))
+    if (!requireNamespace("grDevice", quietly = TRUE)) {
+      if(length(levels) <= 12) {
+        palette <- RColorBrewer::brewer.pal(n = length(levels), name = "Paired")
+      } else {
+        message("'grDevice' not installed — please provide you own color palette using the 'highlight_col' argument to accomodate ",length(levels)," levels")
+        return(invisible(NULL))
+      }
+    } else {
+      palette <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 12, name = "Paired"))(length(levels))
+    }
     names(palette) <- levels
     Plot_db$origin <- Plot_db[[highlight]]
   }
