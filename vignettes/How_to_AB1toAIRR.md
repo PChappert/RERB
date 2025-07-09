@@ -2,6 +2,50 @@
 
 Ab1toAIRR is a wrapper bash script designed to automatically extract sequences from Eurofins plate-based single B cell Sanger sequencing results "platename_SCF_SEQ_ABI.zip" file and perform QC and preliminary VDJ annotation.
 
+## How to install:
+
+1.  Install RERB first, including standalone versions of **blast** and **igblast**, **Immcantation ChangeO**, **Alakazam**, **Shazam** and **Dowser** packages (<https://changeo.readthedocs.io/en/stable/examples/igblast.html>) and blastable IMGT database.
+
+2.  To use the bash script: modify line 59 of the **Ab1toAIRR.sh** script to adapt it to the path to your RERB folder (default: devtools::load_all("\~/R_packages/RERB")). Then copy the script to the /usr/local/bin folder (or any other folder in your \$PATH, just change the first line of the following script accordingly) and to make bash script executable, run in Terminal:
+
+``` bash
+cd /usr/local/bin
+chmod 755 Ab1toAIRR.sh
+```
+
+6.  If not already installed upon RERB installation, install the following R packages:
+
+``` r
+install.packages("optparse") 
+install.packages("tidyverse") 
+install.packages("ggrepel") 
+install.packages("openxlsx")
+
+if (!require("BiocManager", quietly = TRUE)) 
+install.packages("BiocManager") 
+BiocManager::install("Biostrings") 
+BiocManager::install("sangeranalyseR") 
+BiocManager::install("sangerseqR")  
+```
+
+5.  "png" export of images generated through the plotly package in sangeranalyseR requires the installation of the reticulate package in R and the kaleido/plotly packages in python as follow :
+
+    *[Note] if this isn't enough to ensure reticulate uses the correct python env (where plotly is installed), you can use the reticulate_py_env argument when using the Ab1toAIRR function in R or add RETICULATE_PYTHON="/Users/yourname/Library/r-miniconda-arm64/envs/r-reticulate/bin/python" to your .Renviron file.*
+
+``` r
+install.packages('reticulate') 
+reticulate::install_miniconda() 
+reticulate::conda_install('r-reticulate', 'python-kaleido') 
+reticulate::conda_install('r-reticulate', 'plotly', channel = 'plotly') 
+reticulate::use_miniconda('r-reticulate')
+```
+
+6.  finally, "html" export of images generated through the plotly package in sangeranalyseR requires the htmlwidgets package to be installed:
+
+``` r
+install.packages("htmlwidgets")
+```
+
 ## How to use it
 
 Two options are possible:
@@ -41,25 +85,25 @@ Ab1toAIRR.sh IgL png full_filepath_to_ABI.zip_file(1)/platename_SCF_SEQ_ABI(1).z
 Same options as the bash wrapper with the added possibility to return the final aligned VDJ data table in an AIRR format (when multiple plates, a list of data tables is returned). Also possible to choose which steps to perform (QC, igblast, update_c_call, SHM, full_seq_aa) or to point directly to the wanted database if not installed as recommended below. Simply requires a vector of full file paths as input.
 
 ``` r
-my_Ab1_file_list <- Ab1toAIRR(files=c("path_to_file1_SCF_SEQ_ABI.zip", "path_to_file2_SCF_SEQ_ABI.zip", "path_to_file3_SCF_SEQ_ABI.zip"), primers = "IgG", save = "png", return_df = FALSE)
+my_Ab1_file_list <- Ab1toAIRR(files=c("path_to_file1_SCF_SEQ_ABI.zip", "path_to_file2_SCF_SEQ_ABI.zip", "path_to_file3_SCF_SEQ_ABI.zip"), primers = "IgG", save = "png", return_db = FALSE)
 ```
 
 or
 
 ``` r
-my_plate <- my_Ab1_file_list <- Ab1toAIRR(files=c("path_to_file1_SCF_SEQ_ABI.zip", "path_to_file2_SCF_SEQ_ABI.zip", "path_to_file3_SCF_SEQ_ABI.zip"), primers = "IgG", save = "png", return_df = TRUE)
+my_plate <- my_Ab1_file_list <- Ab1toAIRR(files=c("path_to_file1_SCF_SEQ_ABI.zip", "path_to_file2_SCF_SEQ_ABI.zip", "path_to_file3_SCF_SEQ_ABI.zip"), primers = "IgG", save = "png", return_db = TRUE)
 ```
 
 you can also skip QC if already performed:
 
 ``` r
-my_plate <- my_Ab1_file_list <- Ab1toAIRR(files=c("path_to_file1_SCF_SEQ_ABI.zip", "path_to_file2_SCF_SEQ_ABI.zip", "path_to_file3_SCF_SEQ_ABI.zip"), QC = FALSE, return_df = TRUE)
+my_plate <- my_Ab1_file_list <- Ab1toAIRR(files=c("path_to_file1_SCF_SEQ_ABI.zip", "path_to_file2_SCF_SEQ_ABI.zip", "path_to_file3_SCF_SEQ_ABI.zip"), QC = FALSE, return_db = TRUE)
 ```
 
 or skip both QC and further igblast alignment step to simply updated info linked to the excel template:
 
 ``` r
-my_plate <- my_Ab1_file_list <- Ab1toAIRR(files=c("path_to_file1_SCF_SEQ_ABI.zip", "path_to_file2_SCF_SEQ_ABI.zip", "path_to_file3_SCF_SEQ_ABI.zip"), update_info = TRUE, return_df = TRUE)
+my_plate <- my_Ab1_file_list <- Ab1toAIRR(files=c("path_to_file1_SCF_SEQ_ABI.zip", "path_to_file2_SCF_SEQ_ABI.zip", "path_to_file3_SCF_SEQ_ABI.zip"), update_info = TRUE, return_db = TRUE)
 ```
 
 ## What it will do:
@@ -111,47 +155,3 @@ In addition to the classical collumns outputted by igblast and Immcantation pack
 -   comments: comments on the full sequence reconstruction.
 
 Finally, **rows for sequences with partial length issues are highlighted in light orange** (aligned V \< 270 \| missing too much base pairs in V for reconstruction \| full length \< tight cutoffs for each type of VDJ sequences). And **rows for sequences with partial quality issues are highlighted in light orange with text in red** (\>10% of base calls with Phred score \< 30). These should be checked manually.
-
-## How to install:
-
-1.  Install RERB first, including standalone versions of **blast** and **igblast**, **Immcantation ChangeO**, **Alakazam**, **Shazam** and **Dowser** packages (<https://changeo.readthedocs.io/en/stable/examples/igblast.html>) and blastable IMGT database.
-
-2.  To use the bash script: modify line 59 of the **Ab1toAIRR.sh** script to adapt it to the path to your RERB folder (default: devtools::load_all("\~/R_packages/RERB")). Then copy the script to the /usr/local/bin folder (or any other folder in your \$PATH, just change the first line of the following script accordingly) and to make bash script executable, run in Terminal:
-
-``` bash
-cd /usr/local/bin
-chmod 755 Ab1toAIRR.sh
-```
-
-6.  If not already installed upon RERB installation, install the following R packages:
-
-``` r
-install.packages("optparse") 
-install.packages("tidyverse") 
-install.packages("ggrepel") 
-install.packages("openxlsx")
-
-if (!require("BiocManager", quietly = TRUE)) 
-install.packages("BiocManager") 
-BiocManager::install("Biostrings") 
-BiocManager::install("sangeranalyseR") 
-BiocManager::install("sangerseqR")  
-```
-
-5.  "png" export of images generated through the plotly package in sangeranalyseR requires the installation of the reticulate package in R and the kaleido/plotly packages in python as follow :
-
-    *[Note] if this isn't enough to ensure reticulate uses the correct python env (where plotly is installed), you can use the reticulate_py_env argument when using the Ab1toAIRR function in R or add RETICULATE_PYTHON="/Users/yourname/Library/r-miniconda-arm64/envs/r-reticulate/bin/python" to your .Renviron file.*
-
-``` r
-install.packages('reticulate') 
-reticulate::install_miniconda() 
-reticulate::conda_install('r-reticulate', 'python-kaleido') 
-reticulate::conda_install('r-reticulate', 'plotly', channel = 'plotly') 
-reticulate::use_miniconda('r-reticulate')
-```
-
-6.  finally, "html" export of images generated through the plotly package in sangeranalyseR requires the htmlwidgets package to be installed:
-
-``` r
-install.packages("htmlwidgets")
-```
