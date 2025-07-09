@@ -578,6 +578,12 @@ SingleDonutPlotClonotypes <- function(db,
                                       save_plot = TRUE,
                                       save_as = c("pdf", "png"),
                                       return_plot = FALSE) {
+  if (!requireNamespace("circlize", quietly = TRUE)) {
+    message("'circlize' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(circlize))
+  
   save_as <- match.arg(save_as)
   if (save_plot) {
     if (!save_as %in% c("pdf", "png")) {
@@ -592,32 +598,8 @@ SingleDonutPlotClonotypes <- function(db,
     }
   }
 
-  if (!requireNamespace("circlize", quietly = TRUE)) {
-    message("Optional: 'circlize' not installed — skipping plot.")
-    return(invisible(NULL))
-  }
-  suppressMessages(library(circlize))
-
-  if (!requireNamespace("grid", quietly = TRUE)) {
-    message("Optional: 'grid' not installed — skipping plot.")
-    return(invisible(NULL))
-  }
-  suppressMessages(library(grid))
-
-  if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
-    message("Optional: 'RColorBrewer' not installed — skipping plot.")
-    return(invisible(NULL))
-  }
-  suppressMessages(library(RColorBrewer))
-
-  if (!requireNamespace("ComplexHeatmap", quietly = TRUE)) {
-    message("Optional: 'ComplexHeatmap' not installed — skipping plot.")
-    return(invisible(NULL))
-  }
-  suppressMessages(library(ComplexHeatmap))
-
   if (!any(use_chain %in% c("IGH", "IGL", "IGK"))) {
-    stop("use_chain should be one of IGH, IGL or IGK")
+    stop("use_chain should be one or a combinaison of IGH, IGL and IGK, TRB and TRD, TRA and TRG")
   }
 
   if (!clone_id %in% colnames(db)) {
@@ -636,6 +618,14 @@ SingleDonutPlotClonotypes <- function(db,
   }
   # default color scheme:
   if (is.null(highlight_col)) {
+    if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+      message("'RColorBrewer' not installed — please provide your own palette using the 'highlight_col' argument.")
+      return(invisible(NULL))
+    }
+    if (!requireNamespace("grDevices", quietly = TRUE)) {
+      message("'grDevices' not installed — please provide your own palette using the 'highlight_col' argument.")
+      return(invisible(NULL))
+    }
     pallettes <- list(
       "shared" = RColorBrewer::brewer.pal(n = 9, name = "Paired"),
       "clone_size" = grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 5, name = "Set1"))(10),
@@ -686,12 +676,21 @@ SingleDonutPlotClonotypes <- function(db,
   if (highlight == "shared") {
     # each shared clone gets its own color
     shared_clones <- Clones_by_groups_to_plot[Clones_by_groups_to_plot$shared, clone_id]
-    col_shared <- grDevices::colorRampPalette(highlight_col)(length(shared_clones))
-    # if(length(shared_clones) > length(highlight_col)){
-    #  col_shared <- grDevices::colorRampPalette(highlight_col)(length(shared_clones))
-    # } else {col_shared <- highlight_col[1:(length(shared_clones))]}
-    # optional: used random color
-    # if (!requireNamespace("randomcoloR", quietly = TRUE)) {col_shared <- randomcoloR::randomColor(length(Shared_clones))}
+    if(length(shared_clones) > length(highlight_col)){
+      if (!requireNamespace("RColorBrewer", quietly = TRUE) | (!requireNamespace("grDevices", quietly = TRUE))) {
+        if (requireNamespace("randomcoloR", quietly = TRUE)) {
+          message("'RColorBrewer' or 'grDevices' not installed — switching to randomcoloR.")
+          col_shared <- randomcoloR::randomColor(length(Shared_clones))
+        } else {
+          message("'RColorBrewer' or 'grDevices' and 'randomcoloR' not installed — please provide your own palette using the 'highlight_col' argument.")
+          return(invisible(NULL))
+          }
+      } else {
+        col_shared <- grDevices::colorRampPalette(highlight_col)(length(shared_clones))
+      }
+    } else {
+      col_shared <- highlight_col[1:length(shared_clones)]
+    }
     names(col_shared) <- shared_clones
   }
 
@@ -742,9 +741,19 @@ SingleDonutPlotClonotypes <- function(db,
         # each expanded clone gets its own color
         expanded_clones <- data[data$expanded, clone_id]
         if (length(expanded_clones) > length(highlight_col)) {
-          extra_basic_color <- RColorBrewer::brewer.pal(n = ceiling(length(expanded_clones) / 5), name = "Set1")[-(1:5)]
-          highlight_col <- c(highlight_col, grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = extra_basic_color, name = "Set1"))(length(extra_basic_color) * 5))
-          col_expanded <- highlight_col[1:(length(expanded_clones))]
+          if (!requireNamespace("RColorBrewer", quietly = TRUE) | (!requireNamespace("grDevices", quietly = TRUE))) {
+            if (requireNamespace("randomcoloR", quietly = TRUE)) {
+              message("'RColorBrewer' or 'grDevices' not installed — switching to randomcoloR.")
+              col_expanded <- randomcoloR::randomColor(length(expanded_clones))
+            } else {
+              message("'RColorBrewer' or 'grDevices' and 'randomcoloR' not installed — please provide your own palette using the 'highlight_col' argument.")
+              return(invisible(NULL))
+            }
+          } else {
+            extra_basic_color <- RColorBrewer::brewer.pal(n = ceiling(length(expanded_clones) / 5), name = "Set1")[-(1:5)]
+            highlight_col <- c(highlight_col, grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = extra_basic_color, name = "Set1"))(length(extra_basic_color) * 5))
+            col_expanded <- highlight_col[1:(length(expanded_clones))]
+          }
         } else {
           col_expanded <- highlight_col[1:(length(expanded_clones))]
         }
@@ -759,9 +768,19 @@ SingleDonutPlotClonotypes <- function(db,
         diff_sizes <- unique(data[data$expanded, ]$clone_size_in_group)
         diff_sizes <- rev(diff_sizes[order(diff_sizes)])
         if (length(diff_sizes) > length(highlight_col)) {
-          extra_basic_color <- RColorBrewer::brewer.pal(n = ceiling(length(diff_sizes) / 5), name = "Set1")[-(1:5)]
-          highlight_col <- c(highlight_col, grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = extra_basic_color, name = "Set1"))(length(extra_basic_color) * 5))
-          col_expanded <- highlight_col[1:(length(diff_sizes))]
+          if (!requireNamespace("RColorBrewer", quietly = TRUE) | (!requireNamespace("grDevices", quietly = TRUE))) {
+            if (requireNamespace("randomcoloR", quietly = TRUE)) {
+              message("'RColorBrewer' or 'grDevices' not installed — switching to randomcoloR.")
+              col_expanded <- randomcoloR::randomColor(length(diff_sizes))
+            } else {
+              message("'RColorBrewer' or 'grDevices' and 'randomcoloR' not installed — please provide your own palette using the 'highlight_col' argument.")
+              return(invisible(NULL))
+            }
+          } else {
+            extra_basic_color <- RColorBrewer::brewer.pal(n = ceiling(length(diff_sizes) / 5), name = "Set1")[-(1:5)]
+            highlight_col <- c(highlight_col, grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = extra_basic_color, name = "Set1"))(length(extra_basic_color) * 5))
+            col_expanded <- highlight_col[1:(length(diff_sizes))]
+          }
         } else {
           col_expanded <- highlight_col[1:(length(diff_sizes))]
         }
@@ -880,23 +899,27 @@ SingleDonutPlotClonotypes <- function(db,
 
       ## draw legend
       if (highlight == "clone_size") {
-        if (nrow(Clones[!duplicated(Clones$clone_size_in_group) & Clones$expanded == TRUE, ]) == 0) {
-          unique <- Clones[!duplicated(Clones$clone_size_in_group), ]
-          unique$clone_size_in_group <- 1
+        if (!requireNamespace("ComplexHeatmap", quietly = TRUE)) {
+          message("Optional: 'ComplexHeatmap' not installed — skipping legend.")
         } else {
-          unique <- Clones[!duplicated(Clones$clone_size_in_group) & Clones$expanded == TRUE, ]
-          if (isTRUE("unique" %in% Clones$expanded)) {
-            unique <- rbind(unique, c("1", "FALSE", "1", "unique", "FALSE", "white"))
+          if (nrow(Clones[!duplicated(Clones$clone_size_in_group) & Clones$expanded == TRUE, ]) == 0) {
+            unique <- Clones[!duplicated(Clones$clone_size_in_group), ]
+            unique$clone_size_in_group <- 1
+          } else {
+            unique <- Clones[!duplicated(Clones$clone_size_in_group) & Clones$expanded == TRUE, ]
+            if (isTRUE("unique" %in% Clones$expanded)) {
+              unique <- rbind(unique, c("1", "FALSE", "1", "unique", "FALSE", "white"))
+            }
           }
+          lgd_clone <- ComplexHeatmap::Legend(
+            labels = unique$clone_size_in_group,
+            legend_gp = gpar(fill = unique$color),
+            title = "clone size",
+            border = "black"
+          )
+          
+          ComplexHeatmap::draw(lgd_clone, x = unit(0.2, "in"), y = unit(2.4, "in"), just = "left")
         }
-        lgd_clone <- ComplexHeatmap::Legend(
-          labels = unique$clone_size_in_group,
-          legend_gp = gpar(fill = unique$color),
-          title = "clone size",
-          border = "black"
-        )
-
-        ComplexHeatmap::draw(lgd_clone, x = unit(0.2, "in"), y = unit(2.4, "in"), just = "left")
       }
       dev.off()
     }
