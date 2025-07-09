@@ -3,8 +3,8 @@
 # 
 #
 # Author:  Pascal Chappert
-# Date:    2025.06.06
-# version  2.0
+# Date:    2025.07.09
+# version  2.0.1
 # 
 # Comments: now completely interfaced with RERB, through the Ab1toAIRR R function.
 #
@@ -64,6 +64,6 @@ EOF
 echo "running Ab1toAIRR through RERB - version 0.9.6"
 
 # Run the R script and log stdout and stderr
-Rscript --vanilla "$tmp_r_file" 
+Rscript "$tmp_r_file" 
 
 rm "$tmp_r_file"

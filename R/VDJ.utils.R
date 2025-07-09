@@ -6,7 +6,6 @@
 #'
 #' @param files   a vector of full file paths to Ab1.zip files
 #' @param primers primers used (one of IgG, IgM, IgL, IgK or Mix)
-#' @param save    passed to runAb1QC, whether to save png or html plots
 #' @param igblast whether to run igblast
 #' @param igblast_dir location of the igblast database
 #' @param igblast_method whether to run runAssignGenes or runIgblastn
@@ -18,7 +17,10 @@
 #' @param full_seq_aa whether to reconstruct full AA sequences for each sequence
 #' @param verbose whether to write to the console
 #' @param return_db whether to return the final productive sequences data table
+#' @param save    passed to runAb1QC, whether to save png or html plots
+#' @param reticulate_py_env if you want to force a precise python environment to use for plotly. [default: NULL]
 #' @param nproc   number of processors to use, if NULL, will be automatically set based on available processors.
+#'
 #'
 #' @return A data table containing all sequences passing QC and igblast.
 #' All QC analysis plots, intermediate tsv files with sequences passing and failing igblast and an excel worksheet containing sheets with AIRR formatted data table for sequences failing initial QC, failing igblast, non-productive and passing all three steps.
@@ -35,7 +37,6 @@
 Ab1toAIRR <- function(files,
                       primers = c("IgG", "IgM", "IgL", "IgK", "Mix"),
                       trim_cutoff = list("IgG" = 300, "IgM" = 275, "IgK" = 400, "IgL"= 275, "Mix" = 275, "Undefined" = 275),
-                      save = c("png", "html"),
                       QC = TRUE,
                       igblast = TRUE,
                       seq_type = c("Ig", "TCR"),
@@ -50,6 +51,8 @@ Ab1toAIRR <- function(files,
                       update_info = FALSE,
                       verbose = TRUE,
                       return_db = FALSE,
+                      save = c("png", "html"),
+                      reticulate_py_env = "~/Library/r-miniconda-arm64/envs/r-reticulate/bin/python",
                       nproc = NULL){
 
   primers <- match.arg(primers)
@@ -193,6 +196,7 @@ Ab1toAIRR <- function(files,
                                primers = primers,
                                trim_cutoff = trim_cutoff,
                                save = save,
+                               reticulate_py_env = reticulate_py_env,
                                nproc = nproc)
       }, verbose = FALSE, log_file = log_file, log_title = "Running QC", open_mode = "a")
 
@@ -408,7 +412,7 @@ Ab1toAIRR <- function(files,
       }
       
       time_and_log({
-        cat("nb total sequences: ", nrow(VDJ_db)+nrow(QC_failed), "\n")
+        cat("nb total sequences: ", nb_prod+nb_unprod+nb_igblast_failed+nb_QC_failed, "\n")
         cat(paste0("nb failing initial QC: ",nb_QC_failed), "\n")
         cat(paste0("nb failing igblast: ",nb_igblast_failed), "\n")
         cat(paste0("nb non productive: ",nb_unprod), "\n")
@@ -418,7 +422,7 @@ Ab1toAIRR <- function(files,
       }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "Final recap", open_mode = "a")
       
       if(verbose & !update_info){
-        cat("nb total sequences: ", nrow(VDJ_db)+nrow(QC_failed), "\n")
+        cat("nb total sequences: ", nb_prod+nb_unprod+nb_igblast_failed+nb_QC_failed, "\n")
         cat(paste0("nb failing initial QC: ",nb_QC_failed), "\n")
         cat(paste0("nb failing igblast: ",nb_igblast_failed), "\n")
         cat(paste0("nb non productive: ",nb_unprod), "\n")
@@ -464,6 +468,7 @@ Ab1toAIRR <- function(files,
 #' @param Ab1_folder  path to a folder containing .Ab1 files
 #' @param outfolder   folder to output files to
 #' @param save        whether to save png or html plots
+#' @param reticulate_py_env if you want to force a precise python environment to use for plotly. [should be "~/Library/r-miniconda-arm64/envs/r-reticulate/bin/python" if following installation instructions on MACOS 10.15.4]
 #' @param primers     primers used for PCR
 #' @param trim_cutoff cutoff thresholds to use depending on primers
 #' @param nproc   number of processors to use, if NULL, will be automatically set based on available processors.
@@ -480,6 +485,7 @@ runAb1QC <- function(Ab1_folder,
                      outfolder = NULL,
                      outfilename = NULL,
                      save = c("png", "html"),
+                     reticulate_py_env = NULL,
                      primers = c("IgG", "IgM", "IgL", "IgK", "Mix"),
                      trim_cutoff = list("IgG" = 300, "IgM" = 275, "IgK" = 400, "IgL"= 275, "Mix" = 275, "Undefined" = 275),
                      nproc = NULL){
@@ -585,6 +591,18 @@ runAb1QC <- function(Ab1_folder,
       #reticulate::conda_install('r-reticulate', 'python-kaleido')
       #reticulate::conda_install('r-reticulate', 'plotly', channel = 'plotly')
       #reticulate::use_miniconda('r-reticulate')
+      #reticulate::py_config()
+      #!!when updating RStudio, reticulate python version might need to be reset to r-reticulate...
+      #or add: RETICULATE_PYTHON="/Users/yourname/Library/r-miniconda-arm64/envs/r-reticulate/bin/python" to .Renviron
+      
+      #alternatively you can also force reticulate to use the right python environment by using the reticulate_py_env argument:
+      if(!is.null(reticulate_py_env)){
+        Sys.setenv(RETICULATE_PYTHON = reticulate_py_env)
+        reticulate::use_python(Sys.getenv("RETICULATE_PYTHON"), required = TRUE)
+      }
+         
+      print(reticulate::py_config())
+      
       scope <- safe_kaleido()
       
       if (!is.null(scope) && is.function(scope$transform)) {
@@ -599,7 +617,7 @@ runAb1QC <- function(Ab1_folder,
           sangerseqR::chromatogram(seq2final, width = 80, height = 3, trim5 = 0, trim3 = 0, showcalls = "both", filename = paste0(QC_file, "_chromatogram.pdf"))
         }
       } else {
-        message("Skipping png Qc plots step: 'plotly::kaleido()' failed or is not usable.")
+        message("Skipping png QC plots step: 'plotly::kaleido()' failed or is not usable.")
       }
       
       rm(scope) 
@@ -2938,7 +2956,7 @@ runBlastnC <- function(db,
     c_results_filtered <- c_results_filtered %>%
       dplyr::mutate(c_call_top_match = stringr::str_extract(c_call_top_match, "^[^*]+")) %>%  # Extract everything before the first "*")
       dplyr::group_by(sequence_id) %>%
-      dplyr::filter(c_call_alignment_score == max(c_call_alignment_score)) %>%
+      dplyr::filter(c_call_alignment_score == max(c_call_alignment_score) & c_call_alignment_length > 25) %>%
       dplyr::summarize(
         !!rlang::sym(c_call) := paste(unique(c_call_top_match), collapse = "|"),  # Aggregate unique values of c_call_top_match
         c_call_alignment_score = max(c_call_alignment_score),  # Retain the max c_call_alignment_score score (should be the same across the group)
@@ -3367,7 +3385,7 @@ scImportVDJ <- function(vdj_files,
   }
 
   #initiate log file:
-  log_file <- paste0(output_folder, analysis_name, "_scImportVDJ_logfile.txt")
+  log_file <- paste0(output_folder, analysis_name, "_scImportVDJ.log")
   time_and_log({
     cat("analysis_name: ", analysis_name, "\n")
     cat("tech: ", tech, "\n")
@@ -3956,7 +3974,7 @@ scFindClones <- function(db,
   }
 
   #initiate log file:
-  log_file <- paste0(output_folder, analysis_name, "_scFind", fct_type,"Clones_logfile.txt")
+  log_file <- paste0(output_folder, analysis_name, "_scFind", fct_type,"Clones.log")
   time_and_log({
     cat("analysis_name: ", analysis_name, "\n")
     cat("organism: ", organism, "\n")

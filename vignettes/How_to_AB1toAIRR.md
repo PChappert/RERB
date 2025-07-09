@@ -140,6 +140,8 @@ BiocManager::install("sangerseqR")
 
 5.  "png" export of images generated through the plotly package in sangeranalyseR requires the installation of the reticulate package in R and the kaleido/plotly packages in python as follow :
 
+    *[Note] if this isn't enough to ensure reticulate uses the correct python env (where plotly is installed), you can use the reticulate_py_env argument when using the Ab1toAIRR function in R or add RETICULATE_PYTHON="/Users/yourname/Library/r-miniconda-arm64/envs/r-reticulate/bin/python" to your .Renviron file.*
+
 ``` r
 install.packages('reticulate') 
 reticulate::install_miniconda() 
