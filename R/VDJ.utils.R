@@ -3179,10 +3179,10 @@ importSangerVDJ <- function(sanger_files, db = NULL,
             if(!col %in% colnames(airr)){airr[[col]] <- sanger_files[match(file, filenames), col]}
           }
         }
-        airr <- airr %>%
-          dplyr::mutate(
-            across(c("low10QC_alternate_calls", "low30QC_alternate_calls"), as.character)
-          ) # prevents issues if all values are NA in one of these columns (too good qualities...)
+        #airr <- airr %>%
+        #  dplyr::mutate(
+        #    dplyr::across(dplyr::any_of(c("low10QC_original_seq", "low30QC_original_seq", "low10QC_alternate_calls", "low30QC_alternate_calls", "c_call_igblast",	"c_call", "full_sequence",	"full_sequence_aa",	"full_sequence_fab_aa", "comments")), as.character)
+        #  ) 
         return(airr)
       } else {return(NULL)}
     } else {
@@ -3190,6 +3190,59 @@ importSangerVDJ <- function(sanger_files, db = NULL,
       return(NULL)
     }
   })
+  names(AIRR.list) <- sanger_files[[orig.ident]]
+  
+  # prevents issues if all values are NA in one of these columns (too good qualities for example...)
+  col_types <- AIRR.list %>% 
+    purrr::map(~ sapply(.x, typeof)) 
+  
+  types_long <- col_types %>%
+    dplyr::bind_rows(.id = "df_id") %>%
+    tidyr::pivot_longer(-df_id, names_to = "colname", values_to = "type")
+  
+  cols_with_conflict <- types_long %>%
+    dplyr::group_by(colname) %>%
+    dplyr::summarise(
+      n_types = n_distinct(type), 
+      types_present = toString(unique(type)),
+      type_to_coerce = {
+        if ("character" %in% unique(type)){
+          "character"
+          } else {
+          other_types <- setdiff(unique(type), c("NULL"))
+          if(other_types[1] %in% c("double", "integer", "logical")){
+              other_types[1]
+            } else {"character"}
+          }
+      },
+      .groups = "drop") %>%
+    dplyr::filter(n_types > 1)
+  
+  coerce_lookup <- cols_with_conflict %>%
+    dplyr::filter(!is.na(type_to_coerce)) %>%
+    dplyr::select(colname, type_to_coerce) %>%
+    tibble::deframe() 
+  
+  # all columns should be one of character, double, logical and eventually integer.
+  coercers <- list(
+    character = as.character,
+    integer = as.integer,
+    double = as.double,
+    logical = as.logical
+  )
+  
+  AIRR.list <- AIRR.list %>%
+    purrr::map(
+      function(df) {
+        for (col in cols_with_conflict$colname){
+          coercer <- coercers[[coerce_lookup[[col]]]]
+          if(col %in% colnames(df)){
+            df[[col]] <- coercer(df[[col]])
+          }
+        }
+        return(df)
+  })
+  
   sanger_VDJ_db <- dplyr::bind_rows(AIRR.list)
 
   # update sequence_id column:
