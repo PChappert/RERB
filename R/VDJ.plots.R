@@ -550,6 +550,9 @@ DonutPlotClonotypes <- function(db,
 #' @param productive_only whether to exclude non productive sequences [default: TRUE]
 #' @param height    height of saved plot
 #' @param width     width of saved plot
+#' @param save_plot whether to save the plot.
+#' @param save_as   options for plot saving format (pdf or png)
+#' @param return_plot whether to return the plot as a ggplot object
 #'
 #' @return saved pdf for as many donut plots as there are groups in the dataframe as defined by the split.by argument
 #'
@@ -582,6 +585,14 @@ SingleDonutPlotClonotypes <- function(db,
     return(invisible(NULL))
   }
   suppressMessages(library(circlize))
+  
+  if( !save_plot & return_plot){
+    save_plot <- TRUE
+    save_as <- TRUE
+    tmp_file_only <- TRUE
+  } else {
+    tmp_file_only <- FALSE
+  }
   
   save_as <- match.arg(save_as)
   if (save_plot) {
@@ -972,6 +983,9 @@ SingleDonutPlotClonotypes <- function(db,
       }
       if (save_as == "png") {
         img_raster <- png::readPNG(filename)
+      }
+      if (tmp_file_only){
+        unlink(filename)
       }
       grob <- grid::rasterGrob(img_raster, interpolate = TRUE)
       grobs.list[[i]] <- grob
@@ -1724,235 +1738,6 @@ SingleCDR3logo <- function(junctions,
   }
 }
 
-#### Function to plot shared clones between groups using a circosplot representation  ####
-#' Plots individual donut plots and save as pdf
-#'
-#' \code{CircosClonotypes} Plots individual donut plots and save as pdf
-#' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
-#' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
-#' @param prefix    prefix to use for saved files
-#' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
-#' @param locus     name of column containing locus values.
-#' @param cell_id   name of the column containing cell identifier.
-#' @param clone_id  name of the column containing cell identifier.
-#' @param groups_to_plot which groups to plot
-#' @param col.line  color for lines in donut plot
-#' @param plots_folder name for export folder [default: "Donut_plots"]
-#' @param highlight whether to highlight shared clones or clones based on clone_size or clone_rank.
-#' @param highlight_col color scheme to use for highlighed clones
-#' @param external_bar whether to add an external bar for "expanded" or "top5" clones.
-#' @param productive  name of column containing productive calls.
-#' @param productive_only whether to exclude non productive sequences [default: TRUE]
-#' @param height    height of saved plot
-#' @param width     width of saved plot
-#'
-#' @return a seurat object with additional metadata imported from the vdj_db dataframe.
-#'
-#' @import dplyr
-#'
-#' @export
-
-CircosClonotypes <- function(db,
-                             split.by = NULL,
-                             groups_to_plot = NULL,
-                             clone_id = "clone_id",
-                             order = TRUE,
-                             margin = 0.02,
-                             track.height = 0.1,
-                             label = TRUE,
-                             col = NULL,
-                             col.line = "black",
-                             highlight = NULL,
-                             highlight_col = "red") {
-  if (!requireNamespace("circlize", quietly = TRUE)) {
-    message("Optional: 'circlize' not installed — skipping plot.")
-    return(invisible(NULL))
-  }
-  suppressMessages(library(circlize))
-
-  # TODO needs to be updated
-
-  # library(data.table)
-
-  if (any(!split.by %in% colnames(db))) {
-    stop("the following columns could not be found in the provided dataframe: ", split.by[!split.by %in% colnames(db)])
-  }
-
-  if (is.null(groups_to_plot)) {
-    groups_to_plot <- levels(as.factor(db[, split.by]))
-  }
-
-  if (is.null(col)) {
-    library("RColorBrewer")
-    col <- brewer.pal(n = length(groups_to_plot), name = "Set1")
-  }
-  if (col.line == "match") {
-    col.line <- col
-  } else {
-    col.line <- rep(col.line, length(groups_to_plot))
-  }
-
-  # generate clone repartition table:
-  Clones_by_groups_to_plot <- as.data.frame.matrix(table(
-    sc$clone_id,
-    sc@meta.data[, group_by]
-  ))
-  Clones_by_groups_to_plot <- Clones_by_groups_to_plot[, groups_to_plot]
-  Clones_by_groups_to_plot$overall_clone_size <- rowSums(Clones_by_groups_to_plot)
-  Clones_by_groups_to_plot$clone_id <- rownames(Clones_by_groups_to_plot)
-
-  if (isTRUE(order)) {
-    Clones_by_groups_to_plot <- arrange(Clones_by_groups_to_plot, desc(Clones_by_groups_to_plot$overall_clone_size))
-  }
-
-  # dataframe defining the main sectors:
-  df1 <- as.data.frame(colSums(Clones_by_groups_to_plot[, groups_to_plot]))
-  colnames(df1) <- "nb_cells"
-  df1$xmin <- 0
-  df1$xmax <- df1$nb_cells + 1
-
-  # list of dataframes defining the clone order and length of each sectors:
-  groups <- as.list(groups_to_plot)
-  df2.list <- lapply(X = groups, FUN = function(i) {
-    df <- Clones_by_groups_to_plot[Clones_by_groups_to_plot[, i] >= 1, c("clone_id", i)]
-    colnames(df) <- c("clone_id", "nb_cells")
-    df <- arrange(df, desc(df$"nb_cells"))
-    df$clone_segments_start <- cumsum(df$nb_cells) - df$nb_cells + 1
-    df$clone_segments_end <- cumsum(df$nb_cells)
-    return(df)
-  })
-  names(df2.list) <- groups_to_plot
-
-  # list of dataframes defining the clonal relationships to plot as links:
-  df3.list <- lapply(X = groups[1:length(groups) - 1], FUN = function(i, g = groups_to_plot) {
-    min <- match(i, g) + 1
-    max <- length(g)
-    comparison <- g[min:max]
-    df.all <- data.frame(
-      clone_id = character(),
-      size_orig = integer(),
-      start_orig = numeric(),
-      size_end = integer(),
-      start_end = numeric(),
-      stringsAsFactors = FALSE
-    )
-    for (k in 1:length(comparison)) {
-      common_clones_k <- intersect(df2.list[[i]]$clone_id, df2.list[[comparison[k]]]$clone_id)
-      if (length(common_clones_k) > 0) {
-        is.common <- df2.list[[i]]$clone_id %in% common_clones_k
-        df <- df2.list[[i]][is.common, c("clone_id", "nb_cells", "clone_segments_start")]
-        colnames(df) <- c("clone_id", "size_orig", "start_orig")
-        df$orig <- i
-        df$end <- comparison[k]
-        df$size_end <- df2.list[[comparison[k]]]$nb_cells[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
-        df$start_end <- df2.list[[comparison[k]]]$clone_segments_start[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
-        df.all <- rbind(df.all, df)
-      }
-    }
-    return(df.all)
-  })
-  names(df3.list) <- unlist(groups[1:length(groups) - 1])
-  df3 <- do.call(rbind, df3.list)
-
-  ### Basic circos graphic parameters
-  par(mar = rep(1, 4))
-  plot <- circos.clear()
-
-  plot <- circos.par(cell.padding = c(0, 0, 0, 0), track.margin = c(0, margin), start.degree = 90, gap.degree = 1)
-
-  ## creating sector for each celltype based on nb of cells in a clone per cell_type:
-  plot <- circos.initialize(factors = rownames(df1), x = df1$nb_cells + 1, xlim = cbind(df1$xmin, df1$xmax))
-
-  ## plotting tracks:
-  plot <- circos.trackPlotRegion(
-    ylim = c(0, 1), factors = rownames(df1), track.height = track.height,
-    # panel.fun for each sector
-    panel.fun = function(x, y) {
-      # select details of current sector
-      name <- get.cell.meta.data("sector.index")
-      i <- get.cell.meta.data("sector.numeric.index")
-      xlim <- get.cell.meta.data("xlim")
-      ylim <- get.cell.meta.data("ylim")
-
-      # text direction (dd) and adjusments (aa)
-      theta <- circlize(mean(xlim), 1.3)[1, 1] %% 360
-      dd <- ifelse(theta < 90 || theta > 270, "clockwise", "reverse.clockwise")
-      aa <- c(1, 0.5)
-      if (theta < 90 || theta > 270) aa <- c(0, 0.5)
-
-      # plot population labels
-      if (isTRUE(label)) {
-        circos.text(x = mean(xlim), y = 1.7, labels = name, facing = dd, cex = 0.8, adj = aa)
-      }
-
-      # plot main sector
-      circos.rect(
-        xleft = xlim[1], ybottom = ylim[1], xright = xlim[2], ytop = ylim[2],
-        col = col[i], border = "black", lty = 1
-      )
-    }
-  )
-
-  ## add segments based on clone size:
-  for (i in seq_along(groups)) {
-    pop <- groups[[i]]
-    plot <- circos.segments(x0 = df2.list[[pop]]$clone_segments_end, x1 = df2.list[[pop]]$clone_segments_end, y0 = 0.25, y1 = 0.75, sector.index = pop, col = "black", lwd = 0.5)
-  }
-
-  ## plot links:
-  for (i in 1:nrow(df3)) {
-    plot <- circos.link(
-      sector.index1 = df3$orig[i], point1 = c(df3$start_orig[i], df3$start_orig[i] + df3$size_orig[i] - 1),
-      sector.index2 = df3$end[i], point2 = c(df3$start_end[i], df3$start_end[i] + df3$size_end[i] - 1),
-      col = col.line[match(df3$orig[i], groups_to_plot)], lwd = 0.5
-    )
-  }
-
-  if (!is.null(highlight)) {
-    df4.list <- lapply(X = groups[1:length(groups) - 1], FUN = function(i, g = groups_to_plot) {
-      min <- match(i, g) + 1
-      max <- length(g)
-      comparison <- g[min:max]
-      df.all <- data.frame(
-        clone_id = character(),
-        size_orig = integer(),
-        start_orig = numeric(),
-        size_end = integer(),
-        start_end = numeric(),
-        stringsAsFactors = FALSE
-      )
-      for (k in 1:length(comparison)) {
-        common_clones_k <- intersect(df2.list[[i]]$clone_id, df2.list[[comparison[k]]]$clone_id)
-        highlight_clones_k <- intersect(common_clones_k, highlight)
-        if (length(highlight_clones_k) > 0) {
-          is.common <- df2.list[[i]]$clone_id %in% highlight_clones_k
-          df <- df2.list[[i]][is.common, c("clone_id", "nb_cells", "clone_segments_start")]
-          colnames(df) <- c("clone_id", "size_orig", "start_orig")
-          df$orig <- i
-          df$end <- comparison[k]
-          df$size_end <- df2.list[[comparison[k]]]$nb_cells[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
-          df$start_end <- df2.list[[comparison[k]]]$clone_segments_start[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
-          df.all <- rbind(df.all, df)
-        }
-      }
-      return(df.all)
-    })
-    names(df4.list) <- unlist(groups[1:length(groups) - 1])
-    df4 <- do.call(rbind, df4.list)
-
-    # plot highlight links
-    for (i in 1:nrow(df4)) {
-      plot <- circos.link(
-        sector.index1 = df4$orig[i], point1 = c(df4$start_orig[i], df4$start_orig[i] + df4$size_orig[i] - 1),
-        sector.index2 = df4$end[i], point2 = c(df4$start_end[i], df4$start_end[i] + df4$size_end[i] - 1),
-        col = highlight_col, lwd = 0.5
-      )
-    }
-  }
-  return(plot)
-}
-
-
 #### Plot frequencies of VH/VL pairing ####
 #' Plot frequencies of VH/VL pairing
 #'
@@ -2260,3 +2045,692 @@ plotVGenePairing <- function(db,
     return(p)
   }
 }
+
+
+#### Function to plot Circos Plots highlighting shared clones between sub-repertoire ####
+#' Plots multiple circos plots and save them as pdf
+#'
+#' \code{CircosClonotypes} Plots multiple donut plots and save them as pdf
+#' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
+#' @param prefix    prefix to use for saved files
+#' @param split.by  name of column to use to group sequence before plotting individual cirscoplots.
+#' @param ...       arguments to be passed to SingleDonutPlotClonotypes()
+#'
+#' @return
+#' saved pdf for as many donut plots as there are groups in the dataframe as defined by the split.by argument.
+#' if the split.by argument points to more than one column, will group the dataset based on the first element(s) of the split.by argument
+#' and keep only the last as split.by argument of the SingleDonutPlotClonotypes function.
+#'
+#' @details
+#' db should be an AIRR formated database with a defined "clone_id" column
+#' Defines clones to plot and colors based on clones properties:
+#' Expanded clone = clone size >1 in one donor
+#' Shared clone = clone found in at least two donors
+#' Persisting clone = clone found in at least two time points and/or pop
+#' Color choice:
+#' Single Greys scale based on clone size in that donor (to account for sampling): "white" = singlets, "black"= biggest clone in all donors
+#' Color for shared clones between donors
+#' highlight = c("expanded", "top5")
+#' Consistent color throughout time-points for persisting-expanded clones
+#' Grey for non-persisting expanded clones
+#' White for non expanded clones and regroup all sequences found only once in the dataset (non-persisting/non-expanded)
+#'
+#' @import dplyr
+#' @importFrom purrr map
+#'
+#' @export
+
+CircosClonotypes <- function(db,
+                             split.by = NULL,
+                             prefix = NULL,
+                             return_plot = FALSE,
+                             ...) {
+  
+  # library(dplyr, quiet = TRUE)
+  
+  if (is.null(split.by)) {
+    if (!return_plot) {
+      SingleCircosClonotypes(db, 
+                             prefix = prefix,
+                             return_plot = FALSE,
+                             ...)
+    } else {
+      grob <- SingleCircosClonotypes(db, 
+                                     prefix = prefix,
+                                     return_plot = TRUE,
+                                     ...)
+      return(grob)
+    }
+  } else {
+    if (!split.by %in% colnames(db)) {
+      stop("split.by column does not exist in provided dataframe")
+    }
+    plot_group_circos <- function(data) {
+      # Extract group name
+      group_name <- unique(data[[split.by[1]]])
+      if (length(split.by) > 1) {
+        for (i in seq(2, length(split.by))) {
+          group_name <- paste0(group_name, "_", unique(data[[split.by[i]]]))
+        }
+      }
+      
+      # Plot data
+      if (!return_plot) {
+        SingleCircosClonotypes(data,
+                               split.by = origin,
+                               prefix = paste(c(prefix, group_name), collapse = "_"),
+                               return_plot = FALSE,
+                               ...
+        )
+      } else {
+        grobs <- SingleCircosClonotypes(data,
+                                        split.by = origin,
+                                        prefix = paste(c(prefix, group_name), collapse = "_"),
+                                        return_plot = TRUE,
+                                        ...
+        )
+        return(grobs)
+      }
+    }
+    
+    grouped <- db %>%
+      dplyr::group_by(!!!syms(split.by))
+    
+    split_data <- grouped %>%
+      dplyr::group_split(.keep = TRUE)
+    
+    group_names <- grouped %>%
+      dplyr::group_keys() %>%
+      tidyr::unite("group_label", everything(), sep = "_") %>%
+      dplyr::pull(group_label)
+    
+    grobs.list <- purrr::map(split_data, plot_group_circos)
+    names(grobs.list) <- group_names
+    
+    if (return_plot) {
+      return(grobs.list)
+    }
+  }
+}
+
+#### Function to plot a single Circos Plot highlighting shared clones between sub-repertoire ####
+#' Plots a single circos plots and save it as pdf or return as grob
+#'
+#' \code{SingleCircosClonotypes} Plots a single circos plots and save it as pdf or return and/or return as a grob 
+#' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
+#' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
+#' @param layers    names of columns to be plotted as layers (from inner to outer tracks)
+#' @param layers_col a named list of named vector for colors to be used for each group in each layer, if ayers or groups are missing will be automatically added 
+#' @param groups_to_plot which groups to plot: a vector that can mix groups from any of the plotted layers (i.e. c('donor1', 'donor2', 'timepoint1', 'timepoint3')
+#' @param links     which clonal relationships to plot: a combination of all, any layer (will plot layer-specific clones), any origin group (will plot all relationship with this group) or any particular clone.
+#' @param links_col a named vector providing one color per type of link to plot
+#' @param prefix    prefix to use for saved files
+#' @param locus     name of column containing locus values.
+#' @param cell_id   name of the column containing cell identifier.
+#' @param clone_id  name of the column containing cell identifier.
+#' @param plots_folder name for export folder [default: "Donut_plots"]
+#' @param filename  name for saved plot file
+#' @param margin    passed to track.margin in circos.par
+#' @param height    height of saved plot
+#' @param width     width of saved plot
+#' @param innertrack_size width of inner track (where clones are plotted)
+#' @param outertracks_size width of outer tracks
+#' @param productive  name of column containing productive calls.
+#' @param productive_only whether to exclude non productive sequences [default: TRUE]
+#' @param save_plot whether to save the plot.
+#' @param save_as   options for plot saving format (pdf or png)
+#' @param return_plot whether to return the plot as a ggplot object
+#' 
+#' @return
+#' saved pdf for as many donut plots as there are groups in the dataframe as defined by the split.by argument.
+#' if the split.by argument points to more than one column, will group the dataset based on the first element(s) of the split.by argument
+#' and keep only the last as split.by argument of the SingleDonutPlotClonotypes function.
+#'
+#' @details
+#' db should be an AIRR formated database with a defined "clone_id" column.
+#'
+#' @import dplyr
+#' @importFrom purrr map
+#'
+#' @export
+
+SingleCircosClonotypes <- function(db,
+                                   use_chain = "IGH",
+                                   layers = NULL,
+                                   layers_col = NULL,
+                                   groups_to_plot = "all",
+                                   links = NULL,
+                                   links_col = NULL,
+                                   locus = "locus",
+                                   cell_id = "cell_id",
+                                   clone_id = "clone_id",
+                                   prefix = NULL,
+                                   filename = NULL,
+                                   plots_folder = "Circos_plots",
+                                   height = 6,
+                                   width = 9,
+                                   margin = 0.02, 
+                                   innertrack_size = 0.2,
+                                   outertracks_size = 0.05,
+                                   productive = "productive",
+                                   productive_only = TRUE,
+                                   save_plot = TRUE,
+                                   save_as = c("pdf", "png"),
+                                   return_plot = FALSE) {
+  
+  if (!requireNamespace("circlize", quietly = TRUE)) {
+    message("'circlize' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(circlize))
+  
+  save_as <- match.arg(save_as)
+  if (save_plot) {
+    if (!save_as %in% c("pdf", "png")) {
+      warning("The only saving option are 'pdf' and 'png', defaulting to 'pdf'.")
+      save_as <- "pdf"
+    }
+    if (!stringr::str_ends(plots_folder, "/")) {
+      plots_folder <- paste0(plots_folder, "/")
+    }
+    if (isFALSE(dir.exists(plots_folder))) {
+      dir.create(plots_folder)
+    }
+  }
+  
+  if (!any(use_chain %in% c("IGH", "IGL", "IGK", "TRB", "TRA", "TRD", "TRG"))) {
+    stop("use_chain should be one or a combinaison of IGH, IGL and IGK, TRB and TRD, TRA and TRG")
+  }
+  
+  if (!clone_id %in% colnames(db)) {
+    stop(paste0("missing", clone_id, "collumn"))
+  }
+  
+  if (!is.null(prefix)) {
+    if (isFALSE(dir.exists(paste0(plots_folder, prefix)))) {
+      dir.create(paste0(plots_folder, prefix))
+    }
+  }
+  
+  if (any(!layers %in% colnames(db))) {
+    stop("layers not properly defined : ", paste(layers[!layers %in% colnames(db)], collapse = " ;")," not in the profided data")
+  }
+  
+  #first layer is use for inside circle grouping:
+  origin <- layers[[1]]
+  
+  Plot_db <- db %>%
+    dplyr::filter(!!rlang::sym(locus) %in% use_chain)
+  
+  #filter groups to plot (groupps_to_plot should be a named list: list(layer1 = c(factor1, factor3), layer3 = c(...),...))
+  if(!groups_to_plot == "all"){
+    for(layer in layers){
+      if(!is.null(groups_to_plot[[layer]]) & any(groups_to_plot[[layer]] %in% levels(as.factor(Plot_db[[layer]])))){
+        Plot_db <- Plot_db %>%
+          dplyr::filter(!!rlang::sym(layer) %in% groups_to_plot[[layer]])
+      }
+    }
+  }
+  if(productive_only){
+    Plot_db <- Plot_db %>%
+      dplyr::filter(!!rlang::sym(productive))
+  }
+  
+  if (any(duplicated(Plot_db[[cell_id]]))) {
+    stop("duplicated cell_id: ", paste(Plot_db[duplicated(Plot_db[[cell_id]]), cell_id], collapse = ", "))
+  }
+  
+  ## define color code for layers:
+  #by default origin will be shades of grey other layer will be colored
+  #if a named list of color exists, it will be used
+  if(!is.null(layers_col)){
+    for(layer in layers){
+      if(!is.null(layers_col[[layer]])){
+        missing_colors <- setdiff(levels(as.factor(Plot_db[[layer]])), names(layers_col[[layer]]))
+        if(length(missing_colors) > 0){
+          if((requireNamespace("RColorBrewer", quietly = TRUE)) & (requireNamespace("grDevices", quietly = TRUE))) {
+            message("provided named color palette for ", layer, " is missing the following factors: ", paste(missing_colors, collapse = " ,"), "; missing will be added using RColorBrewer/colorRampPalette")
+            if(layer != origin){
+              col_missing <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 9, name = "Paired"))(length(missing_colors))
+            } else {
+              col_missing <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 9, name = "Greys")[1:5])(length(missing_colors))
+            }
+            names(col_missing) <- missing_colors
+            layers_col[[layer]] <- c(layers_col[[layer]], col_missing)
+          } else {
+            if (requireNamespace("randomcoloR", quietly = TRUE)) {
+              message("provided named color palette for ", layer, " is missing the following factors: ", paste(missing_colors, collapse = " ,"), "; missing will be added using randomcoloR")
+              col_missing <- randomcoloR::randomColor(length(missing_colors))
+              names(col_missing) <- missing_colors
+              layers_col[[layer]] <- c(layers_col[[layer]], col_missing)
+            } else {
+              message("provided named color palette for ", layer, " is missing the following factors: ", paste(missing_colors, collapse = " ,"))
+              return(NULL)
+            }
+          }
+        }
+      } else {
+        #if no pallette are provided for some layers
+        factors <- levels(as.factor(Plot_db[[layer]]))
+        if((requireNamespace("RColorBrewer", quietly = TRUE)) & (requireNamespace("grDevices", quietly = TRUE))) {
+          if(layer != origin){
+            cols <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 9, name = "Paired"))(length(factors))
+          } else {
+            cols <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 9, name = "Greys")[1:5])(length(factors))
+          }
+          names(cols) <- factors
+          layers_col[[layer]] <- cols
+        } else {
+          if (requireNamespace("randomcoloR", quietly = TRUE)) {
+            message("RColorBrewer or grDevices not installed, switching to randomcoloR")
+            cols <- randomcoloR::randomColor(length(factors))
+            names(cols) <-factors
+            layers_col[[layer]] <- cols
+          } else {
+            message("please provide a named color palette for ", layer, " or install RcolorBrewer and grDevices packages.")
+            return(NULL)
+          }
+        }
+      }
+    }
+  }  else {
+    #if no pallette are provided
+    layers_col <- list()
+    for(layer in layers){
+      factors <- levels(as.factor(Plot_db[[layer]]))
+      if((requireNamespace("RColorBrewer", quietly = TRUE)) & (requireNamespace("grDevices", quietly = TRUE))) {
+        if(layer != origin){
+          cols <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 9, name = "Paired"))(length(factors))
+        } else {
+          cols <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 9, name = "Greys")[1:5])(length(factors))
+        }
+        names(cols) <-factors
+        layers_col[[layer]] <- cols
+      } else {
+        if (requireNamespace("randomcoloR", quietly = TRUE)) {
+          message("RColorBrewer or grDevices not installed, switching to randomcoloR")
+          cols <- randomcoloR::randomColor(length(factors))
+          names(cols) <-factors
+          layers_col[[layer]] <- cols
+        } else {
+          message("please provide a named color palette for ", layer, " or install RcolorBrewer and grDevices packages.")
+          return(NULL)
+        }
+      }
+    }
+  }
+  
+  ## update layers columns to reflect future sectors in circosplot
+  for(i in 1:length(layers)){
+    #order <- length(layers)-i
+    Plot_db <- Plot_db %>%
+      dplyr::group_by(!!!rlang::syms(layers)) %>%
+      dplyr::mutate(
+        !!rlang::sym(paste0("layer", i)) := do.call(paste, c(dplyr::cur_group()[i:length(layers)], sep = "_"))
+      ) %>%
+      dplyr::ungroup()
+  }
+  
+  ## create full recap for each sectors to be plotted and respective collor to use
+  groups_infos <- Plot_db %>%
+    dplyr::distinct(!!!rlang::syms(paste0("layer", (1:length(layers))))) %>%
+    dplyr::arrange(!!!rlang::syms(rev(paste0("layer", (1:length(layers)))))) 
+  
+  for(i in 1:length(layers)){
+    groups_infos <- groups_infos %>%
+      dplyr::rowwise() %>%
+      dplyr::mutate(
+        !!rlang::sym(paste0("layer", i, "_col")) := layers_col[[layers[[i]]]][str_split(!!rlang::sym(paste0("layer", i)), "_")[[1]][1]]
+      )
+  }
+  
+  #TODO add a way to relevel the groups to plot
+  
+  origins <- groups_infos$layer1
+  
+  ## generate clone repartition table:
+  Clones_by_groups_to_plot <- as.data.frame.matrix(table(Plot_db[[clone_id]], 
+                                                         Plot_db$layer1))
+  
+  Clones_by_groups_to_plot$overall_clone_size <- rowSums(Clones_by_groups_to_plot)
+  Clones_by_groups_to_plot$clone_id <- rownames(Clones_by_groups_to_plot)
+  
+  Clones_by_groups_to_plot <- dplyr::arrange(Clones_by_groups_to_plot, desc(Clones_by_groups_to_plot$overall_clone_size))
+  
+  ## define the main sectors: 
+  df1 <- as.data.frame(colSums(Clones_by_groups_to_plot[, origins]))
+  colnames(df1) <- "nb_cells"
+  df1$xmin <- 0
+  df1$xmax <- df1$nb_cells
+  
+  ## define clone order and length of each sectors: 
+  df2.list <- lapply(origins, FUN = function(i){
+    df <- Clones_by_groups_to_plot[Clones_by_groups_to_plot[,i] >=1, c("clone_id",i)]
+    colnames(df) <- c("clone_id", "nb_cells")
+    df <- dplyr::arrange(df, desc(df$"nb_cells"))
+    df$clone_segments_start <- cumsum(df$nb_cells)-df$nb_cells+1
+    df$clone_segments_end <- cumsum(df$nb_cells)
+    return(df)
+  })
+  names(df2.list) <- origins
+  
+  ## define clonal relationships to plot as links: 
+  df3.list <- lapply(origins[-length(origins)], FUN = function(i, g=origins){
+    min <- match(i, g)+1
+    max <- length(g)
+    comparison <- g[min:max]
+    df.all <- data.frame(clone_id=character(),
+                         size_orig=integer(), 
+                         start_orig=numeric(),
+                         size_end=integer(), 
+                         start_end=numeric(),
+                         stringsAsFactors=FALSE)
+    for (k in 1:length(comparison)){
+      common_clones_k <- intersect(df2.list[[i]]$clone_id, df2.list[[comparison[k]]]$clone_id)
+      if(!grepl(pattern = comparison[k], i) & (length(common_clones_k) > 0)){ #in between donor linked are not counted
+        is.common <- df2.list[[i]]$clone_id %in% common_clones_k
+        df <- df2.list[[i]][is.common, c("clone_id", "nb_cells", "clone_segments_start")]
+        colnames(df) <- c("clone_id", "size_orig", "start_orig")
+        df$orig <- i
+        df$end <- comparison[k]
+        df$size_end <- df2.list[[comparison[k]]]$nb_cells[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
+        df$start_end <- df2.list[[comparison[k]]]$clone_segments_start[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
+        df.all <- rbind(df.all, df)
+      }
+    }
+    return(df.all)
+  })
+  names(df3.list) <- origins[-length(origins)]
+  df3 <- do.call(rbind, df3.list)
+  
+  
+  ## define color for links:
+  #by default origin will be shades of grey other layer will be colored
+  #if a named list of color exists, it will be used
+  
+  if(is.null(links)){
+    links <- c("all", layers[2:min(3, length(layers))])
+    links_col <- c("darkgrey", "dodgerblue", "darkred")[1:min(3, length(layers))]
+    names(links_col) <- links
+  } 
+  
+  if(!is.null(links_col)){
+    missing_colors <- setdiff(links, names(links_col))
+  } else {
+    missing_colors <- links
+  }
+  if(length(missing_colors) > 0){
+    if("all" %in% missing_colors){
+      col_all <- "darkgrey"
+      names(col_all) <- "all"
+      links_col <- c(links_col, col_all)
+      missing_colors <- missing_colors[!missing_colors %in% "all"]
+    }
+    if(length(missing_colors) > 0){
+      if((requireNamespace("RColorBrewer", quietly = TRUE)) & (requireNamespace("grDevices", quietly = TRUE))) {
+        message("provided named color palette for links is missing the following factors: ", paste(missing_colors, collapse = " ,"), "; missing will be added using RColorBrewer/colorRampPalette")
+        col_missing <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 9, name = "Set1"))(length(missing_colors))
+        names(col_missing) <- missing_colors
+        links_col <- c(links_col, col_missing)
+      } else {
+        if (requireNamespace("randomcoloR", quietly = TRUE)) {
+          message("provided named color palette for links is missing the following factors: ", paste(missing_colors, collapse = ", "), "; missing will be added using randomcoloR")
+          col_missing <- randomcoloR::randomColor(length(missing_colors))
+          names(col_missing) <- missing_colors
+          links_col <- c(links_col, col_missing)
+        } else {
+          message("provided named color palette for ", layer, " is missing the following factors: ", paste(missing_colors, collapse = ", "))
+          return(NULL)
+        }
+      }
+    }
+  }  
+  
+  ## Plot circos plot
+  if (save_plot) {
+    if(is.null(filename)){
+      if (!is.null(prefix)) {
+        filename <- paste0(plots_folder, prefix, "/", prefix, "_Circosplot_by_", paste(layers, collapse = "_"), ".pdf")
+      } else {
+        filename <- paste0(plots_folder, "Circosplot_by_", paste(layers, collapse = "_"), ".pdf")
+      }
+    }
+    if (save_as == "pdf") {
+      pdf(file = filename, height = height, width = width)
+    }
+    if (save_as == "png") {
+      png(file = filename, height = height, width = width)
+    }
+  }
+  if (!save_plot & return_plot){
+    #just saving it as a temp png file
+    filename <- tempfile(fileext = ".png")
+    png(file = filename, height = height, width = width)
+  }
+  
+  #par(mar=rep(0,4))
+  
+  circos.clear()
+  
+  limits <- 1.4+length(layers)*0.06
+  
+  circos.par(cell.padding=c(0,0,0,0), track.margin=c(0, margin), 
+             start.degree = 90, gap.degree = 1,
+             canvas.xlim = c(-limits,limits),
+             canvas.ylim = c(-limits,limits))
+  
+  ## creating sector for each celltype based on nb of cells in a clone per cell_type:
+  circos.initialize(factors = rownames(df1), x = df1$nb_cells, xlim = cbind(df1$xmin, df1$xmax))
+  
+  ## plotting tracks:
+  #one track for type of sorted pop
+  #one track for clones
+  circos.trackPlotRegion(ylim = c(0, 1), factors = rownames(df1), track.height=innertrack_size,
+                         #panel.fun for each sector
+                         panel.fun = function(x, y) {
+                           #select details of current sector
+                           name = get.cell.meta.data("sector.index")
+                           i = get.cell.meta.data("sector.numeric.index")
+                           xlim = get.cell.meta.data("xlim")
+                           ylim = get.cell.meta.data("ylim")
+                           
+                           #plot main sector
+                           circos.rect(xleft=xlim[1], ybottom=ylim[1], xright=xlim[2], ytop=ylim[2], 
+                                       col = groups_infos[["layer1_col"]][i], border= "black", lty = 1)
+                         })
+  
+  ## add segments based on clone size:
+  for (origin in origins){
+    plot <- circos.segments(x0 = df2.list[[origin]]$clone_segments_end, x1 = df2.list[[origin]]$clone_segments_end, y0 = 0.2, y1 = 0.8, sector.index = origin, track.index = 1, col = "black", lwd = 0.5)
+  }
+  
+  ## add outside track with donor info:
+  groups_infos <- groups_infos %>%
+    dplyr::rowwise() %>%
+    dplyr::mutate(
+      nb_cells = get.cell.meta.data("xlim", sector.index = layer1, track.index = 1)["max.data"],
+      start_theta = circlize(0, 0, sector.index = layer1, track.index = 1)[1,"theta"],
+      end_theta = circlize(nb_cells, 0, sector.index = layer1, track.index = 1)[1,"theta"]
+    ) %>%
+    dplyr::ungroup()
+  
+  if(length(layers)>1){
+    for(i in (2:length(layers))){
+      layer_groups <- unique(groups_infos[[paste0("layer", i)]])
+      for (k in seq_along(layer_groups)){
+        group <- layer_groups[k]
+        group_infos <- groups_infos %>%
+          dplyr::filter(!!rlang::sym(paste0("layer", i)) == group)
+        #add outside sectors for that layer:
+        rou1 <- 1 + (i-2)*(0.015+outertracks_size)
+        rou2 <- rou1 + outertracks_size  
+        draw.sector(min(group_infos$end_theta), max(group_infos$start_theta), rou1 = rou1, rou2 = rou2, clock.wise = FALSE, col = group_infos[[paste0("layer", i, "_col")]][1])
+        
+        if(i == length(layers)){
+          #text direction (dd) and adjusments (aa):
+          theta = circlize(mean(c(min(group_infos$end_theta), max(group_infos$start_theta))), 1.3)[1, 1] %% 360
+          dd <- ifelse(theta < 90 || theta > 270, "clockwise", "reverse.clockwise")
+          aa = c(1, 0.5)
+          if(theta < 90 || theta > 270)  aa = c(0, 0.5)
+          
+          #add label:
+          highlight.sector(sector.index = group_infos$layer1, track.index = 1, text.vjust = "21mm", col = NA, text = group,
+                           facing = dd, niceFacing = TRUE, cex = 1)
+        }
+      }
+    }
+  }
+  
+  names_link <- list()
+  
+  if("all" %in% links){
+    # plot all links:
+    for(i in seq_along(df3$clone_id)){
+      plot <- circos.link(sector.index1= df3$orig[i], point1=c(df3$start_orig[i], df3$start_orig[i] + df3$size_orig[i]-1),
+                          sector.index2= df3$end[i], point2=c(df3$start_end[i], df3$start_end[i] + df3$size_end[i]-1),
+                          col = links_col[["all"]], lwd = 0.5)
+    }
+    names_link <- list(all = "all shared clones")
+  }
+  
+  if(any(links %in% layers)){
+    for (layer in links[links %in% layers]){
+      layer_groups <- levels(as.factor(Plot_db[[layer]]))
+      # identify clones shared between groups in that layer [not to be plotted]
+      highlight <- c()
+      for (i in (1:(length(layer_groups)-1))){
+        for (j in ((i+1):length(layer_groups))){
+          highlight <- c(highlight, intersect(Plot_db[Plot_db[[layer]] == layer_groups[i], clone_id], 
+                                              Plot_db[Plot_db[[layer]] == layer_groups[j], clone_id]))
+        }
+      }
+      
+      df_layer <- df3 %>%
+        dplyr::filter(
+          !(!!rlang::sym(clone_id) %in% unlist(highlight))
+        )
+      
+      # plot highlight links
+      if(nrow(df_layer)>0){
+        for(i in 1:nrow(df_layer)){
+          circos.link(sector.index1= df_layer$orig[i], point1=c(df_layer$start_orig[i], df_layer$start_orig[i] + df_layer$size_orig[i]-1),
+                      sector.index2= df_layer$end[i], point2=c(df_layer$start_end[i], df_layer$start_end[i] + df_layer$size_end[i]-1),
+                      col = links_col[[layer]], lwd = 0.5)
+        }
+      }
+      names_link <- c(names_link, list(paste0(layer, "-specific clones")))
+      names(names_link)[length(names(names_link))] <- layer
+    }
+  }
+  
+  if(any(links %in% origins)){
+    for (origin in links[links %in% origins]){
+      df_layer <- df3 %>%
+        dplyr::filter(
+          orig == origin
+        )
+      
+      # plot highlight links
+      if(nrow(df_layer)>0){
+        for(i in 1:nrow(df_layer)){
+          circos.link(sector.index1= df_layer$orig[i], point1=c(df_layer$start_orig[i], df_layer$start_orig[i] + df_layer$size_orig[i]-1),
+                      sector.index2= df_layer$end[i], point2=c(df_layer$start_end[i], df_layer$start_end[i] + df_layer$size_end[i]-1),
+                      col = links_col[[origin]], lwd = 0.5)
+        }
+      }
+    }
+    names_link <- c(names_link, list(origin = paste0(origin, "-originating clones")))
+  }
+  
+  if(any(links %in% Plot_db[[clone_id]])){
+    clones_to_plot <- links[links %in% Plot_db[[clone_id]]]
+    
+    df_clones <- df3 %>%
+      dplyr::filter(
+        clone_id %in% clones_to_plot
+      )
+    
+    if(any(!clones_to_plot %in% df_clones$clone_id)){
+      message("the following clones are not shared between groups and won't be plotted: ", clones_to_plot[!clones_to_plot %in% df_clones$clone_id])
+    }
+    
+    # plot highlight links
+    if(nrow(df_clones)>0){
+      for(i in 1:nrow(df_clones)){
+        circos.link(sector.index1= df_clones$orig[i], point1=c(df_clones$start_orig[i], df_clones$start_orig[i] + df_clones$size_orig[i]-1),
+                    sector.index2= df_clones$end[i], point2=c(df_clones$start_end[i], df_clones$start_end[i] + df_clones$size_end[i]-1),
+                    col = links_col[[as.character(df_clones$clone_id[i])]], lwd = 0.5)
+      }
+      names_link <- c(names_link, list(paste0("clone: ", df_clones$clone_id[i])))
+      names(names_link)[length(names(names_link))] <- df_clones$clone_id[i]
+    }
+  }
+  
+  links_infos <- data.frame(
+    link = names(links_col),
+    color = unlist(links_col),
+    names = unlist(names_link)
+  )
+  
+  ## draw legend
+  suppressPackageStartupMessages(library(ComplexHeatmap))
+  
+  lgd_layers.list <- lapply(layers, FUN=function(layer){
+    lgd_layer <- Legend(labels = names(layers_col[[layer]]), 
+                        legend_gp = gpar(fill = layers_col[[layer]]),
+                        gap = unit(1, "mm"), 
+                        title = layer,
+                        border = "black")
+    return(lgd_layer)
+  })
+  names(lgd_layers.list) <- layers
+  
+  lgd_links = Legend(labels = links_infos$names, 
+                     type = "lines",
+                     legend_gp = gpar(fill= "white", col = links_infos$color),
+                     title = "shared clones")
+  
+  lgd_list_vertical = do.call(packLegend, c(lgd_layers.list, list(links = lgd_links)))
+  draw(lgd_list_vertical, x = unit(4, "mm"), just = "left")
+  
+  if (save_plot | return_plot) {
+    dev.off()
+  }
+  
+  if (return_plot) {
+    # for visualisation only as it is currently impossible to directly export a circlize plot
+    # TODO check circlizePlus package to plot circos plots directly in ggplot2
+    
+    if (!requireNamespace("magick", quietly = TRUE)) {
+      message("Optional: 'magick' not installed — skipping plot.")
+      return(invisible(NULL))
+    }
+    if (!requireNamespace("pdftools", quietly = TRUE)) {
+      message("Optional: 'pdftools' not installed — skipping plot.")
+      return(invisible(NULL))
+    }
+    if (!requireNamespace("gridExtra", quietly = TRUE)) {
+      message("Optional: 'gridExtra' not installed — skipping plot.")
+      return(invisible(NULL))
+    }
+    if (!requireNamespace("grid", quietly = TRUE)) {
+      message("Optional: 'grid' not installed — skipping plot.")
+      return(invisible(NULL))
+    }
+    if (save_as == "pdf") {
+      img <- magick::image_read_pdf(filename, density = 150)
+      tmp_png <- tempfile(fileext = ".png")
+      magick::image_write(img, tmp_png)
+      img_raster <- png::readPNG(tmp_png)
+    } else {
+      img_raster <- png::readPNG(filename)
+    }
+    grob <- grid::rasterGrob(img_raster, interpolate = TRUE)
+    return(grob)
+  }
+}
+
+
+
+
+
