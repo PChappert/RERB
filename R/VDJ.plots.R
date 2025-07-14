@@ -2468,13 +2468,17 @@ SingleCircosClonotypes <- function(db,
     }
     if(length(missing_colors) > 0){
       if((requireNamespace("RColorBrewer", quietly = TRUE)) & (requireNamespace("grDevices", quietly = TRUE))) {
-        message("provided named color palette for links is missing the following factors: ", paste(missing_colors, collapse = " ,"), "; missing will be added using RColorBrewer/colorRampPalette")
-        col_missing <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 9, name = "Set1"))(length(missing_colors))
+        message("provided named color palette for links is missing the following factors: ", paste(missing_colors, collapse = " ,"), " ; missing values will be added using RColorBrewer(Set1)/colorRampPalette")
+        if(length(missing_colors)<=9){
+          col_missing <- RColorBrewer::brewer.pal(n = 9, name = "Set1")[1:length(missing_colors)]
+        } else {
+          col_missing <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 9, name = "Set1"))(length(missing_colors))
+        }
         names(col_missing) <- missing_colors
         links_col <- c(links_col, col_missing)
       } else {
         if (requireNamespace("randomcoloR", quietly = TRUE)) {
-          message("provided named color palette for links is missing the following factors: ", paste(missing_colors, collapse = ", "), "; missing will be added using randomcoloR")
+          message("provided named color palette for links is missing the following factors: ", paste(missing_colors, collapse = ", "), " ; missing values will be added using randomcoloR")
           col_missing <- randomcoloR::randomColor(length(missing_colors))
           names(col_missing) <- missing_colors
           links_col <- c(links_col, col_missing)
@@ -2493,6 +2497,12 @@ SingleCircosClonotypes <- function(db,
         filename <- paste0(plots_folder, prefix, "/", prefix, "_Circosplot_by_", paste(layers, collapse = "_"), ".pdf")
       } else {
         filename <- paste0(plots_folder, "Circosplot_by_", paste(layers, collapse = "_"), ".pdf")
+      }
+    } else {
+      if (!is.null(prefix)) {
+        filename <- paste0(plots_folder, prefix, "/", filename, ".pdf")
+      } else {
+        filename <- paste0(plots_folder, filename, ".pdf")
       }
     }
     if (save_as == "pdf") {
@@ -2638,31 +2648,39 @@ SingleCircosClonotypes <- function(db,
                       col = links_col[[origin]], lwd = 0.5)
         }
       }
+      names_link <- c(names_link, list(origin = paste0(origin, "-originating clones")))
     }
-    names_link <- c(names_link, list(origin = paste0(origin, "-originating clones")))
   }
   
   if(any(links %in% Plot_db[[clone_id]])){
     clones_to_plot <- links[links %in% Plot_db[[clone_id]]]
-    
     df_clones <- df3 %>%
       dplyr::filter(
-        clone_id %in% clones_to_plot
+        !!rlang::sym(clone_id) %in% clones_to_plot
       )
     
-    if(any(!clones_to_plot %in% df_clones$clone_id)){
-      message("the following clones are not shared between groups and won't be plotted: ", clones_to_plot[!clones_to_plot %in% df_clones$clone_id])
+    if(any(!clones_to_plot %in% df_clones[[clone_id]])){
+      message("the following clones are not shared between groups and won't be plotted: ", clones_to_plot[!clones_to_plot %in% df_clones[[clone_id]]])
     }
+    clones_to_plot <- unique(df_clones[[clone_id]])
     
-    # plot highlight links
-    if(nrow(df_clones)>0){
-      for(i in 1:nrow(df_clones)){
-        circos.link(sector.index1= df_clones$orig[i], point1=c(df_clones$start_orig[i], df_clones$start_orig[i] + df_clones$size_orig[i]-1),
-                    sector.index2= df_clones$end[i], point2=c(df_clones$start_end[i], df_clones$start_end[i] + df_clones$size_end[i]-1),
-                    col = links_col[[as.character(df_clones$clone_id[i])]], lwd = 0.5)
+    for(clone in clones_to_plot){
+      df_clone <- df_clones %>%
+        dplyr::filter(
+          clone_id == clone
+        )
+      
+      clone_col <- links_col[[as.character(clone)]]
+      # plot highlight links
+      if(nrow(df_clone)>0){
+        for(i in 1:nrow(df_clone)){
+          circos.link(sector.index1= df_clone$orig[i], point1=c(df_clone$start_orig[i], df_clone$start_orig[i] + df_clone$size_orig[i]-1),
+                      sector.index2= df_clone$end[i], point2=c(df_clone$start_end[i], df_clone$start_end[i] + df_clone$size_end[i]-1),
+                      col = clone_col, lwd = 0.5)
+        }
       }
-      names_link <- c(names_link, list(paste0("clone: ", df_clones$clone_id[i])))
-      names(names_link)[length(names(names_link))] <- df_clones$clone_id[i]
+      names_link <- c(names_link, list(paste0("clone: ", clone)))
+      names(names_link)[length(names(names_link))] <- clone
     }
   }
   
