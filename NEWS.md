@@ -1,3 +1,12 @@
+## Version 0.9.7: July, 2025
+-   new CircosClonotypes function
+-   updated plotVGenePairing to had possibility to look at the family, gene or alleel levels
+-   plotCDR3logo is now rename CDR3logos and SingleCDR3logo and allows plotting of CDR3 sequenecs from different clone (and difference sizes) using ClustalW alignments.
+-   updated Ab1toAIRR to solve issue with reticulate connection
+-   fixed a few issues when merging Sanger plates with different metadata
+-   updated bcr_info/tcr_info in addAIRRMetadata
+-   updated runBlastnC() to filter out all alignment <25 pb
+
 ## Version 0.9.6: June 29, 2025
 
 -   Initial release on github
