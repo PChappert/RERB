@@ -934,7 +934,7 @@ SingleDonutPlotClonotypes <- function(db,
           }
           lgd_clone <- ComplexHeatmap::Legend(
             labels = unique$clone_size_in_group,
-            legend_gp = gpar(fill = unique$color),
+            legend_gp = grid::gpar(fill = unique$color),
             title = "clone size",
             border = "black"
           )
@@ -2695,7 +2695,7 @@ SingleCircosClonotypes <- function(db,
   
   lgd_layers.list <- lapply(layers, FUN=function(layer){
     lgd_layer <- Legend(labels = names(layers_col[[layer]]), 
-                        legend_gp = gpar(fill = layers_col[[layer]]),
+                        legend_gp = grid::gpar(fill = layers_col[[layer]]),
                         gap = unit(1, "mm"), 
                         title = layer,
                         border = "black")
@@ -2705,7 +2705,7 @@ SingleCircosClonotypes <- function(db,
   
   lgd_links = Legend(labels = links_infos$names, 
                      type = "lines",
-                     legend_gp = gpar(fill= "white", col = links_infos$color),
+                     legend_gp = grid::gpar(fill= "white", col = links_infos$color),
                      title = "shared clones")
   
   lgd_list_vertical = do.call(packLegend, c(lgd_layers.list, list(links = lgd_links)))
