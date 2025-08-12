@@ -403,10 +403,52 @@ Ab1toAIRR <- function(files,
         openxlsx::addWorksheet(OUT, "QC_failed")
         openxlsx::writeData(OUT, sheet = "QC_failed", x = QC_failed, colNames = TRUE, rowNames = FALSE)
         
+        VDJ_db <- VDJ_db %>%
+          dplyr::mutate(quality = "productive")
+        VDJ_db_nonprod <- VDJ_db_nonprod %>%
+          dplyr::mutate(quality = "non productive")
+        failed_VDJ_db <- failed_VDJ_db %>%
+          dplyr::mutate(quality = "failed igblast")
+        QC_failed <- QC_failed %>%
+          dplyr::mutate(quality = "failed initial QC")
+        
+        
+        full_db <- dplyr::bind_rows(list(VDJ_db, VDJ_db_nonprod, failed_VDJ_db, QC_failed))
+        
+        openxlsx::addWorksheet(OUT, "Recap_plots")
+        temp_dir <- tempdir()  # save png plot to temp folder
+        plate_by_primer <- plotPlate(full_db,
+                                     highlighted_wells = "alternate_well_id",
+                                     color.by = "primers",
+                                     plot_labels = FALSE)
+        
+        plot_file1 <- file.path(temp_dir, "plate_by_primer.png")
+        ggsave(plot_file1, plate_by_primer, width = 6, height = 4, dpi = 300)
+        openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file1, width = 6, height = 4, startRow = 1, startCol = 1)
+        
+        plate_by_quality <- plotPlate(full_db,
+                                     highlighted_wells = "alternate_well_id",
+                                     color.by = "quality",
+                                     fill_colors = c("productive" = "#7CAE00", "non productive" = "#00BFC4", "failed igblast" = "#C77CFF", "failed initial QC" = "#F8766D"),
+                                     plot_labels = FALSE)
+        
+        plot_file2 <- file.path(temp_dir, "plate_by_quality.png")
+        ggsave(plot_file2, plate_by_quality, width = 6.6, height = 4, dpi = 300)
+        openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file2, width = 6.6, height = 4, startRow = 20, startCol = 1)
+        
+        plate_by_c_call <- plotPlate(VDJ_db,
+                                      highlighted_wells = "alternate_well_id",
+                                      color.by = "c_call",
+                                      plot_labels = FALSE)
+        
+        plot_file3 <- file.path(temp_dir, "plate_by_c_call.png")
+        ggsave(plot_file3, plate_by_c_call, width = 6, height = 4, dpi = 300)
+        openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file3, width = 6, height = 4, startRow = 40, startCol = 1)
+        
         openxlsx::saveWorkbook(OUT, file = paste0(outfolder, "/", stringr::str_replace(filename, "_SCF_SEQ_ABI", ""), "_full_recap.xlsx"), overwrite = TRUE)
         
       } else {
-        message("Optional: 'openxlsx' not installed — simply saving as tsv files")
+        message("Optional: 'openxlsx' not installed — simply saving tsv files")
         readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", stringr::str_replace(filename, "_SCF_SEQ_ABI", ""), "_full_recap-prod.tsv"))
         readr::write_tsv(VDJ_db_nonprod, file = paste0(outfolder, "/", stringr::str_replace(filename, "_SCF_SEQ_ABI", ""), "_full_recap-non-prod.tsv"))
       }
