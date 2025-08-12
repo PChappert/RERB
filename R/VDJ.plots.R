@@ -2747,8 +2747,3 @@ SingleCircosClonotypes <- function(db,
     return(grob)
   }
 }
-
-
-
-
-

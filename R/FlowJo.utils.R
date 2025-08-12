@@ -224,8 +224,470 @@ importFJGates <- function(FJ_files, db = NULL,
 }
 
 
+#### Function to plot a 96w or 384w plate with highlighted wells ####
+#'
+#' \code{plotPlate} Plot a single 96 or 384 well plate with highlighted wells
+#' @param db                  a data frame containing at least a column with well_ids.
+#' @param highlighted_wells   name of column containing well_id to plot or a vector containing well-ids (set db = NULL in this case).
+#' @param color.by             name of column containing group labels for highlighting wells or a vector of group labels the same size as highlighted_wells (set db = NULL in this case).
+#' @param fill_colors         a named vector with one color per group in color.by
+#' @param labels              name of column containing text labels for highlighting wells or a vector of text labels the same size as highlighted_wells (set db = NULL in this case) [default = highlighted_wells].
+#' @param main_title          name of the graph title 
+#' @param legend_title        name of the legend title
+#' @param plate_type          type of plate to plot, should be one of "96w" or "384w" [default = "96w"]
+#' @param well_size           size of well in the final plot, if set to NULL, will be automatically define based on plate_type
+#' @param fixed_size          whether to fix the size of the inside panel (requires the egg package)
+#' @param panel_width         panel width for fixed panel size
+#' @param panel_height        panel height for fixed panel size
+#' @param return_plot         whether to return ggplot objects else simply plotted
+#'
+#' @return a ggplot object
+#'    
+#' @import dplyr
+#' @import tibble
+#'
+#' @export
+
+plotPlate <- function(db = NULL,
+                      highlighted_wells = NULL,
+                      color.by = NULL, 
+                      fill_colors = NULL,
+                      plot_labels = TRUE,
+                      labels = NULL,
+                      main_title = "",
+                      legend_title = NULL,
+                      plate_type = c("96w", "384w"),
+                      well_size = NULL,
+                      fixed_size = TRUE,
+                      panel_width = NULL,
+                      panel_height = NULL,
+                      return_plot = TRUE) {
+                            
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    message("Optional: 'ggplot2' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(ggplot2))
+  
+  if (!requireNamespace("scales", quietly = TRUE)) {
+    message("Optional: 'scales' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  
+  plate_type <- match.arg(plate_type)
+  
+  if(is.null(db)){
+    if(!is.null(highlighted_wells)){
+      if(is.null(labels)){
+        labels <- highlighted_wells
+      }
+      db <- tibble::tibble(well_id = highlighted_wells, fill = color.by, label = labels)
+      color.by <- "fill"
+    } else {
+      message("if not providing a full dataframe, highlighted_wells should be a vector of well-ids to highlight - skipping plot")
+      return(invisible(NULL))
+    }
+  } else {
+    if(is.null(highlighted_wells)){
+      highlighted_wells <- "well_id"
+    }
+    if(!highlighted_wells %in% colnames(db)){
+      message("if providing a full dataframe, highlighted_wells should be a column containing the well-ids to highlight - skipping plot")
+      return(invisible(NULL))
+    }
+    if(!highlighted_wells == "well_id"){
+      db <- db %>%
+        dplyr::mutate(well_id = !!rlang::sym(highlighted_wells))
+    }
+    if(is.null(labels)){
+      labels <- "well_id"
+    }
+    db <- db %>%
+      dplyr::mutate(
+        label = !!rlang::sym(labels)
+      )
+  }
+  
+  # Define row and column names and create full plate layout for empty plate:
+  plate_format <- list("96w" = c(8, 12), "384w" = c(16, 24))
+  if(is.null(well_size)){
+    well_sizes <- list("96w" = 8, "384w" = 8)
+    well_size <- well_sizes[[plate_type]]
+  }
+  if(is.null(panel_width)){
+    panel_widths <- list("96w" = 3.5, "384w" = 7)
+    panel_width <- panel_widths[[plate_type]]
+  }
+  if(is.null(panel_height)){
+    panel_heights <- list("96w" = 2.5, "384w" = 4.7)
+    panel_height <- panel_heights[[plate_type]]
+  }
+  
+  rows <- LETTERS[1:plate_format[[plate_type]][1]]
+  cols <- 1:plate_format[[plate_type]][2]
+  
+  plate <- expand.grid(col = cols, row = rows)
+  plate$well_id <- paste0(plate$row, plate$col)
+  
+  # Add info for wells to highlight:
+  plate <- plate %>%
+    left_join(
+      dplyr::select(db, any_of(c("well_id", "label", color.by))),
+      by = "well_id"
+    )
+  
+  # Add flag and color for highlighted wells:
+  if(is.null(color.by)){
+    if(is.null(legend_title)){
+      legend_title <- "highlighted"
+    } 
+    plate[[legend_title]] <- plate$well_id %in% db$well_id
+    if(is.null(fill_colors)){
+      fill_colors <- c("TRUE" = "red", "FALSE" = "white")
+    } else {
+      fill_colors <- c("TRUE" = fill_colors[1], "FALSE" = "white")
+    }
+  } else {
+    if(is.null(legend_title)){
+      legend_title <- color.by
+    } else {
+      plate <- plate %>%
+        dplyr::mutate(
+          !!rlang::sym(legend_title) := !!rlang::sym(color.by)
+        )
+    }
+    if(is.null(fill_colors)){
+      fill_colors <- scales::hue_pal()(length(unique(db[[color.by]])))
+      names(fill_colors) <- sample(unique(db[[color.by]]))
+    }
+  }
+  
+  if(plot_labels){
+    g <- ggplot(plate, aes(x = col, y = row)) +
+      geom_point(aes(fill = !!rlang::sym(legend_title)), shape = 21, size = well_size, color = "black") +
+      geom_text(data = dplyr::filter(plate, !is.na(label)), aes(label = label), size = 3, color = "black") +
+      scale_y_discrete(limits = rev(rows), position = "left") +
+      scale_x_continuous(breaks = cols, position = "top") +
+      scale_fill_manual(values = fill_colors, na.value = "white") +
+      coord_fixed(ratio = 1, xlim = c(0.5, (plate_format[[plate_type]][2]+0.5)), ylim = c(0.5, (plate_format[[plate_type]][1]+0.5)), expand = FALSE, clip = "off") +
+      theme_minimal(base_size = 12) +
+      labs(title = main_title, x = NULL, y = NULL) +
+      theme(
+        panel.grid = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+        axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5, size = 16)
+      )
+  } else {
+    g <- ggplot(plate, aes(x = col, y = row)) +
+      geom_point(aes(fill = !!rlang::sym(legend_title)), shape = 21, size = well_size, color = "black") +
+      scale_y_discrete(limits = rev(rows), position = "left") +
+      scale_x_continuous(breaks = cols, position = "top") +
+      scale_fill_manual(values = fill_colors, na.value = "white") +
+      coord_fixed(ratio = 1, xlim = c(0.5, (plate_format[[plate_type]][2]+0.5)), ylim = c(0.5, (plate_format[[plate_type]][1]+0.5)), expand = FALSE, clip = "off") +
+      theme_minimal(base_size = 12) +
+      labs(title = main_title, x = NULL, y = NULL) +
+      theme(
+        panel.grid = element_blank(),
+        panel.border = element_rect(colour = "black", fill = NA, linewidth = 0.5),
+        axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        plot.title = element_text(hjust = 0.5, size = 16)
+      )
+  }
+  if(fixed_size){
+    if (requireNamespace("egg", quietly = TRUE)) {
+      g <- egg::set_panel_size(
+        g,
+        width  = grid::unit(panel_width, "in"),
+        height = grid::unit(panel_height, "in")
+      )
+    } else {
+      message("Optional: 'egg' not installed — skipping fixed_size argument.")
+    }
+  }
+  if(return_plot) {
+    return(g)
+  } else {
+    plot(g)
+  }
+}
+
+#### Function to plot a recap of 96w or 384w plates with highlighted wells ####
+#'
+#' \code{plotPlateRecap} Plot a single 96 or 384 well plate with highlighted wells
+#' @param db                  a data frame containing at least a column with well_ids.
+#' @param well_id             name of column containing well_id informations.
+#' @param split.by            name of column(s) to use to split the dataset in individual plates.
+#' @param return_plot         whether to return individual ggplot objects as a list
+#' @param save_plot           whether to save the ggplot objects
+#' @param plot_filename       name of the saved plot file
+#' @param save_as             one of "pdf" or "png" [default = "pdf]
+#' @param nrow                number of rows per page for saving
+#' @param ncol                number of columns per page for saving
+#' @param excel_report        whether to output a full excel recap with well infos and plate plots
+#' @param excel_filename      name of the saved excel recap file
+#' @param ...                 arguments to pass to plotPlate()
+#'
+#' @return a list of ggplot object
+#'
+#' @import dplyr
+#' @import tibble
+#' @import purrr
+#'
+#' @export
+
+plotPlateRecap <- function(db,
+                            well_id = "well_id",
+                            split.by = NULL,
+                            return_plot = FALSE,
+                            save_plot = TRUE,
+                            nrow = 2,
+                            ncol = 2,
+                            plot_filename = "multi_page_plate_plot",
+                            save_as = c("pdf", "png"),
+                            excel_report = FALSE,
+                            excel_filename = "recap",
+                            ...){
+                       
+  #order properly based on well_id (A1, A2,...A10, A11,...)
+  grouped <- db %>%
+    dplyr::mutate(
+      col = gsub("[0-9]", "", !!rlang::sym(well_id)),
+      row = as.integer(gsub("[A-Z]", "", !!rlang::sym(well_id)))
+    ) %>%
+    dplyr::arrange(!!!rlang::syms(split.by), factor(col, levels = LETTERS[1:16]), row) %>%
+    dplyr::select(-col, -row) %>%
+    dplyr::group_by(!!!rlang::syms(split.by)) 
+  
+  split_data <- grouped %>%
+    dplyr::group_split(.keep = TRUE)
+  
+  group_names <- grouped %>%
+    dplyr::group_keys() %>%
+    tidyr::unite("group_label", everything(), sep = "_") %>%
+    dplyr::pull(group_label)
+  
+  names(split_data) <- group_names
+  
+  plot.list <- purrr::imap(split_data,
+                           ~ plotPlate(.x, highlighted_wells = well_id, main_title = .y, ...))
+  
+  if(save_plot){
+    if (requireNamespace("patchwork", quietly = TRUE)) {
+      chunked_plots <- split(plot.list, ceiling(seq_along(plot.list) / (nrow * ncol)))
+      
+      save_as <- match.arg(save_as)
+      if (save_as == "pdf") {
+        pdf(paste0(plot_filename, ".pdf"), width = 11.7, height = 8.3)  # A4 landscape
+        purrr::walk(chunked_plots, function(plot_page) {
+          combined <- patchwork::wrap_plots(plot_page, nrow = nrow, ncol = ncol)
+          print(combined)
+        })
+        dev.off()
+      }
+      if (save_as == "png") {
+        png(paste0(plot_filename, ".png"), width = 11.7, height = 8.3)  # A4 landscape
+        purrr::walk(chunked_plots, function(plot_page) {
+          combined <- patchwork::wrap_plots(plot_page, nrow = nrow, ncol = ncol)
+          print(combined)
+        })
+        dev.off()
+      }
+      
+    } else {
+      message("Optional: 'patchwork' not installed — skipping saving plot.")
+      }
+  }
+  
+  if(excel_report){
+    if (requireNamespace("openxlsx", quietly = TRUE)) {
+      wb <- openxlsx::createWorkbook()
+      temp_dir <- tempdir()  # save png plot to temp folder
+      s <- purrr::imap(plot.list, function(p, plate_name) {
+        # Save the plot to a PNG file
+        plot_file <- file.path(temp_dir, paste0(plate_name, ".png"))
+        ggsave(plot_file, p, width = 6, height = 4, dpi = 300)
+        
+        # Add a worksheet and insert image
+        openxlsx::addWorksheet(wb, plate_name)
+        openxlsx::insertImage(wb, sheet = plate_name, file = plot_file, width = 6, height = 4, startRow = 1, startCol = 1)
+        
+        # Optionally also write the data for that plate
+        df <- split_data[[plate_name]]
+        openxlsx::writeData(wb, sheet = plate_name, x = df, startRow = 20, startCol = 1)
+      })
+      openxlsx::saveWorkbook(wb, file = paste0(excel_filename, ".xlsx"), overwrite = TRUE)
+    } else {
+      message("Optional: 'openxlsx' not installed — skipping excel recap.")
+    }
+  }
+  
+  if(return_plot) {
+    return(plot.list)
+  }
+}
 
 
+#### Function to create consolidated plate(s) based on selected well-ids from a list of plates ####
+#'
+#' \code{consolidatePlates} create consolidated plate(s)
+#' @param db                  a data frame containing at least a column with well_ids.
+#' @param well_id             name of column containing well_id informations.
+#' @param split.by            name of column(s) to use to split the dataset in individual plates.
+#' @param plate_type          type of plate to plot, should be one of "96w" or "384w" [default = "96w"]
+#' @param fill.by             whether to fill the consolidated plate(s) by row (A1 -> A12 then B1 -> B12...) or by column (A1 -> H1 then A2 -> H2...) [default = "row"]
+#' @param empty_wells         vector of well-ids to keep as empty wells in the final plate(s) [Eurofins expects "H12" wells to be empty for example]
+#' @param return_plot         whether to return individual ggplot objects as a list
+#' @param save_plot           whether to save the ggplot objects
+#' @param nrow                number of rows per page for saving
+#' @param ncol                number of columns per page for saving
+#' @param plot_filename       name of the saved plot file
+#' @param save_as             one of "pdf" or "png" [default = "pdf]
+#' @param excel_report        whether to output a full excel recap with well infos and plate plots
+#' @param excel_filename      name of the saved excel recap file
+#' @param ...                 arguments to pass to plotPlate()
+#'
+#' @return new template(s) colored and labelled based on plate and well of origin respectively and a full excel report with all info from well of origin.
+#'
+#' @import dplyr
+#' @import tibble
+#' @import purrr
+#'
+#' @export
 
-
-
+consolidatePlates <- function(db,
+                              well_id = "well_id",
+                              split.by = NULL,
+                              plate_type = c("96w", "384w"),
+                              fill.by = c("row", "col"),
+                              empty_wells = NULL,
+                              return_plot = FALSE,
+                              save_plot = TRUE,
+                              nrow = 2,
+                              ncol = 2,
+                              plot_filename = "multi_page_plate_plot",
+                              save_as = c("pdf", "png"),
+                              excel_report = FALSE,
+                              excel_filename = "recap",
+                              ...){
+  
+  plate_type <- match.arg(plate_type)
+  fill.by <- match.arg(fill.by)
+  
+  plate_format <- list("96w" = c(8, 12), "384w" = c(16, 24))
+  if(is.null(well_size)){
+    well_size <- list("96w" = 8, "384w" = 4)
+    well_size <- well_size[[plate_type]]
+  }
+  rows <- LETTERS[1:plate_format[[plate_type]][1]]
+  cols <- 1:plate_format[[plate_type]][2]
+  
+  if(fill.by == "row"){
+    new_plate_wells <- new_plate_wells <- expand.grid(row = rows, col = cols) %>%
+      dplyr::arrange(row, col) %>%
+      dplyr::mutate(well = paste0(row, col)) %>%
+      dplyr::pull(well)
+  }
+  if(fill.by == "col"){
+    new_plate_wells <- as.vector(outer(rows, cols, paste0))
+  }
+  new_plate_wells <- new_plate_wells[!new_plate_wells %in% empty_wells] 
+  
+  db <- db %>%
+    dplyr::mutate(
+      col = gsub("[0-9]", "", !!rlang::sym(well_id)),
+      row = as.integer(gsub("[A-Z]", "", !!rlang::sym(well_id)))
+    ) %>%
+    dplyr::arrange(sort_id, plate_id, factor(col, levels = LETTERS[1:16]), row) 
+  
+  if(!is.null(split.by)){
+    db <- db %>%
+      dplyr::mutate(group_label = paste(!!!rlang::syms(split.by), sep = "_"))
+  } else {
+    db$group_label <- "original_plate"
+  }
+  
+  n <- nrow(db)
+  db_recap <- db %>%
+    dplyr::mutate(
+      new_plate_num = ceiling(row_number() / (96-length(empty_wells))),
+      new_well_id = rep(new_plate_wells, length.out = n)
+    ) %>%
+    dplyr::select(-col, -row, new_plate_num, new_well_id, everything())
+  
+  group_colors <- scales::hue_pal()(length(unique(db$group_label)))
+  names(group_colors) <- sample(unique(db$group_label)) #using here sample() to randomise the color order on the plate for better visualisation
+  
+  # Split data by new_plate_num
+  split_plates <- split(db_recap, db_recap$new_plate_num)
+  
+  # Generate one plot per new plate
+  new_plate_plots <- purrr::imap(split_plates, function(df, plate_num) {
+    plotPlate(df,
+              highlighted_wells = "new_well_id",
+              color.by = "group_label",
+              fill_colors = group_colors,
+              labels = "well_id",
+              legend_title = "plate of origin",
+              main_title = paste("LC_sequencing_plate", plate_num)
+    )
+  })
+  
+  if(save_plot){
+    if (requireNamespace("patchwork", quietly = TRUE)) {
+      chunked_plots <- split(new_plate_plots, ceiling(seq_along(plot.list) / (nrow * ncol)))
+      
+      save_as <- match.arg(save_as)
+      if (save_as == "pdf") {
+        pdf(paste0(plot_filename, ".pdf"), width = 11.7, height = 8.3)  # A4 landscape
+        purrr::walk(chunked_plots, function(plot_page) {
+          combined <- patchwork::wrap_plots(plot_page, nrow = nrow, ncol = ncol)
+          print(combined)
+        })
+        dev.off()
+      }
+      if (save_as == "png") {
+        png(paste0(plot_filename, ".png"), width = 11.7, height = 8.3)  # A4 landscape
+        purrr::walk(chunked_plots, function(plot_page) {
+          combined <- patchwork::wrap_plots(plot_page, nrow = nrow, ncol = ncol)
+          print(combined)
+        })
+        dev.off()
+      }
+    } else {
+      message("Optional: 'patchwork' not installed — skipping saving plot.")
+    }
+  }
+  
+  if(excel_report){
+    if (requireNamespace("openxlsx", quietly = TRUE)) {
+      wb <- openxlsx::createWorkbook()
+      temp_dir <- tempdir()  # save png plot to temp folder
+      s <- purrr::imap(new_plate_plots, function(p, plate_num) {
+        # Save the plot to a PNG file
+        plot_file <- file.path(temp_dir, paste0("plate_", plate_num, ".png"))
+        ggsave(plot_file, p, width = 6, height = 4, dpi = 300)
+        
+        # Add a worksheet and insert image
+        sheet_name <- paste0("Plate_", plate_num)
+        openxlsx::addWorksheet(wb, sheet_name)
+        openxlsx::insertImage(wb, sheet = sheet_name, file = plot_file, width = 6, height = 4, startRow = 1, startCol = 1)
+        
+        # Optionally also write the data for that plate
+        df <- split_plates[[as.character(plate_num)]]
+        openxlsx::writeData(wb, sheet = sheet_name, x = df, startRow = 20, startCol = 1)
+      })
+      openxlsx::addWorksheet(wb, "Recap Table")
+      openxlsx::writeData(wb, sheet = "Recap Table", x = db_recap)
+      openxlsx::saveWorkbook(wb, file = paste0(excel_filename, ".xlsx"), overwrite = TRUE)
+    } else {
+      message("Optional: 'openxlsx' not installed — skipping excel recap.")
+    }
+  }
+  
+  if(return_plot) {
+    return(new_plate_plots)
+  }
+}
