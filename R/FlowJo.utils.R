@@ -261,7 +261,7 @@ plotPlate <- function(db = NULL,
                       fixed_size = TRUE,
                       panel_width = NULL,
                       panel_height = NULL,
-                      return_plot = TRUE) {
+                      return_plot = FALSE) {
                             
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("Optional: 'ggplot2' not installed — skipping plot.")
@@ -296,8 +296,19 @@ plotPlate <- function(db = NULL,
       return(invisible(NULL))
     }
     if(!highlighted_wells == "well_id"){
+      if("well_id" %in% colnames(db)){
+        db <- db %>%
+          dplyr::mutate(
+            original_well_id = well_id
+          )
+        if(!is.null(labels) && labels == "well_id") {
+          labels == "original_well_id"
+        }
+      }
       db <- db %>%
-        dplyr::mutate(well_id = !!rlang::sym(highlighted_wells))
+        dplyr::mutate(
+          well_id = !!rlang::sym(highlighted_wells)
+          )
     }
     if(is.null(labels)){
       labels <- "well_id"
@@ -332,7 +343,7 @@ plotPlate <- function(db = NULL,
   # Add info for wells to highlight:
   plate <- plate %>%
     left_join(
-      dplyr::select(db, any_of(c("well_id", "label", color.by))),
+      db,
       by = "well_id"
     )
   
@@ -451,17 +462,35 @@ plotPlateRecap <- function(db,
                             excel_filename = "recap",
                             ...){
                        
-  #order properly based on well_id (A1, A2,...A10, A11,...)
+  #define well_id column
+  if(!well_id == "well_id"){
+    if("well_id" %in% colnames(db)){
+      db <- db %>%
+        dplyr::mutate(
+          original_well_id = well_id,
+          well_id = !!rlang::sym(well_id)
+        )
+      if("well_id" %in% split.by){
+        split.by <- c(split.by[!split.by == "well_id"], "original_well_id")
+      }
+    } else {
+      db <- db %>%
+        dplyr::mutate(
+          well_id = !!rlang::sym(well_id)
+        )
+    }
+  }
+  #order properly based on well_id (A1, A2,...A10, A11,...) and group wells according to split.by argument (allowing for multiple plates)
   grouped <- db %>%
     dplyr::mutate(
-      col = gsub("[0-9]", "", !!rlang::sym(well_id)),
-      row = as.integer(gsub("[A-Z]", "", !!rlang::sym(well_id)))
+      col = gsub("[0-9]", "", well_id),
+      row = as.integer(gsub("[A-Z]", "", well_id))
     ) %>%
     dplyr::arrange(!!!rlang::syms(split.by), factor(col, levels = LETTERS[1:16]), row) %>%
     dplyr::select(-col, -row) %>%
     dplyr::group_by(!!!rlang::syms(split.by)) 
   
-  split_data <- grouped %>%
+  split_plates <- grouped %>%
     dplyr::group_split(.keep = TRUE)
   
   group_names <- grouped %>%
@@ -469,10 +498,20 @@ plotPlateRecap <- function(db,
     tidyr::unite("group_label", everything(), sep = "_") %>%
     dplyr::pull(group_label)
   
-  names(split_data) <- group_names
+  names(split_plates) <- group_names
   
-  plot.list <- purrr::imap(split_data,
-                           ~ plotPlate(.x, highlighted_wells = well_id, main_title = .y, ...))
+  #plot.list <- purrr::imap(split_data,
+  #                         ~ plotPlate(.x, highlighted_wells = "well_id", main_title = .y, return_plot = TRUE, ...))
+  
+  plot.list <- purrr::imap(split_plates, function(df, plate_name) {
+    plotPlate(df,
+              highlighted_wells = "well_id",
+              labels = "well_id",
+              main_title = plate_name,
+              return_plot = TRUE,
+              ...
+    )
+  })
   
   if(save_plot){
     if (requireNamespace("patchwork", quietly = TRUE)) {
@@ -515,7 +554,7 @@ plotPlateRecap <- function(db,
         openxlsx::insertImage(wb, sheet = plate_name, file = plot_file, width = 6, height = 4, startRow = 1, startCol = 1)
         
         # Optionally also write the data for that plate
-        df <- split_data[[plate_name]]
+        df <- split_plates[[plate_name]]
         openxlsx::writeData(wb, sheet = plate_name, x = df, startRow = 20, startCol = 1)
       })
       openxlsx::saveWorkbook(wb, file = paste0(excel_filename, ".xlsx"), overwrite = TRUE)
@@ -577,10 +616,10 @@ consolidatePlates <- function(db,
   fill.by <- match.arg(fill.by)
   
   plate_format <- list("96w" = c(8, 12), "384w" = c(16, 24))
-  if(is.null(well_size)){
-    well_size <- list("96w" = 8, "384w" = 4)
-    well_size <- well_size[[plate_type]]
-  }
+  #if(is.null(well_size)){
+  #  well_size <- list("96w" = 8, "384w" = 4)
+  #  well_size <- well_size[[plate_type]]
+  #}
   rows <- LETTERS[1:plate_format[[plate_type]][1]]
   cols <- 1:plate_format[[plate_type]][2]
   
@@ -612,16 +651,18 @@ consolidatePlates <- function(db,
   n <- nrow(db)
   db_recap <- db %>%
     dplyr::mutate(
-      new_plate_num = ceiling(row_number() / (96-length(empty_wells))),
+      original_plate_id = plate_id,
+      original_well_id = well_id,
+      new_plate_id = paste0("P", ceiling(row_number() / (96-length(empty_wells)))),
       new_well_id = rep(new_plate_wells, length.out = n)
     ) %>%
-    dplyr::select(-col, -row, new_plate_num, new_well_id, everything())
+    dplyr::select(-col, -row, -well_id, -plate_id)
   
   group_colors <- scales::hue_pal()(length(unique(db$group_label)))
   names(group_colors) <- sample(unique(db$group_label)) #using here sample() to randomise the color order on the plate for better visualisation
   
   # Split data by new_plate_num
-  split_plates <- split(db_recap, db_recap$new_plate_num)
+  split_plates <- split(db_recap, db_recap$new_plate_id)
   
   # Generate one plot per new plate
   new_plate_plots <- purrr::imap(split_plates, function(df, plate_num) {
@@ -629,15 +670,17 @@ consolidatePlates <- function(db,
               highlighted_wells = "new_well_id",
               color.by = "group_label",
               fill_colors = group_colors,
-              labels = "well_id",
+              labels = "original_well_id",
               legend_title = "plate of origin",
-              main_title = paste("LC_sequencing_plate", plate_num)
+              main_title = paste0("LC_sequencing_", plate_num),
+              return_plot = TRUE,
+              ...
     )
   })
   
   if(save_plot){
     if (requireNamespace("patchwork", quietly = TRUE)) {
-      chunked_plots <- split(new_plate_plots, ceiling(seq_along(plot.list) / (nrow * ncol)))
+      chunked_plots <- split(new_plate_plots, ceiling(seq_along(new_plate_plots) / (nrow * ncol)))
       
       save_as <- match.arg(save_as)
       if (save_as == "pdf") {
@@ -667,11 +710,11 @@ consolidatePlates <- function(db,
       temp_dir <- tempdir()  # save png plot to temp folder
       s <- purrr::imap(new_plate_plots, function(p, plate_num) {
         # Save the plot to a PNG file
-        plot_file <- file.path(temp_dir, paste0("plate_", plate_num, ".png"))
+        plot_file <- file.path(temp_dir, paste0("LC_seq_", plate_num, ".png"))
         ggsave(plot_file, p, width = 6, height = 4, dpi = 300)
         
         # Add a worksheet and insert image
-        sheet_name <- paste0("Plate_", plate_num)
+        sheet_name <- paste0("LC_seq_", plate_num)
         openxlsx::addWorksheet(wb, sheet_name)
         openxlsx::insertImage(wb, sheet = sheet_name, file = plot_file, width = 6, height = 4, startRow = 1, startCol = 1)
         

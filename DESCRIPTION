@@ -54,6 +54,7 @@ Imports:
     tibble,
     tidyr
 Suggests:
+    egg,
     ggplot2 (>= 3.4.0),
     ggtree,
     ggforce,

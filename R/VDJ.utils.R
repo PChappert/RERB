@@ -403,15 +403,24 @@ Ab1toAIRR <- function(files,
         openxlsx::addWorksheet(OUT, "QC_failed")
         openxlsx::writeData(OUT, sheet = "QC_failed", x = QC_failed, colNames = TRUE, rowNames = FALSE)
         
-        VDJ_db <- VDJ_db %>%
-          dplyr::mutate(quality = "productive")
-        VDJ_db_nonprod <- VDJ_db_nonprod %>%
-          dplyr::mutate(quality = "non productive")
-        failed_VDJ_db <- failed_VDJ_db %>%
-          dplyr::mutate(quality = "failed igblast")
-        QC_failed <- QC_failed %>%
-          dplyr::mutate(quality = "failed initial QC")
+        if(!is.null(VDJ_db)){
+          VDJ_db <- VDJ_db %>%
+            dplyr::mutate(quality = "productive")
+        }
         
+        if(!is.null(VDJ_db_nonprod)){
+          VDJ_db_nonprod <- VDJ_db_nonprod %>%
+            dplyr::mutate(quality = "non productive")
+        }
+          
+        if(!is.null(failed_VDJ_db)){
+          failed_VDJ_db <- failed_VDJ_db %>%
+            dplyr::mutate(quality = "failed igblast")
+        }
+        if(!is.null(QC_failed)){
+          QC_failed <- QC_failed %>%
+            dplyr::mutate(quality = "failed initial QC")
+        }
         
         full_db <- dplyr::bind_rows(list(VDJ_db, VDJ_db_nonprod, failed_VDJ_db, QC_failed))
         
