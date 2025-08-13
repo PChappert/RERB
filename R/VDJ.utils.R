@@ -429,26 +429,29 @@ Ab1toAIRR <- function(files,
         plate_by_primer <- plotPlate(full_db,
                                      highlighted_wells = "alternate_well_id",
                                      color.by = "primers",
-                                     plot_labels = FALSE)
+                                     plot_labels = FALSE,
+                                     return_plot = TRUE)
         
         plot_file1 <- file.path(temp_dir, "plate_by_primer.png")
         ggsave(plot_file1, plate_by_primer, width = 6, height = 4, dpi = 300)
         openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file1, width = 6, height = 4, startRow = 1, startCol = 1)
         
         plate_by_quality <- plotPlate(full_db,
-                                     highlighted_wells = "alternate_well_id",
-                                     color.by = "quality",
-                                     fill_colors = c("productive" = "#7CAE00", "non productive" = "#00BFC4", "failed igblast" = "#C77CFF", "failed initial QC" = "#F8766D"),
-                                     plot_labels = FALSE)
+                                      highlighted_wells = "alternate_well_id",
+                                      color.by = "quality",
+                                      fill_colors = c("productive" = "#7CAE00", "non productive" = "#00BFC4", "failed igblast" = "#C77CFF", "failed initial QC" = "#F8766D"),
+                                      plot_labels = FALSE,
+                                      return_plot = TRUE)
         
         plot_file2 <- file.path(temp_dir, "plate_by_quality.png")
         ggsave(plot_file2, plate_by_quality, width = 6.6, height = 4, dpi = 300)
         openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file2, width = 6.6, height = 4, startRow = 20, startCol = 1)
         
         plate_by_c_call <- plotPlate(VDJ_db,
-                                      highlighted_wells = "alternate_well_id",
-                                      color.by = "c_call",
-                                      plot_labels = FALSE)
+                                     highlighted_wells = "alternate_well_id",
+                                     color.by = "c_call",
+                                     plot_labels = FALSE,
+                                     return_plot = TRUE)
         
         plot_file3 <- file.path(temp_dir, "plate_by_c_call.png")
         ggsave(plot_file3, plate_by_c_call, width = 6, height = 4, dpi = 300)
