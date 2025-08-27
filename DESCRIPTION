@@ -82,7 +82,9 @@ Suggests:
     rmarkdown,
     sangerseqR,
     testthat,
-    pwalign
+    pwalign,
+    Seurat,
+    SeuratObject
 RoxygenNote: 7.3.2
 Collate:
     'VDJ.utils.R'
