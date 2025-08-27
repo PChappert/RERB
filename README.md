@@ -88,6 +88,7 @@ VDJ_db <- scImportVDJ(seurat = meta_BD,
 ```
 
 You can also import additional plate-based Sanger sequencing data using **ImportSangerVDJ()** (data should be in an AIRR format, use the Ab1toAIRR pipeline for that). As for **scImportVDJ()**, the main argument is sanger_files (a dataframe with the following columns:"sample_id" and "full_path" or "directory"+"filename_vdj"). You can use the associated excel templates.
+Of note, scImportVDJ expects cell_ids in the following format: "sample_id"_"10X_barcode/BD_cell_id", with "sample_id" as defined in the recap_scVDJ_BD table.
 
 ``` r
 recap_scSanger <- openxlsx::read.xlsx("scTemplate_BDRhapsody_v1.0.xlsx", sheet="scSangerBCR-seq", rowNames = FALSE)                     
@@ -121,7 +122,7 @@ cloned_VDJ_db <- flagVDJdoublets(cloned_VDJ_db, analysis_name = analysis_name_BD
 Finally, you can import all VDJ metadata into your seurat object:
 
 ``` r
-seurat <- addAIRRmetadata(seurat, cloned_VDJ_db, type = "BCR", split.by = "donor_id")
+seurat <- addAIRRmetadata(seurat, cloned_VDJ_db, seq_type = "Ig", split.by = "donor_id")
 ```
 
 Of note, the **split.by** argument is used here to calculate the size and frequencies of clones at the sample level (donor level here), likely different from the cartridge/library level used in prior steps.
