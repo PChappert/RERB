@@ -2070,11 +2070,11 @@ homotypicVDJdoublets <- function(db,
 #' @param high_cutoff   cut_off for high probability heavy chain doublets (only used if variable_cutoff = FALSE).
 #' @param output        whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. Can be set to none, partial (only pdf + log file with QC parameters) or total (pdf + log file with QC parameters + tsv file with sequences).
 #' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
-#' @param ref           which ref was used for mapping of scRNA-seq dataset: one of "azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref" [default azimuth datasets as of June 2025] [TODO: add gut dataset?]; 
-#'                      to add you own clustering info call it 'clusters' and provide the column ref in ref.column = list("clusters"= "column name") and corresponding B or T cell clusters: ref.Bcelltypes = list("clusters" = c("C1", "C3"...))...
-#' @param ref.column which output column from azimuth should be used [default values as of June 2025]
-#' @param ref.Bcelltypes which clusters in the azimuth output correspond to B/PC cells populations likely to carry a BCR [default values as of June 2025].
-#' @param ref.Tcelltypes which clusters in the azimuth output correspond to T cells populations likely to carry a TCR [default values as of June 2025].
+#' @param ref           which ref was used for mapping of scRNA-seq dataset: one of "azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref" [default azimuth datasets as of June 2025] or "internal", if using your own clustering information [TODO: add gut dataset?]; 
+#'                      to add you own clustering info, set ref = "internal", provide the clustering column name in ref.column and corresponding B or T cell clusters in ref.Bcelltypes = c("C1", "C3"...) or ref.Tcelltypes = c("C4", "C5"...)...
+#' @param ref.column    which output column to use for cluster information [default azimuth values provided as of June 2025]
+#' @param ref.Bcelltypes which clusters in the azimuth output correspond to B/PC cells populations likely to carry a BCR [default values provided as of June 2025].
+#' @param ref.Tcelltypes which clusters in the azimuth output correspond to T cells populations likely to carry a TCR [default values provided as of June 2025].
 #' @param cell_id       name of the column containing cell identifier.
 #' @param umi_count     name of the column containing the number of unique molecules (UMI) for this contig. Previously called "duplicate_count" in an earlier AIRR standard
 #' @param save_plot     format to save the final ggplot2 object. "pdf" or "png". if set to any other value, no plot will be saved.
@@ -2112,23 +2112,16 @@ heterotypicVDJdoublets <- function(db,
                                    variable_cutoff =TRUE,
                                    low_cutoff = 10,
                                    high_cutoff = 250,
-                                   ref = c("azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref"),
-                                   ref.column = list("azimuth.pbmcref" = "predicted.celltype.l2", 
-                                                     "azimuth.tonsilref" = "predicted.cell_type.l1", 
-                                                     "azimuth.bonemarrowref" = "predicted.celltype.l2"),
-                                   ref.Bcelltypes = list("azimuth.pbmcref" = c("B intermediate", "B memory", "B naive", "Plasmablast"),
-                                                         "azimuth.tonsilref" = c("B activated", "B memory", "B naive", "preGCB", "PB", "PC", "PC/doublet", "preMBC/doublet", "prePB", "Cycling DZ GCB","DZ GCB","DZtoLZ GCB transition","FCRL4/5+ B memory","LZ GCB","LZtoDZ GCB transition"),
-                                                         "azimuth.bonemarrowref" = c("Memory B", "Naive B", "Plasma", "pro B", "pre B", "transitional B")),
-                                   ref.Tcelltypes = list("azimuth.pbmcref" = c("CD4 CTL", "CD4 Naive", "CD4 Proliferating", "CD4 TCM", "CD4 TEM", "Treg", "CD8 Naive", "CD8 Proliferating", "CD8 TCM", "CD8 TEM", "dnT", "gdT", "MAIT"),
-                                                         "azimuth.tonsilref" = c("CD4 naive", "CD4 Non-TFH", "CD4 TCM", "CD4 TFH", "CD4 TFH Mem", "CD4 TREG", "CD8 naive", "CD8 T", "CD8 TCM", "Cycling T","dnT","MAIT/TRDV2+ gdT","non-TRDV2+ gdT"),
-                                                         "azimuth.bonemarrowref" = c("CD4 Effector", "CD4 Memory", "CD4 Naive", "CD8 Effector 1", "CD8 Effector 2", "CD8 Effector 3", "CD8 Memory", "CD8 Naive", "MAIT", "T proliferating")),
+                                   ref = NULL,
+                                   ref.column = NULL,
+                                   ref.Bcelltypes = NULL,
+                                   ref.Tcelltypes = NULL,
                                    cell_id = "cell_id", 
                                    umi_count = "umi_count", 
                                    save_plot = c("pdf", "png"),
                                    verbose = TRUE){
                              
   seq_type <- match.arg(seq_type)
-  cell_type <- ifelse(seq_type == "Ig", "B", "T")
   
   if(is.null(heavy)){
     if(seq_type == "Ig"){
@@ -2147,26 +2140,56 @@ heterotypicVDJdoublets <- function(db,
     }
   }
   
-  ref <- match.arg(ref)
+  #ref <- match.arg(ref)
+  #ref.column <- match.arg(ref.column)
+  
+  if(!is.null(ref)){
+    if(ref %in% c("azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref")){
+      if(verbose){cat("using the following reference: ", ref, "\n")}
+      if(is.null(ref.column)){
+        ref.column <- list("azimuth.pbmcref" = "predicted.celltype.l2", 
+                           "azimuth.tonsilref" = "predicted.celltype.l1", 
+                           "azimuth.bonemarrowref" = "predicted.celltype.l2")
+        ref.column <- ref.column[[ref]]
+      } 
+      
+      if(is.null(ref.Bcelltypes)){
+        ref.Bcelltypes <- list("azimuth.pbmcref" = c("B intermediate", "B memory", "B naive", "Plasmablast"),
+                               "azimuth.tonsilref" = c("B activated", "B memory", "B naive", "preGCB", "PB", "PC", "PC/doublet", "preMBC/doublet", "prePB", "Cycling DZ GCB","DZ GCB","DZtoLZ GCB transition","FCRL4/5+ B memory","LZ GCB","LZtoDZ GCB transition"),
+                               "azimuth.bonemarrowref" = c("Memory B", "Naive B", "Plasma", "pro B", "pre B", "transitional B"))
+        ref.Bcelltypes <- ref.Bcelltypes[[ref]]
+      }
+      if(is.null(ref.Tcelltypes)){
+        ref.Tcelltypes <- list("azimuth.pbmcref" = c("CD4 CTL", "CD4 Naive", "CD4 Proliferating", "CD4 TCM", "CD4 TEM", "Treg", "CD8 Naive", "CD8 Proliferating", "CD8 TCM", "CD8 TEM", "dnT", "gdT", "MAIT"),
+                               "azimuth.tonsilref" = c("CD4 naive", "CD4 Non-TFH", "CD4 TCM", "CD4 TFH", "CD4 TFH Mem", "CD4 TREG", "CD8 naive", "CD8 T", "CD8 TCM", "Cycling T","dnT","MAIT/TRDV2+ gdT","non-TRDV2+ gdT"),
+                               "azimuth.bonemarrowref" = c("CD4 Effector", "CD4 Memory", "CD4 Naive", "CD8 Effector 1", "CD8 Effector 2", "CD8 Effector 3", "CD8 Memory", "CD8 Naive", "MAIT", "T proliferating"))
+        ref.Tcelltypes <- ref.Tcelltypes[[ref]]
+      }
+    } else {
+      warning("Provided ref (",ref, ") is not one of azimuth.pbmcref, azimuth.tonsilref, azimuth.bonemarrowref. If using your own internal ref, leave ref = NULL (default) and just provide appropriate ref.column and ref.Bcelltypes or ref.Tcelltypes arguments depending on seq_type.")
+    }
+  }
+  
+  if(verbose){cat("using the following reference column: ", ref.column, "\n")}
+  if(!ref.column %in% colnames(db)){
+    stop("no clear reference column selected, missing ", ref.column," in provided data frame")
+  }
+  
+  cell_type <- ifelse(seq_type == "Ig", "B", "T")
   
   if (seq_type == "Ig"){
-    if(length(ref)!=1 | !(ref %in% names(ref.Bcelltypes)) | !(ref %in% names(ref.column))){
-      stop("no clear reference selected, for now you need to select one of azimuth.pbmcref, azimuth.tonsilref or azimuth.bonemarrowref or import new B cell clusters names associated with you reference using the ref, ref.column and ref.Bcelltypes arguments.")
+    if(is.null(ref.Bcelltypes) | !any(ref.Bcelltypes %in% levels(as.factor(db[[ref.column]])))){
+      stop("no clear reference selected, you need to select one of azimuth.pbmcref, azimuth.tonsilref or azimuth.bonemarrowref or provide all infos using the ref.column and ref.Bcelltypes arguments.")
     }
-    if(!ref.column[[ref]] %in% colnames(db)){
-      stop("no clear reference column selected, missing ", ref.column[[ref]]," in provided data frame")
-    }
-    VDJ_celltypes <- ref.Bcelltypes[[ref]]
+    VDJ_celltypes <- ref.Bcelltypes
   } 
   if (seq_type == "TCR"){
-    if(length(ref)!=1 | !(ref %in% names(ref.Tcelltypes)) | !(ref %in% names(ref.column))){
-      stop("no clear reference selected, for now you need to select one of azimuth.pbmcref, azimuth.tonsilref or azimuth.bonemarrowref or import new B cell clusters names associated with you reference using the ref, ref.column and ref.Bcelltypes arguments.")
+    if(is.null(ref.Tcelltypes) | !any(ref.Tcelltypes %in% levels(as.factor(db[[ref.column]])))){
+      stop("no clear reference selected, you need to select one of azimuth.pbmcref, azimuth.tonsilref or azimuth.bonemarrowref or provide all infos using the ref.column and ref.Tcelltypes arguments.")
     }
-    if(!ref.column[[ref]] %in% colnames(db)){
-      stop("no clear reference column selected, missing ", ref.column[[ref]]," in provided data frame")
-    }
-    VDJ_celltypes <- ref.Tcelltypes[[ref]]
+    VDJ_celltypes <- ref.Tcelltypes
   }
+  if(verbose){cat("using the following cluster as ", cell_type," clusters: ", paste(VDJ_celltypes, collapse = ", "), "\n")}
   
   # define chains to be used:
   use_chains <- match.arg(use_chains)
@@ -2255,7 +2278,7 @@ heterotypicVDJdoublets <- function(db,
 
   # look for non-B cells identified by azimuth and check whether the level of contig umi_count make them likely to be a true doublet:
   non_VDJcelltype_db <- flagged_db %>%
-    dplyr::filter(!(!!rlang::sym(ref.column[[ref]]) %in% VDJ_celltypes)) 
+    dplyr::filter(!(!!rlang::sym(ref.column) %in% VDJ_celltypes)) 
   
   non_VDJcelltype_db <- non_VDJcelltype_db %>%
     dplyr::select(!!rlang::sym(cell_id), locus_simplified, !!rlang::sym(umi_count), upper_cutoff, lower_cutoff, !!rlang::sym(split.by)) %>%
@@ -2304,7 +2327,7 @@ heterotypicVDJdoublets <- function(db,
   }
   
   VDJcelltype_db <- flagged_db %>%
-    dplyr::filter(!!rlang::sym(ref.column[[ref]]) %in% VDJ_celltypes) 
+    dplyr::filter(!!rlang::sym(ref.column) %in% VDJ_celltypes) 
   
   VDJcelltype_db <- VDJcelltype_db %>%
     dplyr::select(!!rlang::sym(cell_id), locus_simplified, !!rlang::sym(umi_count), upper_cutoff, lower_cutoff, !!rlang::sym(split.by)) %>%
@@ -2347,7 +2370,7 @@ heterotypicVDJdoublets <- function(db,
       dplyr::filter(!!rlang::sym(split.by) == group, !!rlang::sym(locus) %in% heavy)
     cells_in_group <- nrow(group_db)
     non_VDJ_group_db <- group_db %>%
-      dplyr::filter(!(!!rlang::sym(ref.column[[ref]]) %in% VDJ_celltypes))
+      dplyr::filter(!(!!rlang::sym(ref.column) %in% VDJ_celltypes))
     non_VDJ_cell_in_group <- nrow(non_VDJ_group_db)
     high_doublets <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "high"))
     low_doublets <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "low"))
@@ -2399,9 +2422,14 @@ heterotypicVDJdoublets <- function(db,
 #' @param output        whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. Can be set to none, partial (only pdf + log file with QC parameters) or total (pdf + log file with QC parameters + tsv file with sequences).
 #' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
 #' @param split.by      which column to use to group cells when learning dataset-specific distributions
+#' @param ref           which ref was used for mapping of scRNA-seq dataset: one of "azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref" [default azimuth datasets as of June 2025] or "internal", if using your own clustering information [TODO: add gut dataset?]; 
+#'                      to add you own clustering info, set ref = "internal", provide the clustering column name in ref.column and corresponding B or T cell clusters in ref.Bcelltypes = c("C1", "C3"...) or ref.Tcelltypes = c("C4", "C5"...)...
+#' @param ref.column    which output column to use for cluster information [default azimuth values provided as of June 2025]
+#' @param ref.Bcelltypes which clusters in the azimuth output correspond to B/PC cells populations likely to carry a BCR [default values provided as of June 2025].
+#' @param ref.Tcelltypes which clusters in the azimuth output correspond to T cells populations likely to carry a TCR [default values provided as of June 2025].
 #' @param save_plot     format to save the final ggplot2 object. "pdf" or "png". if set to any other value, no plot will be saved.
 #' @param verbose       whether to print recap informations to the console
-#' @param ...           arguments to pass to homotypicVDJdoublets or heterotypicVDJdoublets.
+#' @param ...           arguments to pass to homotypicVDJdoublets and heterotypicVDJdoublets.
 #'
 #' @export
 
@@ -2415,16 +2443,10 @@ flagVDJdoublets <- function(db,
                             output = TRUE,
                             output_folder = "VDJ_QC",
                             split.by = NULL,
-                            ref = c("azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref"),
-                            ref.column = list("azimuth.pbmcref" = "predicted.celltype.l2", 
-                                              "azimuth.tonsilref" = "predicted.cell_type.l1", 
-                                              "azimuth.bonemarrowref" = "predicted.celltype.l2"),
-                            ref.Bcelltypes = list("azimuth.pbmcref" = c("B intermediate", "B memory", "B naive", "Plasmablast"),
-                                                  "azimuth.tonsilref" = c("B activated", "B memory", "B naive", "preGCB", "PB", "PC", "PC/doublet", "preMBC/doublet", "prePB", "Cycling DZ GCB","DZ GCB","DZtoLZ GCB transition","FCRL4/5+ B memory","LZ GCB","LZtoDZ GCB transition"),
-                                                  "azimuth.bonemarrowref" = c("Memory B", "Naive B", "Plasma", "pro B", "pre B", "transitional B")),
-                            ref.Tcelltypes = list("azimuth.pbmcref" = c("CD4 CTL", "CD4 Naive", "CD4 Proliferating", "CD4 TCM", "CD4 TEM", "Treg", "CD8 Naive", "CD8 Proliferating", "CD8 TCM", "CD8 TEM", "dnT", "gdT", "MAIT"),
-                                                  "azimuth.tonsilref" = c("CD4 naive", "CD4 Non-TFH", "CD4 TCM", "CD4 TFH", "CD4 TFH Mem", "CD4 TREG", "CD8 naive", "CD8 T", "CD8 TCM", "Cycling T","dnT","MAIT/TRDV2+ gdT","non-TRDV2+ gdT"),
-                                                  "azimuth.bonemarrowref" = c("CD4 Effector", "CD4 Memory", "CD4 Naive", "CD8 Effector 1", "CD8 Effector 2", "CD8 Effector 3", "CD8 Memory", "CD8 Naive", "MAIT", "T proliferating")),
+                            ref = NULL,
+                            ref.column = NULL,
+                            ref.Bcelltypes = NULL,
+                            ref.Tcelltypes = NULL,
                             save_plot = c("pdf", "png"),
                             save_tsv = TRUE,
                             verbose = TRUE,
@@ -2472,9 +2494,9 @@ flagVDJdoublets <- function(db,
                                  output = output,
                                  output_folder = output_folder,
                                  save_plot = save_plot,
-                                 verbose = verbose,
+                                 verbose = TRUE,
                                  ...)
-    }, verbose = FALSE, time = TRUE, log_file = log_file, log_title = "homotypic VDJ doublets", open_mode = open_mode)
+    }, verbose = verbose, time = TRUE, log_file = log_file, log_title = "homotypic VDJ doublets", open_mode = open_mode)
     open_mode = "a"
   }
 
@@ -2492,9 +2514,9 @@ flagVDJdoublets <- function(db,
                                    ref.column = ref.column,
                                    ref.Bcelltypes = ref.Bcelltypes, 
                                    ref.Tcelltypes = ref.Tcelltypes,
-                                   verbose = verbose,
+                                   verbose = TRUE,
                                    ...)
-    }, verbose = FALSE, time = TRUE, log_file = log_file, log_title = "heterotypic VDJ doublets", open_mode = open_mode)
+    }, verbose = verbose, time = TRUE, log_file = log_file, log_title = "heterotypic VDJ doublets", open_mode = open_mode)
   }
   
   time_and_log({
@@ -3606,11 +3628,14 @@ scImportVDJ <- function(vdj_files,
     #filter for cell_ids in the provided seurat object
     if(!is.null(meta)){
       cells_to_keep <- meta[[cell_id]]
+      example_VDJ_data_set_cell_ids <- data[[!!rlang::sym(cell_id)]][1:5]
       data <- dplyr::filter(data, (!!rlang::sym(cell_id) %in% cells_to_keep))
       if(nrow(data)==0){
-        warning(paste0(sample, " : no VDJ contigs corresponding to cell_ids present in the provided seurat object. Check cell_id format!"))
+        warning(paste0(sample, " : no VDJ contigs corresponding to cell_ids present in the provided seurat object. Check cell_id format! (see log for examples)\n"))
         time_and_log({
-          warning(paste0(sample, " : no VDJ contigs corresponding to cell_ids present in the provided seurat object. Check cell_id format!"))
+          warning(paste0(sample, " : no VDJ contigs corresponding to cell_ids present in the provided seurat object. Check cell_id format!\n",
+                         "current Seurat cell_id format: ", cells_to_keep[1:5], "\n",
+                         "current VDJ cell_id format: ", example_VDJ_data_set_cell_ids, "\n"))
         }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = paste0(sample, " contigs import"), open_mode = "a")
         }
     }
@@ -5160,7 +5185,11 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
                                          BCR = list(igheavy = "IGH", iglight = c("IGL", "IGK")))){
 
   #library(dplyr)
-
+  if (!requireNamespace("SeuratObject", quietly = TRUE)) {
+    message("'SeuratObject' not installed — required for addAIRRmetadata.")
+    return(invisible(NULL))
+  }
+  
   seq_type <- match.arg(seq_type)
   if(!seq_type %in% c("Ig", "TCR")){
     stop("type should be one of TCR or Ig")
@@ -5293,7 +5322,7 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
    dplyr::select(-all_of(seurat_columns))
 
  # import in seurat object:
- sc <- AddMetaData(sc, sc_vdj_db)
+ sc <- SeuratObject::AddMetaData(sc, sc_vdj_db)
  return(sc)
 }
 
