@@ -76,7 +76,7 @@ Ab1toAIRR.sh IgL png full_filepath_to_ABI.zip_file(1)/platename_SCF_SEQ_ABI(1).z
 
 2.  **additional info can be automatically added if a "platename_info.xlsx" is present in the same folder** as the "platename_SCF_SEQ_ABI.zip" file. The "platename_info.xlsx" file **must contain a "well_id" collumn** corresponding to the Eurofins sequencing wells (!!!). All other collumn present will be added to the final recap file. You can **use the updated "template_scSangerBCR_info_v1.3.xlsx" file**, key columns (like well_id) and colnames are protected to avoid issues (pwd=u1151, if needed), you can change all other columns and add as many as you want (see Readme inside the excel workbook).
 
-3.  **options for primers are : IgG, IgM, IgK, IgL and MixL (for mixed IgK/IgL plates)**; if no info is provided will default to IgG. Choosing the right primers adapts length cut-offs for QC.
+3.  **options for primers are : IgG, IgM, IgK, IgL and Mix (for mixed plates: lowest cutoffs are used for all sequences)**; if no info is provided will default to IgG. Choosing the right primers adapts length cut-offs for QC.
 
 4.  **options for primers are : none, png, html**; by default, will generate "png" QC plots. "html" is more interactive but size is around 25MB per file!
 

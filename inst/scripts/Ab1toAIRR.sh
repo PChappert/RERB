@@ -61,7 +61,7 @@ files <- $r_file_list
 Ab1toAIRR(files = files, primers = "$primers", save = "$save")
 EOF
 
-echo "running Ab1toAIRR through RERB - version 0.9.6"
+echo "running Ab1toAIRR through RERB - version 0.9.7-devel"
 
 # Run the R script and log stdout and stderr
 Rscript "$tmp_r_file" 
