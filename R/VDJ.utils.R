@@ -6,6 +6,9 @@
 #'
 #' @param files   a vector of full file paths to Ab1.zip files
 #' @param primers primers used (one of IgG, IgM, IgL, IgK or Mix)
+#' @param trim_cutoff cutoff thresholds to use [if set to NULL, default to automatic cutoffs for each primers: "IgG" = 300, "IgM" = 275, "IgK" = 400, "IgL"= 275, "Mix" = 275, "Undefined" = 275]
+#' @param QC  whether to run initial QC part
+#' @param update_info whether to only import new info from updated template.info.xlsx file(s); prior steps (QC and igblast) should have been runned before.
 #' @param igblast whether to run igblast
 #' @param igblast_dir location of the igblast database
 #' @param igblast_method whether to run runAssignGenes or runIgblastn
@@ -36,7 +39,7 @@
 
 Ab1toAIRR <- function(files,
                       primers = c("IgG", "IgM", "IgL", "IgK", "Mix"),
-                      trim_cutoff = list("IgG" = 300, "IgM" = 275, "IgK" = 400, "IgL"= 275, "Mix" = 275, "Undefined" = 275),
+                      trim_cutoff = NULL,
                       QC = TRUE,
                       igblast = TRUE,
                       seq_type = c("Ig", "TCR"),
@@ -160,7 +163,7 @@ Ab1toAIRR <- function(files,
       if(file.exists(filename_igblast_fail)){
         failed_VDJ_db <- readr::read_tsv(filename_igblast_fail, show_col_types = FALSE)
       } else {
-        if(verbose){cat("file: ",filename_igblast_fail, " not found")}
+        if(verbose){cat("file: ",filename_igblast_fail, " not found.\n")}
         failed_VDJ_db <- NULL
       }
       filename_fail <- paste0(outfolder, "/", outfilename, "_QC-fail.tsv")
@@ -283,11 +286,11 @@ Ab1toAIRR <- function(files,
         time_and_log({
           VDJ_db <- runBlastnC(VDJ_db,
                                igblast_dir = igblast_dir)
-        }, verbose = FALSE, log_file = log_file, open_mode = "a")
-        outfilename <- paste0(outfilename, "_c-call-pass")
-        if(!(SHM|full_seq_aa)){#we only save this file if no other analysis is performed
-          readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
-        }
+          outfilename <- paste0(outfilename, "_c-call-pass")
+          if(!(SHM|full_seq_aa)){#we only save this file if no other analysis is performed
+            readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
+          }
+        }, verbose = FALSE, log_file = log_file, log_title = "updating c_call", open_mode = "a")
       }
 
       # Step5: calculate mutation loads:
@@ -314,19 +317,24 @@ Ab1toAIRR <- function(files,
           VDJ_db <- observedMutations(VDJ_db, sequenceColumn= "sequence_alignment", germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=TRUE, nproc=nproc)
           VDJ_db <- observedMutations(VDJ_db, sequenceColumn= "sequence_alignment", germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=TRUE, combine=TRUE, nproc=nproc)
           
+          outfilename <- paste0(outfilename, "_germ-pass_shm-pass")
+          if(!full_seq_aa){#we only save this file if no other analysis is performed
+            readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
+          }
         }, verbose = FALSE, log_file = log_file, log_title = "adding germline alignments and observed mutations", open_mode = "a")
-        outfilename <- paste0(outfilename, "_germ-pass_shm-pass")
-        if(!full_seq_aa){#we only save this file if no other analysis is performed
-          readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
-        }
+        
       }
       # Step6: reconstruct full VDJ AA sequence:
       if(full_seq_aa){
         time_and_log({
-          VDJ_db <- reconstructFullVDJ(VDJ_db)
+          VDJ_db <- reconstructFullVDJ(VDJ_db,
+                                       seq_type = seq_type,
+                                       organism = organism,
+                                       igblast_dir = igblast_dir)
+          
+          outfilename <- paste0(outfilename, "_full-pass")
+          readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
         }, verbose = FALSE, log_file = log_file, log_title = "full VDJ reconstruction", open_mode = "a")
-        outfilename <- paste0(outfilename, "_full-pass")
-        readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
       }
 
       # Step7: add additional attributes:
@@ -372,22 +380,39 @@ Ab1toAIRR <- function(files,
         QC_flag_style <- openxlsx::createStyle(fgFill="bisque", fontColour = "red")
         cols <- which(colnames(VDJ_db)%in%colnames(VDJ_db))
         
-        if(!primers %in% c("IgG", "IgM", "IgK", "IgL", "Mix")){
-          message("incorrect primers provided, defaulting to Mix")
-          primers <- "Mix"
+        if(!"missing_v_bp" %in% colnames(VDJ_db)){
+          VDJ_db$missing_v_bp <- NA
+          for(i in seq_along(VDJ_db$sequence_id)){
+            ##heavy chain:
+            if(!is.na(VDJ_db$v_call[i])){
+              VDJ_db$missing_v_bp[i] <- gregexpr("G|C|A|T", VDJ_db$sequence_alignment[i])[[1]][1]-1
+              missing_V_seq <- substring(VDJ_db$germline_alignment[i], 1, VDJ_db$missing_v_bp[i])
+              remaining_gaps <- nchar(missing_V_seq) - nchar(gsub("\\.", "", missing_V_seq)) #expected due to introduced IMGT gaps starting at AA n°10 in IGHV and IGLV (but not IGKV)
+              VDJ_db$missing_v_bp[i] <- VDJ_db$missing_v_bp[i] - remaining_gaps
+            }
+          }
         }
-        v_sequence_end_cutoff <- c(270, 270, 270, 270, 270, 270)
-        names(v_sequence_end_cutoff) <- c("IgG", "IgM", "IgK", "IgL", "Mix")
         
-        length_cutoff <- c(350, 300, 400, 300, 300, 300)
-        names(v_sequence_end_cutoff) <- c("IgG", "IgM", "IgK", "IgL", "Mix")
-        
+        if(!"missing_j_bp" %in% colnames(VDJ_db)){
+          VDJ_db$missing_j_bp <- NA
+          for(i in seq_along(VDJ_db$sequence_id)){
+            ##heavy chain:
+            if(!is.na(VDJ_db$j_call[i])){
+              loci <- list("Ig" = "ig", "TCR" = "tr")
+              loci <- loci[[seq_type]]
+              igblast_dir <- ifelse(stringr::str_ends(igblast_dir,"/"), igblast_dir, paste0(igblast_dir, "/"))
+              IMGT_j <- Biostrings::readDNAStringSet(paste0(igblast_dir, "fasta/imgt_", organism, "_", loci, "_j.fasta"))
+              VDJ_db$missing_j_bp[i] <- length(IMGT_j[strsplit(VDJ_db$j_call[i], ",")[[1]][1]][[1]]) - VDJ_db$j_germline_end[i]
+            }
+          }
+        }
+                  
         OUT <- openxlsx::createWorkbook()
         openxlsx::addWorksheet(OUT, "productives")
         openxlsx::writeData(OUT, sheet = "productives", x = VDJ_db, colNames = TRUE, rowNames = FALSE)
-        length_issue <- which(VDJ_db$v_sequence_end<=v_sequence_end_cutoff[primers]|"missing too much bp in VH sequence" %in% VDJ_db$comments|VDJ_db$sequence_length < length_cutoff[primers])
+        length_issue <- which(VDJ_db$missing_v_bp > 30 | VDJ_db$missing_j_bp > 10)
         openxlsx::addStyle(OUT, sheet="productives", style=length_flag_style, rows=length_issue+1, cols=cols, gridExpand=TRUE) # "+1" for header line
-        low_QC <- which(VDJ_db$pct_under_30QC_in_trimmed>=10)
+        low_QC <- which(VDJ_db$pct_under_30QC_in_trimmed >= 10)
         openxlsx::addStyle(OUT, sheet="productives", style=QC_flag_style, rows=low_QC+1, cols=cols, gridExpand=TRUE) # "+1" for header line
         nb_prod <- nrow(VDJ_db)
         #!second style added will override the first
@@ -422,7 +447,10 @@ Ab1toAIRR <- function(files,
             dplyr::mutate(quality = "failed initial QC")
         }
         
-        full_db <- dplyr::bind_rows(list(VDJ_db, VDJ_db_nonprod, failed_VDJ_db, QC_failed))
+        full_db <- list(VDJ_db, VDJ_db_nonprod, failed_VDJ_db, QC_failed) %>%
+          purrr::discard(is.null) %>% #removing NULL element, in cases of no igblast or QC failed sequences
+          purrr::keep(~ nrow(.) > 0) %>% #removing empty tibble to away issues with Error in `dplyr::bind_rows()`:! Can't combine `..X$c_call` <double> (normal) and `..5$c_call` <character> (no values, i.e. NA).
+          dplyr::bind_rows()
         
         openxlsx::addWorksheet(OUT, "Recap_plots")
         temp_dir <- tempdir()  # save png plot to temp folder
@@ -524,7 +552,7 @@ Ab1toAIRR <- function(files,
 #' @param save        whether to save png or html plots
 #' @param reticulate_py_env if you want to force a precise python environment to use for plotly. [should be "~/Library/r-miniconda-arm64/envs/r-reticulate/bin/python" if following installation instructions on MACOS 10.15.4]
 #' @param primers     primers used for PCR
-#' @param trim_cutoff cutoff thresholds to use depending on primers
+#' @param trim_cutoff cutoff thresholds to use [if set to NULL, default to automatic cutoffs for each primers: "IgG" = 300, "IgM" = 275, "IgK" = 400, "IgL"= 275, "Mix" = 275, "Undefined" = 275]
 #' @param nproc   number of processors to use, if NULL, will be automatically set based on available processors.
 #'
 #' @keywords internal
@@ -541,7 +569,7 @@ runAb1QC <- function(Ab1_folder,
                      save = c("png", "html"),
                      reticulate_py_env = NULL,
                      primers = c("IgG", "IgM", "IgL", "IgK", "Mix"),
-                     trim_cutoff = list("IgG" = 300, "IgM" = 275, "IgK" = 400, "IgL"= 275, "Mix" = 275, "Undefined" = 275),
+                     trim_cutoff = NULL,
                      nproc = NULL){
 
   suppressMessages(library(sangeranalyseR))
@@ -779,14 +807,21 @@ runAb1QC <- function(Ab1_folder,
     seq_df$raw_sequence[i]<-as.character(seqs[[i]]@primarySeq)
   }
 
+  if(is.null(trim_cutoff)){
+    trim_cutoff <- list("IgG" = 300, "IgM" = 275, "IgK" = 400, "IgL"= 275, "Mix" = 275, "Undefined" = 275)
+    trim_cutoff <- trim_cutoff[[primers]]
+  } else {
+    trim_cutoff <- trim_cutoff[1]
+  }
+  
   seq_df$primers <- primers
-  seq_df$QC_passed <- seq_df$sequence_length>trim_cutoff[[primers]] & seq_df$pct_under_30QC_in_trimmed<20
+  seq_df$QC_passed <- seq_df$sequence_length>trim_cutoff & seq_df$pct_under_30QC_in_trimmed<20
   options(warn=-1)
   if (requireNamespace("ggplot2", quietly = TRUE)) {
     p <- ggplot(seq_df, aes(x=sequence_length, y=pct_under_30QC_in_trimmed, color=QC_passed, label = well_id)) +
       geom_point(size=3) +
       geom_hline(yintercept=20) +
-      geom_vline(xintercept=trim_cutoff[[primers]]) +
+      geom_vline(xintercept=trim_cutoff) +
       ggtitle(paste0("QC plot: ", outfolder)) +
       theme_classic()
     if (requireNamespace("ggrepel", quietly = TRUE)) {
@@ -3048,10 +3083,10 @@ runBlastnC <- function(db,
     }
     db <- suppressMessages(dplyr::left_join(db, c_results_filtered))
   } else {
-    db[[!!rlang::sym(c_call)]] = NA
-    db$c_call_alignment_score = NA
-    db$c_call_pct_match = NA
-    db$c_call_alignment_length = NA
+    db[[c_call]] <- NA
+    db$c_call_alignment_score <- NA
+    db$c_call_pct_match <- NA
+    db$c_call_alignment_length <- NA
   }
 
   if(!output){unlink(output_folder, recursive = TRUE)}
@@ -3062,11 +3097,9 @@ runBlastnC <- function(db,
 
 #### Function to reconstruct a full VDJ sequence (nt and AA) as well as a Fab (AA) ####
 #'
-#' \code{reconstructFullVDJ} reconstruct full VDJ sequence for AlphaFold modeling
+#' \code{reconstructFullVDJ} reconstruct full VDJ sequence for AlphaFold modeling (only designed for human Ig for now)
 #'
 #' @param db          an AIRR formatted dataframe containing heavy and light chain sequences. Should contain only one heavy chain (IGH) per cell_id, if not run resolveMultiHC() first.
-#' @param seq_type      type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)
-#' @param organism      organism (any of "human", "mouse", "rhesus_monkey; for other see https://changeo.readthedocs.io/en/stable/examples/igblast.html)
 #' @param igblast_dir   path to igblast database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]
 #' @param CH1_AA      named list of CH1 domain for IGH, IGL and IGK c chains (AA); a default one is provided - imported from Uniprot on Feb 2025.
 #'
@@ -3085,7 +3118,9 @@ runBlastnC <- function(db,
 #' @importFrom Biostrings DNAStringSet
 
 reconstructFullVDJ <- function(db,
-                               igblast_dir = "~/share/igblast",
+                               seq_type = c("Ig", "TCR"),
+                               organism = c("human", "mouse", "rabbit", "rat", "rhesus_monkey"),
+                               igblast_dir = "~/share/igblast/",
                                CH1_AA = list(IGHG1 = "ASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKV",
                                              IGHG2 = "ASTKGPSVFPLAPCSRSTSESTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSNFGTQTYTCNVDHKPSNTKVDKTV",
                                              IGHG3 = "ASTKGPSVFPLAPCSRSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYTCNVNHKPSNTKVDKRV",
@@ -3102,31 +3137,44 @@ reconstructFullVDJ <- function(db,
                                              IGLC6 = "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVKVAWKADGSPVNTGVETTTPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPAECS",
                                              IGLC7 = "GQPKAAPSVTLFPPSSEELQANKATLVCLVSDFNPGAVTVAWKADGSPVKVGVETTKPSKQSNNKYAASSYLSLTPEQWKSHRSYSCRVTHEGSTVEKTVAPAECS")){
 
+  seq_type <- match.arg(seq_type)
+  organism <- match.arg(organism)
+  
+  loci <- list("Ig" = "ig", "TCR" = "tr")
+  loci <- loci[[seq_type]]
+  
   igblast_dir <- ifelse(stringr::str_ends(igblast_dir,"/"), igblast_dir, paste0(igblast_dir, "/"))
 
-  IMGT_j <- Biostrings::readDNAStringSet(paste0(igblast_dir, "fasta/imgt_human_ig_j.fasta"))
-  #TODO add possibility to do that for mouse Ig? maybe getting the nt sequenec from imgt database (issue = multiple version possible)
-
+  IMGT_j <- Biostrings::readDNAStringSet(paste0(igblast_dir, "fasta/imgt_", organism, "_", loci, "_j.fasta"))
+  
   db$missing_v_bp <- NA
   db$missing_j_bp <- NA
   db$full_sequence <- NA
   db$full_sequence_aa <- NA
   db$full_sequence_fab_aa <- NA
-  db$comments <- NA
+  if(!"comments" %in% colnames(db)){
+    db$comments <- NA
+  }
   for(i in seq_along(db$sequence_id)){
     ##heavy chain:
     if(!is.na(db$v_call[i])){
       db$missing_v_bp[i] <- gregexpr("G|C|A|T", db$sequence_alignment[i])[[1]][1]-1
       db$missing_j_bp[i] <- length(IMGT_j[strsplit(db$j_call[i], ",")[[1]][1]][[1]]) - db$j_germline_end[i]
+      
       if (db$missing_v_bp[i]==0){
         db$full_sequence[i] <- substring(db$sequence[i], db$v_sequence_start[i], db$j_sequence_end[i])
       } else {
         if(db$missing_v_bp[i] < 27){
           db$full_sequence[i] <- paste0(substring(db$germline_alignment[i], 1, db$missing_v_bp[i]),
                                         substring(db$sequence[i], db$v_sequence_start[i], db$j_sequence_end[i]))
-          db$comments[i] <- "missing bp in VH sequence, reverted to germline"
+          db$comments[i] <- paste(na.omit(c(db$comments[i], "missing bp in VH sequence, reverted to germline")), collapse = "; ")
         } else {
-          db$comments[i] <- "missing 27 or more bp in VH sequence, check manually"
+          missing_V_seq <- substring(db$germline_alignment[i], 1, db$missing_v_bp[i])
+          remaining_gaps <- nchar(missing_V_seq) - nchar(gsub("\\.", "", missing_V_seq)) #expected due to introduced IMGT gaps starting at AA n°10 in IGHV and IGLV (but not IGKV)
+          db$missing_v_bp[i] <- db$missing_v_bp[i] - remaining_gaps
+          db$full_sequence[i] <- paste0(gsub("\\.", "", missing_V_seq),
+                                        substring(db$sequence[i], db$v_sequence_start[i], db$j_sequence_end[i]))
+          db$comments[i] <- paste(na.omit(c(db$comments[i], "missing 27 or more bp in VH sequence, check manually")), collapse = "; ")
         }
       }
       # replace N with corresponding germline bp and add comment
@@ -3140,19 +3188,19 @@ reconstructFullVDJ <- function(db,
           # use the fact that order of Ns is the same between full sequence (trimmed) and aligned sequences even if positions are different
           substr(db$full_sequence[i], Ns_raw[j], Ns_raw[j]) <- substr(db$germline_alignment[i], Ns_aligned[j], Ns_aligned[j])
         }
-        db$comments[i] <- paste0(db$comments[i], "; 'N' in VH sequence, reverted to germline")
+        db$comments[i] <- paste(na.omit(c(db$comments[i], "'N' in VH sequence, reverted to germline")), collapse = "; ")
       }
       if(!length(Ns_aligned) == length(Ns_raw)){
         # rare cases when an N base is wrongly inserted in the read sequence and doesn't align to a known position in V or J genes and is thus discarded in IgBlast sequence alignment.
         # for now, we will just require user to analyze that sequence manually.
-        db$comments[i] <- paste0(db$comments[i], "; different numbers of 'N' in raw VH sequence as compared to germline (check sequence manually)")
+        db$comments[i] <- paste(na.omit(c(db$comments[i], "different numbers of 'N' in raw VH sequence as compared to germline (check sequence manually)")), collapse = "; ")
         db$full_sequence[i] <- NA
       }
       if(is.na(db$c_call_alignment_length[i]) & !is.na(db$missing_j_bp[i]) & db$missing_j_bp[i]>0 & !is.na(db$full_sequence[i])){
         # add missing bp at the end of the J region
         db$full_sequence[i] <- paste0(db$full_sequence[i],
                                       substring(IMGT_j[strsplit(db$j_call[i], ",")[[1]][1]][[1]], db$j_germline_end[i]+1, length(IMGT_j[strsplit(db$j_call[i], ",")[[1]][1]][[1]])))
-        db$comments[i] <- paste0(db$comments[i], "; missing bp in JH sequence, reverted to germline")
+        db$comments[i] <- paste(na.omit(c(db$comments[i], "missing bp in JH sequence, reverted to germline")), collapse = "; ")
       }
 
       if(!is.na(db$full_sequence[i])){
@@ -3160,10 +3208,14 @@ reconstructFullVDJ <- function(db,
           options(warn=-1)
           db$full_sequence_aa[i] <- as.character(Biostrings::translate(Biostrings::DNAStringSet(db$full_sequence[i])))
           options(warn=0)
-          CH1 <- CH1_AA[[tail(stringr::str_split(db$c_call[i], pattern = "\\|")[[1]], n=1)]]
-          db$full_sequence_fab_aa[i] <- paste0(db$full_sequence_aa[i], CH1)
+          if(seq_type == "Ig" & organism == "human"){
+            CH1 <- CH1_AA[[tail(stringr::str_split(db$c_call[i], pattern = "\\|")[[1]], n=1)]]
+            db$full_sequence_fab_aa[i] <- paste0(db$full_sequence_aa[i], CH1)
+          } else {
+            warning("Full Fab reconstruction is only implemented for human Ig sequences")
+          }
         } else {
-          db$comments[i] <- paste0(db$comments[i], "; still non A|C|T|G characters in full sequence after reverting to germline, check germline_alignment")
+          db$comments[i] <- paste(na.omit(c(db$comments[i], "still non A|C|T|G characters in full sequence after reverting to germline, check germline_alignment")), collapse = "; ")
         }
       }
     }
@@ -3268,58 +3320,10 @@ importSangerVDJ <- function(sanger_files, db = NULL,
   })
   names(AIRR.list) <- sanger_files[[orig.ident]]
   
-  # prevents issues if all values are NA in one of these columns (too good qualities for example...)
-  col_types <- AIRR.list %>% 
-    purrr::map(~ sapply(.x, typeof)) 
+  # check issues with column types:
+  # prevents issues if all values are NA in one of these columns (too good qualities for example or case when only LC are imported into a HC db (no d_call)...)
   
-  types_long <- col_types %>%
-    dplyr::bind_rows(.id = "df_id") %>%
-    tidyr::pivot_longer(-df_id, names_to = "colname", values_to = "type")
-  
-  cols_with_conflict <- types_long %>%
-    dplyr::group_by(colname) %>%
-    dplyr::summarise(
-      n_types = n_distinct(type), 
-      types_present = toString(unique(type)),
-      type_to_coerce = {
-        if ("character" %in% unique(type)){
-          "character"
-          } else {
-          other_types <- setdiff(unique(type), c("NULL"))
-          if(other_types[1] %in% c("double", "integer", "logical")){
-              other_types[1]
-            } else {"character"}
-          }
-      },
-      .groups = "drop") %>%
-    dplyr::filter(n_types > 1)
-  
-  coerce_lookup <- cols_with_conflict %>%
-    dplyr::filter(!is.na(type_to_coerce)) %>%
-    dplyr::select(colname, type_to_coerce) %>%
-    tibble::deframe() 
-  
-  # all columns should be one of character, double, logical and eventually integer.
-  coercers <- list(
-    character = as.character,
-    integer = as.integer,
-    double = as.double,
-    logical = as.logical
-  )
-  
-  AIRR.list <- AIRR.list %>%
-    purrr::map(
-      function(df) {
-        for (col in cols_with_conflict$colname){
-          coercer <- coercers[[coerce_lookup[[col]]]]
-          if(col %in% colnames(df)){
-            df[[col]] <- coercer(df[[col]])
-          }
-        }
-        return(df)
-  })
-  
-  sanger_VDJ_db <- dplyr::bind_rows(AIRR.list)
+  sanger_VDJ_db <- safe_bind_rows(AIRR.list)
 
   # update sequence_id column:
   sanger_VDJ_db$sequence_id <- paste0(sanger_VDJ_db$cell_id, "_", sanger_VDJ_db$primers) # required for DefineClones()
@@ -3378,14 +3382,14 @@ importSangerVDJ <- function(sanger_files, db = NULL,
                                 igblast_dir = igblast_dir)
   }
 
-  if(!is.null(db)){
+  if(!is.null(db)){ 
     if("c_call_SB" %in% colnames(db)){
       # creating a few more columns to adapt to Rhapsody VDJ db
       sanger_VDJ_db$cell_type_experimental <- sanger_VDJ_db$sorted_cell_type
       sanger_VDJ_db$putative_cell <- TRUE
       sanger_VDJ_db$dominant <- TRUE
     }
-    full_db <- dplyr::bind_rows(db, sanger_VDJ_db)
+    full_db <- safe_bind_rows(list(db, sanger_VDJ_db))
     return(full_db)
   } else {return(sanger_VDJ_db)}
 }
@@ -4875,7 +4879,11 @@ scFindClones <- function(db,
     )
     
     time_and_log({
-      cloned_VDJ_db <- reconstructFullVDJ(cloned_VDJ_db, igblast_dir = igblast_dir, CH1_AA = CH1_AA)
+      cloned_VDJ_db <- reconstructFullVDJ(cloned_VDJ_db, 
+                                          seq_type = seq_type,
+                                          organism = organism,
+                                          igblast_dir = igblast_dir, 
+                                          CH1_AA = CH1_AA)
     }, verbose = verbose, log_file = log_file, log_title = "Reconstructing full VDJ", open_mode = "a")
     
     nb_failed_vdj_seq <- nrow(cloned_VDJ_db[is.na(cloned_VDJ_db$full_sequence_aa),])
