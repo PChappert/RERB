@@ -38,6 +38,71 @@ safe_kaleido <- function(scope = "auto") {
   return(result)
 }
 
+#### Function to check column types prior to using dplyr::bind_rows ####
+#' safely bind data table when column of identical names have different types (e.g. only NA or missing values in one of the two (d_call for Light chains for exemple).
+#'
+#' \code{safe_bind_rows}
+#'
+#' @param list a list of data frames
+#' 
+#' @keywords internal
+
+safe_bind_rows <- function(list){
+  col_types <- list %>% 
+    purrr::map(~ sapply(.x, typeof))
+  
+  types_long <- col_types %>%
+    dplyr::bind_rows(.id = "df_id") %>%
+    tidyr::pivot_longer(-df_id, names_to = "colname", values_to = "type")
+  
+  cols_with_conflict <- types_long %>%
+    dplyr::group_by(colname) %>%
+    dplyr::summarise(
+      n_types = n_distinct(type), 
+      types_present = toString(unique(type)),
+      type_to_coerce = {
+        if ("character" %in% unique(type)){
+          "character"
+        } else {
+          other_types <- setdiff(unique(type), c("NULL"))
+          if(other_types[1] %in% c("double", "integer", "logical")){
+            other_types[1]
+          } else {"character"}
+        }
+      },
+      .groups = "drop") %>%
+    dplyr::filter(n_types > 1)
+  
+  coerce_lookup <- cols_with_conflict %>%
+    dplyr::filter(!is.na(type_to_coerce)) %>%
+    dplyr::select(colname, type_to_coerce) %>%
+    tibble::deframe() 
+  
+  # all columns should be one of character, double, logical and eventually integer.
+  coercers <- list(
+    character = as.character,
+    integer = as.integer,
+    double = as.double,
+    logical = as.logical
+  )
+  
+  list <- list %>%
+    purrr::map(
+      function(df) {
+        for (col in cols_with_conflict$colname){
+          coercer <- coercers[[coerce_lookup[[col]]]]
+          if(col %in% colnames(df)){
+            df[[col]] <- coercer(df[[col]])
+          }
+        }
+        return(df)
+      })
+  
+  dataframe <- dplyr::bind_rows(list)
+  return(dataframe)
+}
+
+
 #### Function to capture safely all outputs from a function and send it to a log file ####
 #' safely combine sink() and on.exit() so that even if function (expr) fails, the sink is properly closed.
 #'
