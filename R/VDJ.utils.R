@@ -4108,23 +4108,6 @@ scFindClones <- function(db,
       }
     }
   }
-
-  #initiate log file:
-  log_file <- paste0(output_folder, analysis_name, "_scFind", fct_type,"Clones.log")
-  time_and_log({
-    cat("analysis_name: ", analysis_name, "\n")
-    cat("organism: ", organism, "\n")
-    cat("seq_type: ", seq_type, "\n")
-    cat("igblast: ", igblast, "\n")
-    cat("clonal analysis method: ", method, "\n")
-    cat("clonal analysis threshold(s): ", threshold, "\n")
-    cat("update_c_call: ", update_c_call, "\n")
-    cat("clean_LC: ", clean_LC, "\n")
-    cat("split_by_light: ", split_by_light, "\n")
-    cat("update_germline: ", update_germline, "\n")
-    cat("SHM: ", SHM, "\n")
-    cat("full_seq_aa: ", full_seq_aa, "\n")
-  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = paste0("scFind", fct_type,"Clones"), open_mode = "wt")
   
   ## run initial QC on imput and arguments provided:
   required_collumns <- c(cell_id, locus, junction, junction_aa, junc_len, productive)
@@ -4136,6 +4119,12 @@ scFindClones <- function(db,
   method <- match.arg(method)
   if(!method %in% c("changeo", "identical", "hierarchical", "spectral")){
     stop("need to choose a method for clustering among one of the following: identical, hierarchical or spectral (see https://scoper.readthedocs.io/en/stable/ for detailed informations) or changeo for the older version of hierarchicalClones")
+  }
+  if(method == "scoper"){
+    if (!requireNamespace("scoper", quietly = TRUE)) {
+      message("'scoper' not installed — defaulting to changeo/DefineClones().")
+      method <- "changeo"
+    }
   }
 
   igblast <- match.arg(igblast)
@@ -4153,9 +4142,28 @@ scFindClones <- function(db,
     stop("no reference database provided for germline reconstruction")
   }
 
+  log_file <- paste0(output_folder, analysis_name, "_scFind", fct_type,"Clones.log")
+  
+  #initiate log file:
+  time_and_log({
+    cat("analysis_name: ", analysis_name, "\n")
+    cat("organism: ", organism, "\n")
+    cat("seq_type: ", seq_type, "\n")
+    cat("igblast: ", igblast, "\n")
+    cat("clonal analysis method: ", method, "\n")
+    cat("clonal analysis threshold(s): ", threshold, "\n")
+    cat("update_c_call: ", update_c_call, "\n")
+    cat("clean_LC: ", clean_LC, "\n")
+    cat("split_by_light: ", split_by_light, "\n")
+    cat("update_germline: ", update_germline, "\n")
+    cat("SHM: ", SHM, "\n")
+    cat("full_seq_aa: ", full_seq_aa, "\n")
+  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = paste0("scFind", fct_type,"Clones"), open_mode = "wt")
+  
   if("clone_id" %in% colnames(db)){
-    clone_id_log <- paste0("clone_id collumn already present in the object, renamed preexisting_clone_id to avoid issue in defineClonesScoper().\n\n")
-    if(verbose){cat(clone_id_lo)} # Write to console
+    time_and_log({
+      cat("clone_id collumn already present in the object, renamed preexisting_clone_id to avoid issue in defineClonesScoper().\n\n")
+    }, verbose = verbose, time = TRUE, log_file = log_file, log_title = paste0("Renaming clone_id column"), open_mode = "a")
     
     db <- dplyr::rename(db, "preexisting_clone_id" = clone_id)
   }
