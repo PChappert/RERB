@@ -1,8 +1,8 @@
 Package: RERB
 Type: Package
 Title: Provides wrapper functions to run repertoire analysis on single-cell datasets using the Immcantation pipeline
-Version: 0.9.6
-Date: 2025-06-09
+Version: 0.9.7-devel
+Date: 2025-09-03
 Authors@R: c(
     person(
       "Pascal", "Chappert",
