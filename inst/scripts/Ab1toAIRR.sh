@@ -56,9 +56,9 @@ save="${save:-png}"
 tmp_r_file=$(mktemp /tmp/ab1toairr.XXXXXX.R)
 
 cat <<EOF 2>/dev/null > "$tmp_r_file"
-devtools::load_all("~/R_packages/RERB")
+suppressMessages(devtools::load_all("~/R_packages/RERB"))
 files <- $r_file_list
-Ab1toAIRR(files = files, primers = "$primers", save = "$save")
+Ab1toAIRR(files = files, primers = "$primers", save = "$save", reticulate_py_env = "~/Library/r-miniconda-arm64/envs/r-reticulate/bin/python")
 EOF
 
 echo "running Ab1toAIRR through RERB - version 0.9.7-devel"

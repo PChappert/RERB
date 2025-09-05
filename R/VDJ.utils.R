@@ -265,11 +265,14 @@ Ab1toAIRR <- function(files,
         }
 
         VDJ_db <- igblast_results[["pass"]]
-        VDJ_db$c_call_igblast <- VDJ_db$c_call
+        
+        if("c_call" %in% colnames(VDJ_db)){
+          #only the latest version of igblast export c_call
+          VDJ_db$c_call_igblast <- VDJ_db$c_call
+          VDJ_db <- dplyr::relocate(VDJ_db, c_call, .after = j_call)
+        }
 
         failed_VDJ_db <- igblast_results[["fail"]]
-
-        VDJ_db <- dplyr::relocate(VDJ_db, c_call, .after = j_call)
 
         if(!any(is.null(failed_VDJ_db), nrow(failed_VDJ_db)==0)){
           outfilename_fail <- paste0(outfilename, "_igblast-fail")

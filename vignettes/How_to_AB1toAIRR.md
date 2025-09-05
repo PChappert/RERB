@@ -6,7 +6,7 @@ Ab1toAIRR is a wrapper bash script designed to automatically extract sequences f
 
 1.  Install RERB first, including standalone versions of **blast** and **igblast**, **Immcantation ChangeO**, **Alakazam**, **Shazam** and **Dowser** packages (<https://changeo.readthedocs.io/en/stable/examples/igblast.html>) and blastable IMGT database.
 
-2.  To use the bash script: modify line 59 of the **Ab1toAIRR.sh** script to adapt it to the path to your RERB folder (default: devtools::load_all("\~/R_packages/RERB")). Then copy the script to the /usr/local/bin folder (or any other folder in your \$PATH, just change the first line of the following script accordingly) and to make bash script executable, run in Terminal:
+2.  To use the bash script: modify line 59 of the **Ab1toAIRR.sh** script to adapt it to the path to your RERB folder (default: devtools::load_all("\~/R_packages/RERB")) as well as the path to your reticulate python environment (default: "~/Library/r-miniconda-arm64/envs/r-reticulate/bin/python"). Then copy the script to the /usr/local/bin folder (or any other folder in your \$PATH, just change the first line of the following script accordingly) and to make bash script executable, run in Terminal:
 
 ``` bash
 cd /usr/local/bin
@@ -30,7 +30,8 @@ BiocManager::install("sangerseqR")
 
 5.  "png" export of images generated through the plotly package in sangeranalyseR requires the installation of the reticulate package in R and the kaleido/plotly packages in python as follow :
 
-    *[Note] if this isn't enough to ensure reticulate uses the correct python env (where plotly is installed), you can use the reticulate_py_env argument when using the Ab1toAIRR function in R or add RETICULATE_PYTHON="/Users/yourname/Library/r-miniconda-arm64/envs/r-reticulate/bin/python" to your .Renviron file.*
+    *[Note1] if this isn't enough to ensure reticulate uses the correct python env (where plotly is installed), you can use the reticulate_py_env argument when using the Ab1toAIRR function in R*
+    *[Note2] the CRAN version of plotly (4.11.0) only works with kaleido version 0.2.1 (not the most recent 1.0.0) (to force install: reticulate::conda_install('r-reticulate', "kaleido==0.2.1", pip = TRUE))*
 
 ``` r
 install.packages('reticulate') 
