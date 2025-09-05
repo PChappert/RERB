@@ -3534,9 +3534,6 @@ scImportVDJ <- function(vdj_files,
     cat("clean_HC: ", clean_HC, "\n")
   }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "scImportVDJ", open_mode = "wt")
   
-  #log_file <- paste0(output_folder, Sys.time(), "_", analysis_name, "_scImportVDJ_logfile.txt")
-  #log_connection <- file(log_file, open = "a")  # a for appending or w for erasing onto previous log
-
   if(length(tech)!=1 | !(tech %in% c("BD", "10X"))){
     stop("no clear technology selected, you need to select one of BD or 10X")
   }
@@ -3635,15 +3632,15 @@ scImportVDJ <- function(vdj_files,
     #filter for cell_ids in the provided seurat object
     if(!is.null(meta)){
       cells_to_keep <- meta[[cell_id]]
-      example_VDJ_data_set_cell_ids <- data[[!!rlang::sym(cell_id)]][1:5]
-      data <- dplyr::filter(data, (!!rlang::sym(cell_id) %in% cells_to_keep))
+      example_VDJ_data_set_cell_ids <- data[[cell_id]][1:5]
+      data <- dplyr::filter(data, !!rlang::sym(cell_id) %in% cells_to_keep)
       if(nrow(data)==0){
         warning(paste0(sample, " : no VDJ contigs corresponding to cell_ids present in the provided seurat object. Check cell_id format! (see log for examples)\n"))
         time_and_log({
           warning(paste0(sample, " : no VDJ contigs corresponding to cell_ids present in the provided seurat object. Check cell_id format!\n",
-                         "current Seurat cell_id format: ", cells_to_keep[1:5], "\n",
-                         "current VDJ cell_id format: ", example_VDJ_data_set_cell_ids, "\n"))
-        }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = paste0(sample, " contigs import"), open_mode = "a")
+                         "current Seurat cell_id format: ", paste(cells_to_keep[1:5], collapse = "; "), "\n",
+                         "current VDJ cell_id format: ", paste(example_VDJ_data_set_cell_ids, collapse = "; "), "\n"))
+        }, verbose = FALSE, time = TRUE, log_file = log_file, log_title = paste0(sample, " contigs import"), open_mode = "a")
         }
     }
     data$orig.ident <- sample
