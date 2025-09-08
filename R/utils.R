@@ -47,7 +47,98 @@ safe_kaleido <- function(scope = "auto") {
 #' 
 #' @keywords internal
 
-safe_bind_rows <- function(list){
+safe_bind_rows <- function(list,
+                           airr_col_types = c(
+                             "sequence_id" = "character",
+                             "sequence" = "character",
+                             "rev_comp" = "logical",
+                             "productive" = "logical",
+                             "v_call" = "character",
+                             "d_call" = "character",
+                             "j_call" = "character",
+                             "c_call" = "character",
+                             "sequence_alignment" = "character",
+                             "germline_alignment" = "character",
+                             "junction" = "character",
+                             "junction_aa" = "character",
+                             "v_cigar" = "character",
+                             "d_cigar" = "character",
+                             "j_cigar" = "character",
+                             "stop_codon" = "logical",
+                             "vj_in_frame" = "logical",
+                             "locus" = "character",
+                             "junction_length" = "double",
+                             "np1_length" = "double",
+                             "np2_length" = "double",
+                             "v_sequence_start" = "double",
+                             "v_sequence_end" = "double",
+                             "v_germline_start" = "double",
+                             "v_germline_end" = "double",
+                             "d_sequence_start" = "double",
+                             "d_sequence_end" = "double",
+                             "d_germline_start" = "double",
+                             "d_germline_end" = "double",
+                             "j_sequence_start" = "double",
+                             "j_sequence_end" = "double",
+                             "j_germline_start" = "double",
+                             "j_germline_end" = "double",
+                             "v_score" = "double",
+                             "v_identity" = "double",
+                             "v_support" = "double",
+                             "d_score" = "double",
+                             "d_identity" = "double",
+                             "d_support" = "double",
+                             "j_score" = "double",
+                             "j_identity" = "double",
+                             "j_support" = "double",
+                             "fwr1" = "character",
+                             "fwr2" = "character",
+                             "fwr3" = "character",
+                             "fwr4" = "character",
+                             "cdr1" = "character",
+                             "cdr2" = "character",
+                             "cdr3" = "character",
+                             "primers" = "character",
+                             "sequence_length" = "double",
+                             "pct_under_30QC_in_trimmed"= "double",
+                             "QC_passed" = "logical",
+                             "v_germline_length" = "double",
+                             "d_germline_length" = "double",
+                             "j_germline_length" = "double",
+                             "mu_freq_cdr_r" = "double",
+                             "mu_freq_cdr_s" = "double",
+                             "mu_freq_fwr_r" = "double",
+                             "mu_freq_fwr_s" = "double",
+                             "mu_freq" = "double",
+                             "mu_count_cdr_r" = "double",
+                             "mu_count_cdr_s" = "double",
+                             "mu_count_fwr_r" = "double",
+                             "mu_count_fwr_s" = "double",
+                             "mu_count" = "double",
+                             "c_call_igblast" = "character",
+                             "c_call_alignmant_score" = "double",
+                             "c_call_pct_match" = "double",
+                             "c_call_alignmant_length" = "double"
+                           )){
+  
+  #first make sure all AIRR columns are of the right type:
+  coerce_cols <- function(df, type_map) {
+    common_cols <- intersect(names(type_map), names(df))
+    
+    df %>%
+      mutate(across(all_of(common_cols), ~ switch(
+        type_map[cur_column()],
+        character = as.character(.),
+        logical   = as.logical(.),
+        double    = as.double(.),
+        integer   = as.integer(.),
+        factor    = as.factor(.),
+        .         # default: leave as is
+      )))
+  }
+  list <- purrr::map(list, coerce_cols, type_map = airr_col_types)
+  
+  #then find remaining issues:
   col_types <- list %>% 
     purrr::map(~ sapply(.x, typeof))
   
