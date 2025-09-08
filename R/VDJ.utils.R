@@ -4304,6 +4304,16 @@ scFindClones <- function(db,
       )
     ) %>%
     dplyr::ungroup()
+  
+  if(!only_heavy){
+    if(nrow(dplyr::filter(VDJ_db, !!rlang::sym(paste0(tolower(fct_type),"_info")) == "full")) == 0){
+      if(split_by_light){
+        split_by_light <- FALSE
+        message("no cell with both HC and LC, skipping the split_by_light step")
+      }
+      only_heavy <- TRUE
+    }
+  }
 
   # Check / Remove cells without heavy chain.
   # Technically they can't be used in clustering analysis but they won't interfere in the following steps and will end up with a NA value for clone_id.
@@ -4842,7 +4852,7 @@ scFindClones <- function(db,
         cat(germ_failed_log)
       }
     }, verbose = verbose, log_file = log_file, log_title = "Updating germline alignments based on clonal groups", open_mode = "a")
-    if(verbose){cat( "\n", germ_failed_log)}
+    #if(verbose){cat( "\n", germ_failed_log)}
     
     cloned_VDJ_db <- dplyr::filter(cloned_VDJ_db, !is.na(germline_alignment_d_mask))
     filename <- paste0(filename, "_germ-pass")
