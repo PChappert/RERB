@@ -94,7 +94,8 @@ FlowJoBarcode <- function(db,
 #' @import readr
 #' @importFrom stringr str_ends
 
-importFJGates <- function(FJ_files, db = NULL,
+importFJGates <- function(FJ_files, 
+                          db = NULL,
                           orig.ident = "sample_id",
                           directory = "directory",
                           filename = "filename",
@@ -152,12 +153,12 @@ importFJGates <- function(FJ_files, db = NULL,
     )
 
   #resolve cases of duplicated cell_id
-  #we use here FSC_A and Time available in both SONY and BD index sort data
+  #we use here FSC_A and Time available in both SONY and BD index sort data, if available
   FJ_db <- FJ_db %>%
     dplyr::group_by(cell_id) %>%
     dplyr::mutate(
-      FSC_unique = n_distinct(.data[["FSC_A"]]), #same time but different FSC could be a doublet
-      time_unique = n_distinct(.data[["Time"]]) #different time can only be an issue in excel recaps/INXs...
+      FSC_unique = ifelse(("FSC_A" %in% colnames(FJ_db)) & ("Time" %in% colnames(FJ_db)), n_distinct(.data[["FSC_A"]]), n()), #same time but different FSC could be a doublet
+      time_unique = ifelse(("FSC_A" %in% colnames(FJ_db)) & ("Time" %in% colnames(FJ_db)), n_distinct(.data[["Time"]]), n()) #different time can only be an issue in excel recaps/INXs...
     ) %>%
     dplyr::ungroup() %>%
     dplyr::mutate(
@@ -178,7 +179,7 @@ importFJGates <- function(FJ_files, db = NULL,
         ),
         .groups = "drop"
       )
-    warning("Multiple values for FSC_A and Time found for the following cell_id: ", paste(flagged_FJ_db$cell_id, collapse = ", "), " only the first occurence was kept for now")
+    warning("Multiple values found for the following cell_id: ", paste(flagged_FJ_db$cell_id, collapse = ", "), " only the first occurence was kept for now")
   }
 
   resolved_FJ_db <- FJ_db %>%
