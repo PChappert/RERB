@@ -973,17 +973,21 @@ binContigs <- function(data,
 
   #suppressMessages(library(dplyr))
 
-  # Compute Kernel Density Estimation (KDE)
-  dens <- density(data)
-  # Function to find local minima (antimodes)
-  which.minima <- function(x) {
-    which(diff(sign(diff(x))) == 2) + 1
+  if(length(data)>1){
+    # Compute Kernel Density Estimation (KDE)
+    dens <- stats::density(data)
+    # Function to find local minima (antimodes)
+    which.minima <- function(x) {
+      which(diff(sign(diff(x))) == 2) + 1
+    }
+    # Find antimodes (local minima of density), bin edges and assign each data point to a bin
+    antimodes <- dens$x[which.minima(dens$y)]
+    bin_edges <- c(min(data), antimodes, max(data))
+    bins <- cut(data, breaks = bin_edges, include.lowest = TRUE, labels = FALSE)
+  } else {
+    bins <- 1
   }
-  # Find antimodes (local minima of density), bin edges and assign each data point to a bin
-  antimodes <- dens$x[which.minima(dens$y)]
-  bin_edges <- c(min(data), antimodes, max(data))
-  bins <- cut(data, breaks = bin_edges, include.lowest = TRUE, labels = FALSE)
-
+  
   # Create a frequency table
   bin_relative_freq <- (table(bins) / length(data)) * 100
   bin_freq_df <- data.frame(bin = as.numeric(names(bin_relative_freq)),
@@ -1004,24 +1008,29 @@ binContigs <- function(data,
     if (requireNamespace("ggplot2", quietly = TRUE)) {
       suppressMessages(library(ggplot2))
       # Convert density estimation and antimodes to a data frame for ggplot
-      density_df <- data.frame(x = dens$x, y = dens$y)
-      antimodes_df <- data.frame(x = antimodes, y = dens$y[which.minima(dens$y)])
-      
-      p  <- ggplot2::ggplot() +
-        ggplot2::geom_histogram(data = data.frame(x = data), aes(x = x, y = after_stat(density)),
-                                bins = 30, fill = "gray", alpha = 0.5, color = "black") +
-        ggplot2::geom_line(data = density_df, aes(x = x, y = y), color = "blue", linewidth = 1) +
-        ggplot2::geom_point(data = antimodes_df, aes(x = x, y = y), color = "red", size = 3) +
-        ggplot2::geom_vline(xintercept = bin_edges, linetype = "dashed", color = "gray") +
-        ggplot2::geom_vline(xintercept = bin_edges[selected_bins$Bin[length(selected_bins$Bin)]], linetype = "solid", color = "green", linewidth = 1) +
-        ggplot2::labs(title = title,
-                      x = "Value", y = "Density") +
-        ggplot2::theme_minimal()
-      
-      if(grepl(".pdf", file)|grepl(".png", file)){
-        ggplot2::ggsave(file, plot = p, width = 8, height = 5, dpi = 300)
+      if(length(data)>1){
+        density_df <- data.frame(x = dens$x, y = dens$y)
+        antimodes_df <- data.frame(x = antimodes, y = dens$y[which.minima(dens$y)])
+        
+        p  <- ggplot2::ggplot() +
+          ggplot2::geom_histogram(data = data.frame(x = data), aes(x = x, y = after_stat(density)),
+                                  bins = 30, fill = "gray", alpha = 0.5, color = "black") +
+          ggplot2::geom_line(data = density_df, aes(x = x, y = y), color = "blue", linewidth = 1) +
+          ggplot2::geom_point(data = antimodes_df, aes(x = x, y = y), color = "red", size = 3) +
+          ggplot2::geom_vline(xintercept = bin_edges, linetype = "dashed", color = "gray") +
+          ggplot2::geom_vline(xintercept = bin_edges[selected_bins$Bin[length(selected_bins$Bin)]], linetype = "solid", color = "green", linewidth = 1) +
+          ggplot2::labs(title = title,
+                        x = "Value", y = "Density") +
+          ggplot2::theme_minimal()
+        
+        if(grepl(".pdf", file)|grepl(".png", file)){
+          ggplot2::ggsave(file, plot = p, width = 8, height = 5, dpi = 300)
+        }
+        return(list("bins" = bins, "plot" = p, "top75%" = selected_bins))
+      } else {
+        warning("only one value provided for ", file, ", skipping plot")
+        return(list("bins" = bins, "top75%" = selected_bins))
       }
-      return(list("bins" = bins, "plot" = p, "top75%" = selected_bins))
     } else {
       message("Optional: 'ggplot2' not installed — skipping plot.")
       return(list("bins" = bins, "top75%" = selected_bins))
@@ -1178,7 +1187,7 @@ resolveMultiContigs <- function(db,
 
   if(any(duplicated(db_to_filter[[sequence_id]]))){stop("Sequence IDs in provided dataframe must be unique!")}
 
-  if(use_clone & !all(chain %in% c("IGL", "IGK"))){warning("using prior clustering knowledge only developped for light chain filtration, won't be used for heavy chains")}
+  if(use_clone & !all(chain %in% c("IGL", "IGK"))){warning("using prior clustering knowledge only designed for light chain filtration, won't be used for heavy chains")}
 
   ini_seq_nb_for_filtering <- nrow(db_to_filter)
 
@@ -3728,7 +3737,8 @@ scImportVDJ <- function(vdj_files,
     readr::write_tsv(failed_VDJ_db, file = paste0(filename_fail, ".tsv.gz"))
 
     filename <- paste0(filename, "_igblast_db-pass")
-    if(!(update_c_call %in% c("heavy", "all"))|clean_HC){#we only save this file if no other analysis is performed
+    if(update_c_call == "none" & !clean_HC){
+      #we only save this file if no other analysis is performed
       readr::write_tsv(VDJ_db, file = paste0(filename, ".tsv.gz"))
     }
 
@@ -3775,7 +3785,8 @@ scImportVDJ <- function(vdj_files,
     }, verbose = verbose, log_file = log_file, log_title = "running resolveMultiHC()", open_mode = "a")
     
     filename <- paste0(filename, "_HCfilter-pass")
-    if(!(igblast == "filtered heavy") & !(update_c_call %in% c("heavy", "all"))){#'we only save this file if no other analysis is performed
+    if(!(igblast == "filtered heavy") & !(update_c_call %in% c("heavy", "all"))){
+      #'we only save this file if no other analysis is performed
       readr::write_tsv(VDJ_db, file = paste0(filename, ".tsv.gz"))
     }
   }
