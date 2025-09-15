@@ -190,6 +190,10 @@ safe_bind_rows <- function(list,
       })
   
   dataframe <- dplyr::bind_rows(list)
+  
+  #recheck all AIRR columns to ensure proper formatting (usefull if some AIRR columns are absent from some data table in the original list):
+  dataframe <- coerce_cols(dataframe, type_map = airr_col_types)
+  
   return(dataframe)
 }
 
