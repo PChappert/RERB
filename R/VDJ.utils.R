@@ -4388,7 +4388,11 @@ scFindClones <- function(db,
         readr::write_tsv(h_db, file = DefineClones_input_file)
         messages_DefineClones <- system2("DefineClones.py", args = paste0("-d ", DefineClones_input_file, " --act set --model ham --norm len --dist ", used_threshold), stderr = TRUE, stdout = TRUE)
         cat(paste(messages_DefineClones, collapse = "\n"))
-        cloned_h_db <- readr::read_tsv(DefineClones_output_file, show_col_types = FALSE)
+        if(!all(h_db$assay %in% c("10X", "BD"))){
+          cloned_h_db <- readr::read_tsv(DefineClones_output_file, show_col_types = FALSE, guess_max = Inf) #' using guess_max = Inf here to avoid parsing issues with columns from imported Sanger datasets, much slower though...
+        } else {
+          cloned_h_db <- readr::read_tsv(DefineClones_output_file, show_col_types = FALSE)
+        }
       }, verbose = verbose, log_file = log_file, log_title = "DefineClones", open_mode = "a")
       
       cloned_h_db[[paste0("h_clone_id_", used_threshold)]] <- cloned_h_db[["clone_id"]]
