@@ -4359,6 +4359,8 @@ scFindClones <- function(db,
       "Part ", step,  " of ", n,": Starting clonal partitioning using DefineClones.py from Changeo\n",
       "------------\n"
     )
+    VDJ_db <- VDJ_db %>%
+      dplyr::select(-any_of(c("clone_id")))
     
     h_db <- VDJ_db %>%
       dplyr::filter(!!rlang::sym(locus) %in% heavy)
@@ -4374,38 +4376,39 @@ scFindClones <- function(db,
     DefineClones_output_file <- paste0(out_temp_folder, "All_seq_clone-pass.tsv")
     DefineClones_output_file <- gsub(" ", "\\\ ", DefineClones_output_file, fixed = TRUE) #'to remove any blank in file_path
     
+    readr::write_tsv(h_db, file = DefineClones_input_file)
+    
+    if(!all(h_db$assay %in% c("10X", "BD"))){
+      #' using guess_max = Inf here to avoid parsing issues with columns from the rare imported Sanger datasets, much slower though...
+      guess_max = Inf
+    } else {
+      guess_max = 1000
+    }
+    
     for(i in seq_along(threshold)){
       used_threshold <- threshold[i]
       if(verbose){cat("using threshold: ", used_threshold, ". ")}
       
-      if("clone_id" %in% colnames(h_db)){
-        h_db$clone_id <- NULL
-        l_db$clone_id <- NULL
-      }
-      
       time_and_log({
         cat(paste0("using threshold: ", used_threshold, "\n"))
-        readr::write_tsv(h_db, file = DefineClones_input_file)
         messages_DefineClones <- system2("DefineClones.py", args = paste0("-d ", DefineClones_input_file, " --act set --model ham --norm len --dist ", used_threshold), stderr = TRUE, stdout = TRUE)
         cat(paste(messages_DefineClones, collapse = "\n"))
-        if(!all(h_db$assay %in% c("10X", "BD"))){
-          cloned_h_db <- readr::read_tsv(DefineClones_output_file, show_col_types = FALSE, guess_max = Inf) #' using guess_max = Inf here to avoid parsing issues with columns from imported Sanger datasets, much slower though...
-        } else {
-          cloned_h_db <- readr::read_tsv(DefineClones_output_file, show_col_types = FALSE)
-        }
+        cloned_h_db <- readr::read_tsv(DefineClones_output_file, show_col_types = FALSE, guess_max = guess_max) 
+        cloned_h_db[[paste0("h_clone_id_", used_threshold)]] <- cloned_h_db[["clone_id"]]
+        
+        h_db <- h_db %>%
+          dplyr::select(-any_of(c("clone_id"))) %>%
+          dplyr::left_join(
+            dplyr::select(cloned_h_db, all_of(c(cell_id, "clone_id", paste0("h_clone_id_", used_threshold)))), by = join_by(!!rlang::sym(cell_id))
+          )
+        l_db <- l_db %>%
+          dplyr::select(-any_of(c("clone_id"))) %>%
+          dplyr::left_join(
+            dplyr::select(cloned_h_db, all_of(c(cell_id, "clone_id", paste0("h_clone_id_", used_threshold)))), by = join_by(!!rlang::sym(cell_id))
+          )
       }, verbose = verbose, log_file = log_file, log_title = "DefineClones", open_mode = "a")
-      
-      cloned_h_db[[paste0("h_clone_id_", used_threshold)]] <- cloned_h_db[["clone_id"]]
-      
-      h_db <- h_db %>%
-        dplyr::left_join(
-          dplyr::select(cloned_h_db, all_of(c(cell_id, "clone_id", paste0("h_clone_id_", used_threshold)))), by = join_by(!!rlang::sym(cell_id))
-        )
-      l_db <- l_db %>%
-        dplyr::left_join(
-          dplyr::select(cloned_h_db, all_of(c(cell_id, "clone_id", paste0("h_clone_id_", used_threshold)))), by = join_by(!!rlang::sym(cell_id))
-        )
     }
+    
     cloned_VDJ_db <- h_db %>%
       dplyr::bind_rows(l_db)
 
