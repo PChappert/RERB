@@ -3423,6 +3423,7 @@ importSangerVDJ <- function(sanger_files, db = NULL,
 #' @param seq_type        type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)
 #' @param organism      organism (any of "human", "mouse", "rhesus_monkey; for other see https://changeo.readthedocs.io/en/stable/examples/igblast.html)
 #' @param igblast       whether to run standalone IgBlast, can be set to c("filtered heavy" or "all") if not one of these three values, will be skipped with a warning. [default = "filtered heavy" for both 10X and BD: highly recommended for both to avoid issues at the createGermline() or observedMutation() steps due to different references databases used (10X) or missing imgt gaps in the sequence_alignment collumn (Both))]
+#' @param igblast_max   max number of sequences to run assignGenes() on. if set to NULL, all sequences are runned at once, else the dataset is cut in chunks of "igblast_max" sequences, run sequencially.
 #' @param igblast_dir   path to igblast database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]
 #' @param imgt_dir      path to imgt database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]
 #' @param update_c_call whether to run runBlastnC to correct c calls made by igblast (issues with calls with similar scores); can be set to c("heavy" or "all") if not one of these three values, will be skipped with a warning. [default = "heavy" for all cases, will be performed onlight chains after heavy chain clustering and light chain multiplets resolution (see scFindBCRClones())]
@@ -3489,6 +3490,7 @@ scImportVDJ <- function(vdj_files,
                         seq_type = c("Ig", "TCR"),
                         organism = c("human", "mouse", "rabbit", "rat", "rhesus_monkey"),
                         igblast = c("all", "filtered heavy", "none"),
+                        igblast_max = NULL,
                         igblast_dir = "~/share/igblast/",
                         imgt_dir = "~/share/germlines/imgt/",
                         update_c_call = c("none", "filtered heavy", "all"),
@@ -3712,22 +3714,48 @@ scImportVDJ <- function(vdj_files,
     message("Part ", step," of ",n ,": running IgBlast on all contigs (",submitted_seqs," contigs, should take ", expected_time, ")")
     message("------------")
     
-    time_and_log({
-      igblast_results <- runAssignGenes(VDJ_db,
-                                        organism = organism,
-                                        seq_type = seq_type,
-                                        igblast_dir = igblast_dir,
-                                        imgt_dir = imgt_dir,
-                                        sequence = sequence,
-                                        sequence_id = sequence_id)
-    }, verbose = verbose, log_file = log_file, log_title = "running AssignGenes", open_mode = "a")
-
-    VDJ_db <- igblast_results[["pass"]]
-    VDJ_db$c_call_igblast <- VDJ_db$c_call
-
-    failed_VDJ_db <- igblast_results[["fail"]]
-
-    rm(igblast_results)
+    if(is.numeric(igblast_max)){
+      time_and_log({
+        igblast_results <- VDJ_db %>%
+          dplyr::mutate(chunk = (row_number() - 1) %/% igblast_max) %>%
+          dplyr::group_split(chunk, .keep = FALSE) %>%
+          purrr::map(\(x) runAssignGenes(x,
+                                         organism = organism,
+                                         seq_type = seq_type,
+                                         igblast_dir = igblast_dir,
+                                         imgt_dir = imgt_dir,
+                                         sequence = sequence,
+                                         sequence_id = sequence_id))
+                                          
+      }, verbose = verbose, log_file = log_file, log_title = "running AssignGenes", open_mode = "a")
+      
+      VDJ_db <- purrr::map_dfr(igblast_results, "pass")
+      VDJ_db$c_call_igblast <- VDJ_db$c_call
+      
+      failed_VDJ_db <- purrr::map_dfr(igblast_results, "fail")
+      
+      rm(igblast_results)
+    } else {
+      if(!is.null(igblast_max)){
+        warning("igblast_max must be a numeric value, defaulting to running assignGenes on all sequences at once")
+      }
+      time_and_log({
+        igblast_results <- runAssignGenes(VDJ_db,
+                                          organism = organism,
+                                          seq_type = seq_type,
+                                          igblast_dir = igblast_dir,
+                                          imgt_dir = imgt_dir,
+                                          sequence = sequence,
+                                          sequence_id = sequence_id)
+      }, verbose = verbose, log_file = log_file, log_title = "running AssignGenes", open_mode = "a")
+      
+      VDJ_db <- igblast_results[["pass"]]
+      VDJ_db$c_call_igblast <- VDJ_db$c_call
+      
+      failed_VDJ_db <- igblast_results[["fail"]]
+      
+      rm(igblast_results)
+    }
 
     VDJ_db <- dplyr::relocate(VDJ_db, !!rlang::sym(cell_id), .before = !!rlang::sym(sequence_id))
     VDJ_db <- dplyr::relocate(VDJ_db, c(orig.ident, assay, !!rlang::sym(consensus_count), !!rlang::sym(umi_count)), .after = !!rlang::sym(sequence_id))
