@@ -84,7 +84,7 @@ entries in this column should be identical to the gene level.}
 
 \item{complete_vdj}{name of the column containing contig completness informations}
 
-\item{clone_id}{name of the column containing cell identifier.#'}
+\item{clone_id}{name of the column containing cell identifier.}
 
 \item{nproc}{number of processor(s) to use (passed to scoper::hierarchicalClones()).}
 }

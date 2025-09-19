@@ -24,6 +24,7 @@ scImportVDJ(
   seq_type = c("Ig", "TCR"),
   organism = c("human", "mouse", "rabbit", "rat", "rhesus_monkey"),
   igblast = c("all", "filtered heavy", "none"),
+  igblast_max = NULL,
   igblast_dir = "~/share/igblast/",
   imgt_dir = "~/share/germlines/imgt/",
   update_c_call = c("none", "filtered heavy", "all"),
@@ -71,6 +72,8 @@ scImportVDJ(
 \item{organism}{organism (any of "human", "mouse", "rhesus_monkey; for other see https://changeo.readthedocs.io/en/stable/examples/igblast.html)}
 
 \item{igblast}{whether to run standalone IgBlast, can be set to c("filtered heavy" or "all") if not one of these three values, will be skipped with a warning. [default = "filtered heavy" for both 10X and BD: highly recommended for both to avoid issues at the createGermline() or observedMutation() steps due to different references databases used (10X) or missing imgt gaps in the sequence_alignment collumn (Both))]}
+
+\item{igblast_max}{max number of sequences to run assignGenes() on. if set to NULL, all sequences are runned at once, else the dataset is cut in chunks of "igblast_max" sequences, run sequencially.}
 
 \item{igblast_dir}{path to igblast database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]}
 

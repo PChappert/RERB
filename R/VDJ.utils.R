@@ -280,7 +280,8 @@ Ab1toAIRR <- function(files,
         }
 
         outfilename <- paste0(outfilename, "_igblast-pass")
-        if(!(update_c_call|SHM|full_seq_aa)){#we only save this file if no other analysis is performed
+        if(!(update_c_call|SHM|full_seq_aa)){
+          #we only save this file if no other analysis is performed
           readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
         }
       }
@@ -290,7 +291,8 @@ Ab1toAIRR <- function(files,
           VDJ_db <- runBlastnC(VDJ_db,
                                igblast_dir = igblast_dir)
           outfilename <- paste0(outfilename, "_c-call-pass")
-          if(!(SHM|full_seq_aa)){#we only save this file if no other analysis is performed
+          if(!(SHM|full_seq_aa)){
+            #we only save this file if no other analysis is performed
             readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
           }
         }, verbose = FALSE, log_file = log_file, log_title = "updating c_call", open_mode = "a")
@@ -321,7 +323,8 @@ Ab1toAIRR <- function(files,
           VDJ_db <- observedMutations(VDJ_db, sequenceColumn= "sequence_alignment", germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=TRUE, combine=TRUE, nproc=nproc)
           
           outfilename <- paste0(outfilename, "_germ-pass_shm-pass")
-          if(!full_seq_aa){#we only save this file if no other analysis is performed
+          if(!full_seq_aa){
+            #we only save this file if no other analysis is performed
             readr::write_tsv(VDJ_db, file = paste0(outfolder, "/", outfilename, ".tsv.gz"))
           }
         }, verbose = FALSE, log_file = log_file, log_title = "adding germline alignments and observed mutations", open_mode = "a")
@@ -1059,7 +1062,7 @@ binContigs <- function(data,
 #' @param resolve_chain chain(s) to filter, should be one of "heavy" or "light", will return one chain per cell for the selected chain(s).
 #' @param resolve_multi_CDR3 whether to pool contigs with similar v_call, j_call and junction_aa in a given cell (cell_id)
 #' @param use_clone     whether to use prior clustering knowledge, a clone_id column should be present.
-#' @param clone_id      name of the column containing cell identifier.#'
+#' @param clone_id      name of the column containing cell identifier.
 #' @param split.by      name of the column in the dataframe to use to split the dataset prior to filtering heavy chain
 #' @param output        whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. If set to FALSE, only the corrected database is returned.
 #' @param output_folder name of the folder in which graph for light chain clustering will be saved.
@@ -1280,7 +1283,7 @@ resolveMultiContigs <- function(db,
     if(nrow(exp_db)>0){
       #1. clonal clustering of all light chain contigs using a stringent threshold because light chains are less diverses and with overall smaller cdr3s...:
       cloned_exp_db <- exp_db
-      cloned_exp_db[[locus]] <- "IGH" #'we trick scoper::defineClonesScoper in believing these are actually heavy chains...
+      cloned_exp_db[[locus]] <- "IGH" #we trick scoper::defineClonesScoper in believing these are actually heavy chains...
       if("light_clone" %in% colnames(cloned_exp_db)){
         cloned_exp_db$light_clone <- NULL
       }
@@ -3680,7 +3683,8 @@ scImportVDJ <- function(vdj_files,
   }
 
   filename <- paste0(output_folder, analysis_name, "_VDJ_CellQCfiltered")
-  if(!clean_HC & !(igblast %in% c("filtered heavy", "all") & !(update_c_call %in% c("filtered heavy", "all")))){#'we only save this file if no other analysis is performed
+  if(!clean_HC & !(igblast %in% c("filtered heavy", "all") & !(update_c_call %in% c("filtered heavy", "all")))){
+    #we only save this file if no other analysis is performed
     readr::write_tsv(VDJ_db, file = paste0(filename, ".tsv.gz"))
   }
 
@@ -3801,7 +3805,7 @@ scImportVDJ <- function(vdj_files,
     
     filename <- paste0(filename, "_HCfilter-pass")
     if(!(igblast == "filtered heavy") & !(update_c_call %in% c("heavy", "all"))){
-      #'we only save this file if no other analysis is performed
+      #we only save this file if no other analysis is performed
       readr::write_tsv(VDJ_db, file = paste0(filename, ".tsv.gz"))
     }
   }
@@ -3839,7 +3843,8 @@ scImportVDJ <- function(vdj_files,
     rm(igblast_results)
 
     filename <- paste0(filename, "_HCigblast_db-pass")
-    if(!(update_c_call %in% c("heavy", "all"))){# we only save this file if no other analysis is performed
+    if(!(update_c_call %in% c("heavy", "all"))){
+      #we only save this file if no other analysis is performed
       readr::write_tsv(h_db, file = paste0(filename, ".tsv.gz"))
     }
     filename_fail <- paste0(filename, "_HCigblast_db-fail")
@@ -4227,7 +4232,8 @@ scFindClones <- function(db,
     rm(igblast_results)
     
     filename <- paste0(filename, "_igblast_db-pass")
-    if(!(update_c_call %in% c("heavy", "all")) & !split_by_light){# we only save this file if no other analysis is performed
+    if(!(update_c_call %in% c("heavy", "all")) & !split_by_light){
+      #we only save this file if no other analysis is performed
       readr::write_tsv(VDJ_db, file = paste0(filename, ".tsv.gz"))
     }
     filename_fail <- paste0(filename, "_igblast_db-fail")
@@ -4387,14 +4393,14 @@ scFindClones <- function(db,
       dir.create(out_temp_folder)
     }
     DefineClones_input_file <- paste0(out_temp_folder, "All_seq.tsv")
-    DefineClones_input_file <- gsub(" ", "\\\ ", DefineClones_input_file, fixed = TRUE) #'to remove any blank in file_path
+    DefineClones_input_file <- gsub(" ", "\\\ ", DefineClones_input_file, fixed = TRUE) #to remove any blank in file_path
     DefineClones_output_file <- paste0(out_temp_folder, "All_seq_clone-pass.tsv")
-    DefineClones_output_file <- gsub(" ", "\\\ ", DefineClones_output_file, fixed = TRUE) #'to remove any blank in file_path
+    DefineClones_output_file <- gsub(" ", "\\\ ", DefineClones_output_file, fixed = TRUE) #to remove any blank in file_path
     
     readr::write_tsv(h_db, file = DefineClones_input_file)
     
     if(!all(h_db$assay %in% c("10X", "BD"))){
-      #' using guess_max = Inf here to avoid parsing issues with columns from the rare imported Sanger datasets, much slower though...
+      #using guess_max = Inf here to avoid parsing issues with columns from the rare imported Sanger datasets, much slower though...
       guess_max = Inf
     } else {
       guess_max = 1000
@@ -4430,7 +4436,7 @@ scFindClones <- function(db,
     unlink(out_temp_folder, recursive = TRUE)
   }
 
-  if(method == "hierarchical"){ # preferred method for clustering of BCR data, multiple threshold can be provided
+  if(method == "hierarchical"){ #preferred method for clustering of BCR data, multiple threshold can be provided
     step <- step + 1
     message(
       "------------\n",
@@ -4641,7 +4647,8 @@ scFindClones <- function(db,
     rm(igblast_results)
 
     filename <- paste0(filename, "_LCigblast_db-pass")
-    if(!(update_c_call %in% c("light", "all")) & !split_by_light){# we only save this file if no other analysis is performed
+    if(!(update_c_call %in% c("light", "all")) & !split_by_light){
+      #we only save this file if no other analysis is performed
       readr::write_tsv(l_db, file = paste0(filename, ".tsv.gz"))
     }
     filename_fail <- paste0(filename, "_LCigblast_db-fail")

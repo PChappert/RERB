@@ -2,11 +2,13 @@
 % Please edit documentation in R/VDJ.utils.R
 \name{reconstructFullVDJ}
 \alias{reconstructFullVDJ}
-\title{\code{reconstructFullVDJ} reconstruct full VDJ sequence for AlphaFold modeling}
+\title{\code{reconstructFullVDJ} reconstruct full VDJ sequence for AlphaFold modeling (only designed for human Ig for now)}
 \usage{
 reconstructFullVDJ(
   db,
-  igblast_dir = "~/share/igblast",
+  seq_type = c("Ig", "TCR"),
+  organism = c("human", "mouse", "rabbit", "rat", "rhesus_monkey"),
+  igblast_dir = "~/share/igblast/",
   CH1_AA = list(IGHG1 =
     "ASTKGPSVFPLAPSSKSTSGGTAALGCLVKDYFPEPVTVSWNSGALTSGVHTFPAVLQSSGLYSLSSVVTVPSSSLGTQTYICNVNHKPSNTKVDKKV",
     IGHG2 =
@@ -47,17 +49,13 @@ reconstructFullVDJ(
 \item{igblast_dir}{path to igblast database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]}
 
 \item{CH1_AA}{named list of CH1 domain for IGH, IGL and IGK c chains (AA); a default one is provided - imported from Uniprot on Feb 2025.}
-
-\item{seq_type}{type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)}
-
-\item{organism}{organism (any of "human", "mouse", "rhesus_monkey; for other see https://changeo.readthedocs.io/en/stable/examples/igblast.html)}
 }
 \value{
 an AIRR formatted dataframe containing the following additional collumns:
 "missing_v_bp", "missing_j_bp", "full_sequence", "full_sequence_aa", "full_sequence_fab_aa", "comments"
 }
 \description{
-\code{reconstructFullVDJ} reconstruct full VDJ sequence for AlphaFold modeling
+\code{reconstructFullVDJ} reconstruct full VDJ sequence for AlphaFold modeling (only designed for human Ig for now)
 }
 \details{
 Will first try to reconstruct the full VDJ sequence,

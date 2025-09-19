@@ -9,9 +9,9 @@ runAb1QC(
   outfolder = NULL,
   outfilename = NULL,
   save = c("png", "html"),
+  reticulate_py_env = NULL,
   primers = c("IgG", "IgM", "IgL", "IgK", "Mix"),
-  trim_cutoff = list(IgG = 300, IgM = 275, IgK = 400, IgL = 275, Mix = 275, Undefined =
-    275),
+  trim_cutoff = NULL,
   nproc = NULL
 )
 }
@@ -22,9 +22,11 @@ runAb1QC(
 
 \item{save}{whether to save png or html plots}
 
+\item{reticulate_py_env}{if you want to force a precise python environment to use for plotly. [should be "~/Library/r-miniconda-arm64/envs/r-reticulate/bin/python" if following installation instructions on MACOS 10.15.4]}
+
 \item{primers}{primers used for PCR}
 
-\item{trim_cutoff}{cutoff thresholds to use depending on primers}
+\item{trim_cutoff}{cutoff thresholds to use [if set to NULL, default to automatic cutoffs for each primers: "IgG" = 300, "IgM" = 275, "IgK" = 400, "IgL"= 275, "Mix" = 275, "Undefined" = 275]}
 
 \item{nproc}{number of processors to use, if NULL, will be automatically set based on available processors.}
 }

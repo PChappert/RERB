@@ -15,23 +15,10 @@ flagVDJdoublets(
   output = TRUE,
   output_folder = "VDJ_QC",
   split.by = NULL,
-  ref = c("azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref"),
-  ref.column = list(azimuth.pbmcref = "predicted.celltype.l2", azimuth.tonsilref =
-    "predicted.cell_type.l1", azimuth.bonemarrowref = "predicted.celltype.l2"),
-  ref.Bcelltypes = list(azimuth.pbmcref = c("B intermediate", "B memory", "B naive",
-    "Plasmablast"), azimuth.tonsilref = c("B activated", "B memory", "B naive", "preGCB",
-    "PB", "PC", "PC/doublet", "preMBC/doublet", "prePB", "Cycling DZ GCB", "DZ GCB",
-    "DZtoLZ GCB transition", "FCRL4/5+ B memory", "LZ GCB", "LZtoDZ GCB transition"),
-    azimuth.bonemarrowref = c("Memory B", "Naive B", "Plasma", "pro B", "pre B",
-    "transitional B")),
-  ref.Tcelltypes = list(azimuth.pbmcref = c("CD4 CTL", "CD4 Naive", "CD4 Proliferating",
-    "CD4 TCM", "CD4 TEM", "Treg", "CD8 Naive", "CD8 Proliferating", "CD8 TCM", "CD8 TEM",
-    "dnT", "gdT", "MAIT"), azimuth.tonsilref = c("CD4 naive", "CD4 Non-TFH", "CD4 TCM",
-    "CD4 TFH", "CD4 TFH Mem", "CD4 TREG", "CD8 naive", "CD8 T", "CD8 TCM", "Cycling T",
-    "dnT", "MAIT/TRDV2+ gdT", "non-TRDV2+ gdT"), azimuth.bonemarrowref =
-    c("CD4 Effector", "CD4 Memory", "CD4 Naive", "CD8 Effector 1", "CD8 Effector 2",
-    "CD8 Effector 3", "CD8 Memory", 
-     "CD8 Naive", "MAIT", "T proliferating")),
+  ref = NULL,
+  ref.column = NULL,
+  ref.Bcelltypes = NULL,
+  ref.Tcelltypes = NULL,
   save_plot = c("pdf", "png"),
   save_tsv = TRUE,
   verbose = TRUE,
@@ -59,11 +46,20 @@ flagVDJdoublets(
 
 \item{split.by}{which column to use to group cells when learning dataset-specific distributions}
 
+\item{ref}{which ref was used for mapping of scRNA-seq dataset: one of "azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref" [default azimuth datasets as of June 2025] or "internal", if using your own clustering information [TODO: add gut dataset?]; 
+to add you own clustering info, set ref = "internal", provide the clustering column name in ref.column and corresponding B or T cell clusters in ref.Bcelltypes = c("C1", "C3"...) or ref.Tcelltypes = c("C4", "C5"...)...}
+
+\item{ref.column}{which output column to use for cluster information [default azimuth values provided as of June 2025]}
+
+\item{ref.Bcelltypes}{which clusters in the azimuth output correspond to B/PC cells populations likely to carry a BCR [default values provided as of June 2025].}
+
+\item{ref.Tcelltypes}{which clusters in the azimuth output correspond to T cells populations likely to carry a TCR [default values provided as of June 2025].}
+
 \item{save_plot}{format to save the final ggplot2 object. "pdf" or "png". if set to any other value, no plot will be saved.}
 
 \item{verbose}{whether to print recap informations to the console}
 
-\item{...}{arguments to pass to homotypicVDJdoublets or heterotypicVDJdoublets.}
+\item{...}{arguments to pass to homotypicVDJdoublets and heterotypicVDJdoublets.}
 }
 \description{
 \code{flagVDJdoublets} flag potential B and nonB doublets.

@@ -7,9 +7,7 @@
 Ab1toAIRR(
   files,
   primers = c("IgG", "IgM", "IgL", "IgK", "Mix"),
-  trim_cutoff = list(IgG = 300, IgM = 275, IgK = 400, IgL = 275, Mix = 275, Undefined =
-    275),
-  save = c("png", "html"),
+  trim_cutoff = NULL,
   QC = TRUE,
   igblast = TRUE,
   seq_type = c("Ig", "TCR"),
@@ -24,6 +22,8 @@ Ab1toAIRR(
   update_info = FALSE,
   verbose = TRUE,
   return_db = FALSE,
+  save = c("png", "html"),
+  reticulate_py_env = "~/Library/r-miniconda-arm64/envs/r-reticulate/bin/python",
   nproc = NULL
 )
 }
@@ -32,7 +32,9 @@ Ab1toAIRR(
 
 \item{primers}{primers used (one of IgG, IgM, IgL, IgK or Mix)}
 
-\item{save}{passed to runAb1QC, whether to save png or html plots}
+\item{trim_cutoff}{cutoff thresholds to use [if set to NULL, default to automatic cutoffs for each primers: "IgG" = 300, "IgM" = 275, "IgK" = 400, "IgL"= 275, "Mix" = 275, "Undefined" = 275]}
+
+\item{QC}{whether to run initial QC part}
 
 \item{igblast}{whether to run igblast}
 
@@ -50,9 +52,15 @@ Ab1toAIRR(
 
 \item{full_seq_aa}{whether to reconstruct full AA sequences for each sequence}
 
+\item{update_info}{whether to only import new info from updated template.info.xlsx file(s); prior steps (QC and igblast) should have been runned before.}
+
 \item{verbose}{whether to write to the console}
 
 \item{return_db}{whether to return the final productive sequences data table}
+
+\item{save}{passed to runAb1QC, whether to save png or html plots}
+
+\item{reticulate_py_env}{if you want to force a precise python environment to use for plotly. [default: NULL]}
 
 \item{nproc}{number of processors to use, if NULL, will be automatically set based on available processors.}
 
