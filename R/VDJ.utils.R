@@ -457,36 +457,45 @@ Ab1toAIRR <- function(files,
         
         openxlsx::addWorksheet(OUT, "Recap_plots")
         temp_dir <- tempdir()  # save png plot to temp folder
-        plate_by_primer <- plotPlate(full_db,
-                                     highlighted_wells = "alternate_well_id",
-                                     color.by = "primers",
-                                     plot_labels = FALSE,
-                                     return_plot = TRUE)
+        if("primers" %in% colnames(full_db)){
+          plate_by_primer <- plotPlate(full_db,
+                                       highlighted_wells = "alternate_well_id",
+                                       color.by = "primers",
+                                       plot_labels = FALSE,
+                                       return_plot = TRUE)
+          plot_file1 <- file.path(temp_dir, "plate_by_primer.png")
+          ggsave(plot_file1, plate_by_primer, width = 6, height = 4, dpi = 300)
+          openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file1, width = 6, height = 4, startRow = 1, startCol = 1)
+        } 
         
-        plot_file1 <- file.path(temp_dir, "plate_by_primer.png")
-        ggsave(plot_file1, plate_by_primer, width = 6, height = 4, dpi = 300)
-        openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file1, width = 6, height = 4, startRow = 1, startCol = 1)
+        if("quality" %in% colnames(full_db)){
+          plate_by_quality <- plotPlate(full_db,
+                                        highlighted_wells = "alternate_well_id",
+                                        color.by = "quality",
+                                        fill_colors = c("productive" = "#7CAE00", "non productive" = "#00BFC4", "failed igblast" = "#C77CFF", "failed initial QC" = "#F8766D"),
+                                        plot_labels = FALSE,
+                                        return_plot = TRUE)
+          
+          plot_file2 <- file.path(temp_dir, "plate_by_quality.png")
+          ggsave(plot_file2, plate_by_quality, width = 6.6, height = 4, dpi = 300)
+          openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file2, width = 6.6, height = 4, startRow = 20, startCol = 1)
+        } else {
+          warning("missnig 'quality' column, skipping recap plate plot for this column.\n")
+        }
         
-        plate_by_quality <- plotPlate(full_db,
+        if("c_call" %in% colnames(full_db)){
+          plate_by_c_call <- plotPlate(VDJ_db,
                                       highlighted_wells = "alternate_well_id",
-                                      color.by = "quality",
-                                      fill_colors = c("productive" = "#7CAE00", "non productive" = "#00BFC4", "failed igblast" = "#C77CFF", "failed initial QC" = "#F8766D"),
+                                      color.by = "c_call",
                                       plot_labels = FALSE,
                                       return_plot = TRUE)
-        
-        plot_file2 <- file.path(temp_dir, "plate_by_quality.png")
-        ggsave(plot_file2, plate_by_quality, width = 6.6, height = 4, dpi = 300)
-        openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file2, width = 6.6, height = 4, startRow = 20, startCol = 1)
-        
-        plate_by_c_call <- plotPlate(VDJ_db,
-                                     highlighted_wells = "alternate_well_id",
-                                     color.by = "c_call",
-                                     plot_labels = FALSE,
-                                     return_plot = TRUE)
-        
-        plot_file3 <- file.path(temp_dir, "plate_by_c_call.png")
-        ggsave(plot_file3, plate_by_c_call, width = 6, height = 4, dpi = 300)
-        openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file3, width = 6, height = 4, startRow = 40, startCol = 1)
+          
+          plot_file3 <- file.path(temp_dir, "plate_by_c_call.png")
+          ggsave(plot_file3, plate_by_c_call, width = 6, height = 4, dpi = 300)
+          openxlsx::insertImage(OUT, sheet = "Recap_plots", file = plot_file3, width = 6, height = 4, startRow = 40, startCol = 1)
+        } else {
+          warning("missnig 'c_call' column, skipping recap plate plot for this column.\n")
+        }
         
         openxlsx::saveWorkbook(OUT, file = paste0(outfolder, "/", stringr::str_replace(filename, "_SCF_SEQ_ABI", ""), "_full_recap.xlsx"), overwrite = TRUE)
         
@@ -1912,11 +1921,6 @@ homotypicVDJdoublets <- function(db,
       locus_simplified %in% chains & !!rlang::sym(assay) %in% scRNAseq.tech
     ) 
   
-  other_db <- db %>%
-    dplyr::filter(
-      !(locus_simplified %in% chains & !!rlang::sym(assay) %in% scRNAseq.tech)
-    ) 
-  
   if(is.null(split.by)){
     split <- NULL
     flagged_db <- flagged_db %>%
@@ -2088,12 +2092,6 @@ homotypicVDJdoublets <- function(db,
                        "lower_cutoff_heavy",
                        "lower_cutoff_light"))
       )
-  
-  if(nrow(other_db)>0){
-    #adding back non BCR or TCR contigs depending on the seq_type
-    db <- db %>%
-      dplyr::bind_rows(other_db)
-  }
   
   return(db)
 }
@@ -2269,11 +2267,6 @@ heterotypicVDJdoublets <- function(db,
       locus_simplified %in% chains & !!rlang::sym(assay) %in% scRNAseq.tech
     ) 
   
-  other_db <- db %>%
-    dplyr::filter(
-      !(locus_simplified %in% chains & !!rlang::sym(assay) %in% scRNAseq.tech)
-    ) 
-  
   if(is.null(split.by)){
     split <- NULL
     flagged_db <- flagged_db %>%
@@ -2445,12 +2438,6 @@ heterotypicVDJdoublets <- function(db,
                        "lower_cutoff_light"))
     )
   
-  if(nrow(other_db)>0){
-    #adding back non BCR or TCR contigs depending on the seq_type
-    db <- db %>%
-      dplyr::bind_rows(other_db)
-  }
-
   return(db)
 }
 
