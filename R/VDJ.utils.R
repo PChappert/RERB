@@ -4133,7 +4133,7 @@ scFindClones <- function(db,
   if(clean_LC){
     missing_counts <- setdiff(c(umi_count, consensus_count), colnames(db))
     if(length(missing_counts)>0){
-      warning("missing the following columns in provided VDJ file: ", paste(missing_counts), collapse = ", ", " all set to 1")
+      warning("missing the following columns in provided VDJ file: ", paste(missing_counts, collapse = "; "), "; all set to 1")
       for(column in missing_counts){
         db[column] <- 1
       }
@@ -4141,11 +4141,22 @@ scFindClones <- function(db,
   }
   
   ## run initial QC on imput and arguments provided:
-  required_collumns <- c(cell_id, locus, junction, junction_aa, junc_len, productive)
-  missing_collumns <- setdiff(required_collumns, colnames(db))
-  if(length(missing_collumns)>0) {
-    stop(paste0("missing the following collumns: ", missing_collumns))
+  if(!cell_id %in% colnames(db)){
+    stop(cell_id, " not found in the colnames of provided db")
   }
+  
+  if(!igblast == "all"){
+    required_collumns <- c(locus, junction, junction_aa, junc_len, productive)
+    missing_collumns <- setdiff(required_collumns, colnames(db))
+    if(length(missing_collumns) > 0) {
+      if(all(sequence, sequence_id) %in% colnames(db)){
+        warning("Missing the following collumns: ", paste(missing_collumns, collapse = "; "), "; running igblast to begin with")
+        igblast = "all"
+      } else {
+        stop("Missing the following collumns: ", paste(missing_collumns, collapse = "; "), "; with missing sequence or sequence_id columns provided to run igblast")
+      }
+    }
+  } 
 
   method <- match.arg(method)
   if(!method %in% c("changeo", "identical", "hierarchical", "spectral")){
