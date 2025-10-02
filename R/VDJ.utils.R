@@ -187,13 +187,13 @@ Ab1toAIRR <- function(files,
       if(verbose){cat("unzipping", filepath, "\n")}
       time_and_log({
         cat(paste0("unzipping ", filepath))
-        unzip(filepath, exdir = paste0(outfolder, "/temp_folder"))
+        unzip(filepath, exdir = paste0(outfolder, "/unzipped_Ab1_files"))
       }, verbose = FALSE, log_file = log_file, log_title = "Unzipping .Ab1.zip file", open_mode = "a")
 
       # Step2: run QC:
       if(verbose){cat("starting QC", "\n")}
       time_and_log({
-        QC_results <- runAb1QC(Ab1_folder = paste0(outfolder, "/temp_folder"),
+        QC_results <- runAb1QC(Ab1_folder = paste0(outfolder, "/unzipped_Ab1_files"),
                                outfolder = outfolder,
                                outfilename = outfilename,
                                primers = primers,
@@ -205,7 +205,7 @@ Ab1toAIRR <- function(files,
 
       VDJ_db <- QC_results[["pass"]]
       QC_failed <- QC_results[["fail"]]
-      unlink(paste0(outfolder, "/temp_folder"), recursive = TRUE) #remove temp folder
+      unlink(paste0(outfolder, "/unzipped_Ab1_files"), recursive = TRUE) #remove temp folder
       
     } else {
       if(!update_info){
@@ -241,6 +241,7 @@ Ab1toAIRR <- function(files,
         if(verbose){cat("running Igblast using", igblast_method, "\n")}
         if(igblast_method == "AssignGenes"){
           time_and_log({
+            tmp_dir <- tempdir()
             igblast_results <- runAssignGenes(VDJ_db,
                                               sequence = "sequence",
                                               sequence_id = "well_id",
@@ -248,19 +249,25 @@ Ab1toAIRR <- function(files,
                                               seq_type = seq_type,
                                               igblast_dir = igblast_dir,
                                               imgt_dir = imgt_dir,
-                                              log = igblast_log)
+                                              output_folder = tmp_dir,
+                                              output = FALSE #do not keep all intermediate results
+                                              )
           }, verbose = FALSE, log_file = log_file, log_title = igblast_method, open_mode = "a")
         }
 
         if(igblast_method == "runIgblastn"){
           time_and_log({
+            tmp_dir <- tempdir()
             igblast_results <- runIgblastn(VDJ_db,
                                            sequence = "sequence",
                                            sequence_id = "well_id",
                                            organism = organism,
                                            seq_type = seq_type,
                                            igblast_dir = igblast_dir,
-                                           imgt_dir = imgt_dir)
+                                           imgt_dir = imgt_dir,
+                                           output_folder = tmp_dir,
+                                           output = FALSE, #do not keep all intermediate results
+                                           )
           }, verbose = FALSE, log_file = log_file, log_title = igblast_method, open_mode = "a")
         }
 
@@ -1174,7 +1181,7 @@ resolveMultiContigs <- function(db,
   if(use_clone){required_columns <- c(required_columns, clone_id)}
   if(!complete_vdj %in% colnames(db)){
     required_columns <- required_columns[required_columns != complete_vdj]
-    required_columns <- c(required_collumns, "fwr1", "fwr2", "fwr3", "fwr4", "cdr1", "cdr2", "cdr3")
+    required_columns <- c(required_columns, "fwr1", "fwr2", "fwr3", "fwr4", "cdr1", "cdr2", "cdr3")
   }
   missing_columns <- setdiff(required_columns, colnames(db))
   if(length(missing_columns)>0) {stop(paste0("missing the following collumns: ", missing_columns))}
@@ -3157,6 +3164,14 @@ reconstructFullVDJ <- function(db,
   if(!"comments" %in% colnames(db)){
     db$comments <- NA
   }
+  
+  #remove first leading and trailing Ns introduced by builClonalGermline inside createGermline
+  db <- db %>% 
+    dplyr::mutate(
+      sequence_alignment = gsub("^[Nn]+|[Nn]+$", "", sequence_alignment)
+    )
+  
+  #then proceed with reconstructing the full sequence when possible
   for(i in seq_along(db$sequence_id)){
     ##heavy chain:
     if(!is.na(db$v_call[i])){
@@ -3193,8 +3208,8 @@ reconstructFullVDJ <- function(db,
         db$comments[i] <- paste(na.omit(c(db$comments[i], "'N' in VH sequence, reverted to germline")), collapse = "; ")
       }
       if(!length(Ns_aligned) == length(Ns_raw)){
-        # rare cases when an N base is wrongly inserted in the read sequence and doesn't align to a known position in V or J genes and is thus discarded in IgBlast sequence alignment.
-        # for now, we will just require user to analyze that sequence manually.
+        # rare cases when a base is missing or wrongly inserted in the read sequence and doesn't align to a known position in V or J genes and is thus discarded in IgBlast sequence alignment. 
+        # for now will only ask users to check manually the sequence 
         db$comments[i] <- paste(na.omit(c(db$comments[i], "different numbers of 'N' in raw VH sequence as compared to germline (check sequence manually)")), collapse = "; ")
         db$full_sequence[i] <- NA
       }
@@ -3707,6 +3722,7 @@ scImportVDJ <- function(vdj_files,
     
     if(is.numeric(igblast_max)){
       time_and_log({
+        tmp_dir <- tempdir()
         igblast_results <- VDJ_db %>%
           dplyr::mutate(chunk = (row_number() - 1) %/% igblast_max) %>%
           dplyr::group_split(chunk, .keep = FALSE) %>%
@@ -3716,7 +3732,9 @@ scImportVDJ <- function(vdj_files,
                                          igblast_dir = igblast_dir,
                                          imgt_dir = imgt_dir,
                                          sequence = sequence,
-                                         sequence_id = sequence_id))
+                                         sequence_id = sequence_id,
+                                         output_folder = tmp_dir,
+                                         output = FALSE))
                                           
       }, verbose = verbose, log_file = log_file, log_title = "running AssignGenes", open_mode = "a")
       
@@ -3731,13 +3749,16 @@ scImportVDJ <- function(vdj_files,
         warning("igblast_max must be a numeric value, defaulting to running assignGenes on all sequences at once")
       }
       time_and_log({
+        tmp_dir <- tempdir()
         igblast_results <- runAssignGenes(VDJ_db,
                                           organism = organism,
                                           seq_type = seq_type,
                                           igblast_dir = igblast_dir,
                                           imgt_dir = imgt_dir,
                                           sequence = sequence,
-                                          sequence_id = sequence_id)
+                                          sequence_id = sequence_id,
+                                          output_folder = tmp_dir,
+                                          output = FALSE)
       }, verbose = verbose, log_file = log_file, log_title = "running AssignGenes", open_mode = "a")
       
       VDJ_db <- igblast_results[["pass"]]
@@ -3826,13 +3847,16 @@ scImportVDJ <- function(vdj_files,
     message("------------")
     
     time_and_log({
+      tmp_dir <- tempdir()
       igblast_results <- runAssignGenes(h_db,
                                         organism = organism,
                                         seq_type = seq_type,
                                         igblast_dir = igblast_dir,
                                         imgt_dir = imgt_dir,
                                         sequence = sequence,
-                                        sequence_id = sequence_id)
+                                        sequence_id = sequence_id,
+                                        output_folder = tmp_dir,
+                                        output = FALSE)
     }, verbose = verbose, log_file = log_file, open_mode = "wt")
     
     h_db <- igblast_results[["pass"]]
@@ -4034,6 +4058,8 @@ scFindClones <- function(db,
                          clean_LC = TRUE,
                          split_by_light = TRUE,
                          update_germline = TRUE,
+                         trim_lengths = TRUE,
+                         force_trim = TRUE,
                          SHM = TRUE,
                          full_seq_aa = TRUE,
                          #passed to Scoper:
@@ -4145,9 +4171,9 @@ scFindClones <- function(db,
     stop(cell_id, " not found in the colnames of provided db")
   }
   
+  required_columns <- c(locus, junction, junction_aa, junc_len, productive)
   if(!igblast == "all"){
-    required_collumns <- c(locus, junction, junction_aa, junc_len, productive)
-    missing_collumns <- setdiff(required_collumns, colnames(db))
+    missing_collumns <- setdiff(required_columns, colnames(db))
     if(length(missing_collumns) > 0) {
       if(all(sequence, sequence_id) %in% colnames(db)){
         warning("Missing the following collumns: ", paste(missing_collumns, collapse = "; "), "; running igblast to begin with")
@@ -4226,13 +4252,14 @@ scFindClones <- function(db,
     )
     
     time_and_log({
+      tmp_dir <- tempdir()
       igblast_results <- runAssignGenes(db,
                                         igblast_dir = igblast_dir,
                                         imgt_dir = imgt_dir,
                                         sequence = sequence, 
                                         sequence_id = sequence_id,
-                                        log = FALSE, 
-                                        log_file = log_connection)
+                                        output_folder = tmp_dir,
+                                        output = FALSE)
       }, verbose = verbose, log_file = log_file, log_title = paste0("Part ", step," of ", n,": Running IgBlast on all sequences"), open_mode = "a")
     
     VDJ_db <- igblast_results[["pass"]]
@@ -4641,13 +4668,14 @@ scFindClones <- function(db,
     nb_cells_ini <- length(unique(l_db$cell_id))
       
     time_and_log({
+      tmp_dir <- tempdir()
       igblast_results <- runAssignGenes(l_db,
                                         igblast_dir = igblast_dir,
                                         imgt_dir = imgt_dir,
                                         sequence = sequence, 
                                         sequence_id = sequence_id,
-                                        log = FALSE, 
-                                        log_file = log_connection)
+                                        output_folder = tmp_dir,
+                                        output = FALSE)
     }, verbose = verbose, log_file = log_file, log_title = "Running IgBlast on light chain contigs", open_mode = "a")
     
     l_db <- igblast_results[["pass"]]
@@ -4857,8 +4885,8 @@ scFindClones <- function(db,
       heavy_cloned_VDJ_db <- dowser::createGermlines(heavy_cloned_VDJ_db,
                                                      references = reference,
                                                      locus = locus,
-                                                     trim_lengths = TRUE,
-                                                     force_trim = TRUE,
+                                                     trim_lengths = trim_lengths,
+                                                     force_trim = force_trim,
                                                      nproc = nproc,
                                                      v_call = v_call,
                                                      d_call = d_call,
@@ -4874,8 +4902,8 @@ scFindClones <- function(db,
         light_only_db <- dowser::createGermlines(light_only_db,
                                                  references = reference,
                                                  locus = locus,
-                                                 trim_lengths = TRUE,
-                                                 force_trim = TRUE,
+                                                 trim_lengths = trim_lengths,
+                                                 force_trim = force_trim,
                                                  nproc = nproc,
                                                  v_call = v_call,
                                                  d_call = d_call,
@@ -5401,6 +5429,209 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
  # import in seurat object:
  sc <- SeuratObject::AddMetaData(sc, sc_vdj_db)
  return(sc)
+}
+
+
+#### Function to summarize cell information ####
+#' convert an AIRR formatted data frame to prepare for exportAF3json
+#'
+#'\code{summarizeBCRClones}
+#'@param db AIRR formatted data frame with individual rows for heavy (HC) and light chains (LC)
+#'@param cell_id name of column containing cell_id values.
+#'@param locus name of column containing locus information.
+#'@param import_per_chain names of columns to keep for each chain (will appear as "h_col1" and "l_col1" in the exported data frame) 
+#'@param import_global names of columns to summarize at the cell level 
+#'@param include_meta metadata to keep in the reformatted data frame (default = selected non AIRR metadata)
+#'@param selected_meta names of columns to keep in the final data frame
+#'@param filter_incomplete_bcr whether to only keep cells with both heavy and light chains
+#'
+summarizeBCRClones <- function(db,
+                               cell_id = "cell_id",
+                               locus = "locus",
+                               import_per_chain = c("v_call", "d_call", "j_call", "junction_aa", "junction_length", "mu_count", 
+                                                    "sequence", "full_sequence", "full_sequence_aa",	"full_sequence_fab_aa"),
+                               import_global = c("cell_id", "clone_id"), 
+                               include_meta = c("selected", "all"),
+                               selected_meta = NULL,
+                               filter_incomplete_bcr = TRUE){
+  
+  suppressMessages(library(dplyr))
+  
+  chains = list(h = "IGH", 
+                l = c("IGL", "IGK"))
+  
+  include_meta <- match.arg(include_meta)
+  if(!is.null(selected_meta)){
+    include_meta <- "selected"
+  }
+  
+  airr_columns = c("rev_comp", "productive", "locus", "bcr_info",
+                   "v_call", "d_call", "j_call", "c_call", "c_call_igblast", "c_call_bd", "c_call_10x", "junction", "junction_aa", 
+                   "sequence_alignment", "germline_alignment",
+                   "v_cigar", "d_cigar", "j_cigar", "stop_codon", "vj_in_frame", 
+                   "junction_length", "np1_length", "np2_length", "v_sequence_start", "v_sequence_end", "v_germline_start", "v_germline_end", 
+                   "d_sequence_start", "d_sequence_end", "d_germline_start", "d_germline_end", "j_sequence_start", "j_sequence_end", "j_germline_start", "j_germline_end", 
+                   "v_score", "v_identity", "v_support", "d_score", "d_identity", "d_support", "j_score", "j_identity", "j_support", 
+                   "fwr1", "fwr2", "fwr3", "fwr4", "cdr1", "cdr2", "cdr3",
+                   "v_germline_length", "d_germline_length", "j_germline_length",
+                   "h_clone_id", "l_subgroup_h_clone_id", 
+                   "c_call_alignment_score", "c_call_pct_match", "c_call_alignment_length", "vj_cell", "germline_alignment_d_mask",     
+                   "mu_count_cdr_r", "mu_count_cdr_s", "mu_count_fwr_r", "mu_count_fwr_s", "mu_freq_cdr_r", "mu_freq_cdr_s", "mu_freq_fwr_r", "mu_freq",
+                   "missing_v_bp", "missing_j_bp")
+  
+  ab1_to_airr_columns = c("sort_id", "sequencing_pool_well_id", "sequencing_plate", "sort_well_id", 
+                          "sequence_length", "pct_under_30QC_in_trimmed", 
+                          "low10QC_original_seq", "low30QC_original_seq",
+                          "sanger_low10QC_original_seq", "sanger_low30QC_original_seq",
+                          "low10QC_alternate_calls", "low30QC_alternate_calls",
+                          "sanger_low10QC_alternate_calls", "sanger_low30QC_alternate_calls", "QC_passed",
+                          "sanger_missing_v_bp", "sanger_missing_j_bp", "sanger_comments")
+  
+  if(filter_incomplete_bcr){
+    db <- db %>%
+      dplyr::group_by(cell_id) %>%
+      dplyr::mutate(
+        bcr_info = case_when(
+          any(!!rlang::sym(locus) %in% chains[["h"]]) & any(!(!!rlang::sym(locus) %in% chains[["h"]])) ~ "full",
+          all(!!rlang::sym(locus) %in% chains[["h"]]) ~ "heavy_only",
+          all(!(!!rlang::sym(locus) %in% chains[["h"]])) ~ "light_only",
+          TRUE ~ NA_character_
+        )) %>%
+      dplyr::ungroup() %>%
+      dplyr::filter(bcr_info == "full")
+  }
+  
+  if(include_meta == "all"){
+    #by default removing all airr columns and ab1toairr columns
+    #to keep them use 'selected_meta' argument and include_meta == "selected"
+    import_global <- c(import_global, setdiff(colnames(db), c(import_per_chain, import_global, airr_columns, ab1_to_airr_columns)))
+  }
+  if(include_meta == "selected"){
+    meta_by_chain <- intersect(selected_meta, c(airr_columns, ab1_to_airr_columns))
+    import_per_chain <- c(import_per_chain, meta_by_chain)
+    if(length(meta_by_chain) > 0){
+      warning("The following metadata will be imported at the sequence level: ", paste(meta_by_chain, collapse = "; "))
+    }
+    import_global <- c(import_global, setdiff(selected_meta, c(import_per_chain, import_global, airr_columns, ab1_to_airr_columns)))
+  }
+  
+  cell_infos <- db %>%
+    dplyr::filter(locus == "IGH") %>%
+    dplyr::select(any_of(c("cell_id", import_global)))
+  
+  import_per_chain <- intersect(import_per_chain, colnames(db))
+  chains_cols <- unlist(lapply(import_per_chain, function(c) c(paste0("h_", c), paste0("l_", c))))
+  
+  chains_db.lists <- purrr::imap(chains, function(chain, name){
+    chain_db <- db %>%
+      dplyr::filter(locus %in% chain) %>%
+      dplyr::select(all_of(c("cell_id", import_per_chain))) %>%
+      dplyr::rename_with(
+        ~ paste0(name, "_", .), -all_of(c("cell_id"))
+      )
+    return(chain_db)
+  })
+  
+  summarized_db <- cell_infos %>%
+    dplyr::left_join(
+      purrr::reduce(chains_db.lists, full_join, by = c("cell_id")),
+      by = join_by("cell_id")
+    )
+  
+  summarized_db <- summarized_db %>%
+    dplyr::select(any_of(c(colnames(cell_infos), chains_cols)))
+  
+  return(summarized_db)
+}
+
+#### Function to export for Alphafold3 modeling of Antigen/Ig interactions ####
+#' export a AF3 formatted .json file
+#'
+#'\code{exportAF3json}
+#'@param db a dataframe in the summarizeBCRClones() format with column for heavy and light chains full sequence at the aa level (use fullVDJreconstruction())
+#'@param antigen_name name of the antigen to model binding to (only used if no request_name is provided)
+#'@param antigen_aa sequence of the antigen to model binding to
+#'@param request_name a column in the data frame to use for names of Alphafold3 requests (if NULL, defaulting to "cell_id"_"antigen_name"_"syst.date"
+#'@param json_name name for the final .json file
+#'@param out_folder path of the folder to export to
+#'@param cell_id name of column containing cell_id values.
+#'@param full_HC_aa name of column containing full AA sequence for the heavy chain.
+#'@param full_LC_aa name of column containing full AA sequence for the light chain.
+#'@param useStructureTemplate whether to use the structure template option in AlphaFold3
+
+exportAF3json <- function(db,
+                          antigen_name,
+                          antigen_aa,
+                          request_name = NULL,
+                          json_name = "job_request",
+                          out_folder = "AF3_json_files/",
+                          cell_id = "cell_id",
+                          full_HC_aa = "h_full_sequence_aa",
+                          full_LC_aa = "l_full_sequence_aa",
+                          useStructureTemplate = TRUE,
+                          return_db = FALSE){
+  
+  
+  if(!dir.exists(out_folder)){
+    dir.create(out_folder)
+  }
+  
+  if(is.null(request_name)){
+    warning("no provided request name, defaulting to 'cell_id'_'antigen_name'_'date'")
+    db$request_name <- paste0(db[[cell_id]], "_", antigen_name,"_", Sys.Date())
+  } else {
+    if(!request_name %in% colnames(db)){
+      warning("provided request name (", request_name,") not in the colnames of provided db, defaulting to 'cell_id'_'antigen_name'_'date'")
+      db$request_name <- paste0(db[[cell_id]], "_", antigen_name,"_", Sys.Date())
+    } else {
+      db <- db %>%
+        dplyr::mutate(
+          request_name = !!rlang::sym(request_name)
+        )
+    }
+  }
+  
+  db <- db %>%
+    dplyr::filter(!is.na(!!rlang::sym(cell_id)) & !is.na(!!rlang::sym(full_HC_aa)) & !is.na(!!rlang::sym(full_LC_aa)))
+  
+  json.files <- lapply(1:nrow(db), function(i) {
+    list(
+      name = db$request_name[i],
+      modelSeeds = list(sample(1:1e6, 1)),   # random seed
+      sequences = list(
+        list(proteinChain = list(
+          sequence = antigen_aa,
+          count = 1,
+          useStructureTemplate = useStructureTemplate
+        )),
+        list(proteinChain = list(
+          sequence = db[[full_HC_aa]][i],
+          count = 1,
+          useStructureTemplate = useStructureTemplate
+        )),
+        list(proteinChain = list(
+          sequence = db[[full_LC_aa]][i],
+          count = 1,
+          useStructureTemplate = useStructureTemplate
+        ))
+      ),
+      dialect = "alphafoldserver",
+      version = 1
+    )
+  })
+  
+  json_output <- jsonlite::toJSON(json.files, pretty = TRUE, auto_unbox = TRUE)
+  
+  write(json_output, paste0(out_folder, "/", json_name, ".json"))
+  
+  if(return_db){
+    db <- db %>%
+      dplyr::mutate(
+        main_folder = out_folder,
+        !!rlang::sym("AF3_", antigen_name,"_run_id") := tolower(request_name)
+      ) %>%
+      dplyr::select(-request_name)
+  }
 }
 
 
