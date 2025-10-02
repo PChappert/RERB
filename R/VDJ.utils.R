@@ -1187,8 +1187,14 @@ resolveMultiContigs <- function(db,
   missing_columns <- setdiff(required_columns, colnames(db))
   if(length(missing_columns)>0) {stop(paste0("missing the following collumns: ", missing_columns))}
 
-  if(!complete_vdj %in% colnames(db)){ # should have been calculated upon HC filtering (filterHC())
-    db[[complete_vdj]] <- !(nchar(db$fwr1)<3|is.na(db$fwr1)|nchar(db$cdr1)<3|is.na(db$cdr1)|nchar(db$fwr2)<3|is.na(db$fwr2)|nchar(db$cdr2)<3|is.na(db$cdr2)|nchar(db$fwr3)<3|is.na(db$fwr3)|nchar(db$cdr3)<3|is.na(db$cdr3)|is.na(db$fwr4)|nchar(db$fwr4)<3)
+  if(!complete_vdj %in% colnames(db)){ 
+    db[[complete_vdj]] <- !(nchar(gsub("\\.","", db$fwr1))<3|is.na(gsub("\\.","", db$fwr1))|
+                              nchar(gsub("\\.","", db$cdr1))<3|is.na(gsub("\\.","", db$cdr1))|
+                              nchar(gsub("\\.","", db$fwr2))<3|is.na(gsub("\\.","", db$fwr2))|
+                              nchar(gsub("\\.","", db$cdr2))<3|is.na(gsub("\\.","", db$cdr2))|
+                              nchar(gsub("\\.","", db$fwr3))<3|is.na(gsub("\\.","", db$fwr3))|
+                              nchar(gsub("\\.","", db$cdr3))<3|is.na(gsub("\\.","", db$cdr3))|
+                              nchar(gsub("\\.","", db$fwr4))<3|is.na(gsub("\\.","", db$fwr4)))
   }
 
   if(is.null(split.by)){
@@ -1501,7 +1507,7 @@ resolveMultiContigs <- function(db,
   final_seq_nb_post_filtering <- nrow(db_filtered)
 
   final_log_message <- paste0(final_seq_nb_post_filtering," contigs selected among the ",ini_seq_nb_for_filtering," ", paste(chain, collapse = "-")," contigs submitted.\n")
-  cat(final_log_message)  # Print to console
+  #cat(final_log_message)  # Print to console
 
   final_log_message <- paste0(final_log_message,
                               "filtration was made following the following rules: Read count of the contig is at least 20% of the total read count from all contigs for the cell-chain,\n",
@@ -1950,14 +1956,14 @@ homotypicVDJdoublets <- function(db,
       chains <- chains[!chains == chain]
       }
     if(any(duplicated(locus_db$cell_id))){
-      stop(paste0(paste(unlist(mget(chain)), collapse = "-")," contig filtration must be done before runing flagVDJdoublets(), run resolveMultiContigs()."))
+      stop(paste0(paste(unlist(mget(chain)), collapse = "-")," contig filtration must be done before running flagVDJdoublets(), run resolveMultiContigs()."))
       }
     if(!paste0("second_", umi_count) %in% colnames(locus_db)){
-      stop(paste0(paste(unlist(mget(chain)), collapse = "-")," contig filtration must be done before runing flagVDJdoublets(), run resolveMultiContigs()."))
+      stop(paste0(paste(unlist(mget(chain)), collapse = "-")," contig filtration must be done before running flagVDJdoublets(), run resolveMultiContigs()."))
       }
     if(paste0("second_", umi_count) %in% colnames(locus_db)){
       if(all(is.na(locus_db[[paste0("second_", umi_count)]]))){
-        warning("non secondary ",paste(unlist(mget(chain)), collapse = "-")," contig found, either its a perfect dataset or ", paste(unlist(mget(chain)), collapse = "-")," contig filtration has not been run before runing flagVDJdoublets()")
+        warning("no secondary ",paste(unlist(mget(chain)), collapse = "-")," contig found, either its a perfect dataset or ", paste(unlist(mget(chain)), collapse = "-")," contig filtration has not been done independantly of resolveMultiContigs()")
         }
     }
     rm(locus_db)

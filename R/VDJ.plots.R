@@ -1614,7 +1614,7 @@ CDR3logos <- function(db,
       l <- plots[[i]][[2]]
       name <- names(plots)[i]
 
-      save_as <- match.args(save_as)
+      save_as <- match.arg(save_as)
       if (save_as == "pdf") {
         ggsave(g, filename = paste0(plots_folder, "/", name, "_CDR3_logo.pdf"), width = ((2 + l) / 4), height = 2)
       }
@@ -2747,3 +2747,6 @@ SingleCircosClonotypes <- function(db,
     return(grob)
   }
 }
+
+
+
