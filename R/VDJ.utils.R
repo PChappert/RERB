@@ -992,7 +992,7 @@ binContigs <- function(data,
 
   #suppressMessages(library(dplyr))
 
-  if(length(data)>1){
+  if(length(unique(data))>1){
     # Compute Kernel Density Estimation (KDE)
     dens <- stats::density(data)
     # Function to find local minima (antimodes)
@@ -1004,6 +1004,7 @@ binContigs <- function(data,
     bin_edges <- c(min(data), antimodes, max(data))
     bins <- cut(data, breaks = bin_edges, include.lowest = TRUE, labels = FALSE)
   } else {
+    # only one value
     bins <- 1
   }
   
@@ -1027,7 +1028,7 @@ binContigs <- function(data,
     if (requireNamespace("ggplot2", quietly = TRUE)) {
       suppressMessages(library(ggplot2))
       # Convert density estimation and antimodes to a data frame for ggplot
-      if(length(data)>1){
+      if(length(unique(data))>1){
         density_df <- data.frame(x = dens$x, y = dens$y)
         antimodes_df <- data.frame(x = antimodes, y = dens$y[which.minima(dens$y)])
         
