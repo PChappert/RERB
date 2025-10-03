@@ -2117,14 +2117,12 @@ CircosClonotypes <- function(db,
       # Plot data
       if (!return_plot) {
         SingleCircosClonotypes(data,
-                               split.by = origin,
                                prefix = paste(c(prefix, group_name), collapse = "_"),
                                return_plot = FALSE,
                                ...
         )
       } else {
         grobs <- SingleCircosClonotypes(data,
-                                        split.by = origin,
                                         prefix = paste(c(prefix, group_name), collapse = "_"),
                                         return_plot = TRUE,
                                         ...
@@ -2371,7 +2369,7 @@ SingleCircosClonotypes <- function(db,
       dplyr::ungroup()
   }
   
-  ## create full recap for each sectors to be plotted and respective collor to use
+  ## create full recap for each sectors to be plotted and respective colors to use
   groups_infos <- Plot_db %>%
     dplyr::distinct(!!!rlang::syms(paste0("layer", (1:length(layers))))) %>%
     dplyr::arrange(!!!rlang::syms(rev(paste0("layer", (1:length(layers)))))) 
@@ -2427,7 +2425,7 @@ SingleCircosClonotypes <- function(db,
                          stringsAsFactors=FALSE)
     for (k in 1:length(comparison)){
       common_clones_k <- intersect(df2.list[[i]]$clone_id, df2.list[[comparison[k]]]$clone_id)
-      if(!grepl(pattern = comparison[k], i) & (length(common_clones_k) > 0)){ #in between donor linked are not counted
+      if(!grepl(pattern = comparison[k], i) & (length(common_clones_k) > 0)){ 
         is.common <- df2.list[[i]]$clone_id %in% common_clones_k
         df <- df2.list[[i]][is.common, c("clone_id", "nb_cells", "clone_segments_start")]
         colnames(df) <- c("clone_id", "size_orig", "start_orig")
@@ -2449,9 +2447,14 @@ SingleCircosClonotypes <- function(db,
   #if a named list of color exists, it will be used
   
   if(is.null(links)){
-    links <- c("all", layers[2:min(3, length(layers))])
-    links_col <- c("darkgrey", "dodgerblue", "darkred")[1:min(3, length(layers))]
-    names(links_col) <- links
+    if(length(layers)>1){
+      links <- c("all", layers[2:min(3, length(layers))])
+      links_col <- c("darkgrey", "dodgerblue", "darkred")[1:min(3, length(layers))]
+      names(links_col) <- links
+    } else {
+      links <- "all"
+      links_col <- c(all="darkgrey")
+    }
   } 
   
   if(!is.null(links_col)){
@@ -2635,9 +2638,10 @@ SingleCircosClonotypes <- function(db,
   
   if(any(links %in% origins)){
     for (origin in links[links %in% origins]){
+      # selecting all links that start or finish in this origin 
       df_layer <- df3 %>%
         dplyr::filter(
-          orig == origin
+          orig == origin | end == origin
         )
       
       # plot highlight links
