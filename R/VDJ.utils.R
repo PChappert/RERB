@@ -4252,9 +4252,10 @@ scFindClones <- function(db,
   ## 0. [option 1] run igblast on all sequences: can take around 15min for 300k+ sequences
   if(igblast == "all"){# not the preferred option as you will use computer power and time on sequences you will discard later but can help getting rid of contigs that won't pass igblast anyway...
     step <- step + 1
+    patience <- ifelse(nrow(db) > 100000, " (takes around 5min for 100k sequences... be patient!)", "")
     message(
       "------------\n",
-      "Part ", step," of ", n,": Running IgBlast on all sequences (takes around 5min for 100k sequences... be patient!)\n",
+      "Part ", step," of ", n,": Running IgBlast on all sequences", patience ,"\n",
       "------------\n"
     )
     
@@ -5564,7 +5565,7 @@ summarizeBCRClones <- function(db,
 #'@param cell_id name of column containing cell_id values.
 #'@param full_HC_aa name of column containing full AA sequence for the heavy chain.
 #'@param full_LC_aa name of column containing full AA sequence for the light chain.
-#'@param useStructureTemplate whether to use the structure template option in AlphaFold3
+#'@param useStructureTemplate which chain to use the structure template on ("all", for all chains; "none", for no chains; or any combination of "antigen", "HC" and "LC")
 
 exportAF3json <- function(db,
                           antigen_name,
@@ -5575,9 +5576,20 @@ exportAF3json <- function(db,
                           cell_id = "cell_id",
                           full_HC_aa = "h_full_sequence_aa",
                           full_LC_aa = "l_full_sequence_aa",
-                          useStructureTemplate = TRUE,
+                          useStructureTemplate = c("all", "antigen", "HC", "LC", "none"),
                           return_db = FALSE){
   
+  useStructureTemplate_on <- match.arg(useStructureTemplate, several.ok = TRUE)
+  if("all" %in% useStructureTemplate_on){
+    useStructureTemplate_on <- c("antigen", "HC", "LC")
+  }
+  if("none" %in% useStructureTemplate_on){
+    useStructureTemplate_on <- c("none")
+  }
+  
+  chains <- c("antigen", "HC", "LC")
+  useStructureTemplate_on <- chains %in% useStructureTemplate_on
+  names(useStructureTemplate_on) <- chains
   
   if(!dir.exists(out_folder)){
     dir.create(out_folder)
@@ -5609,17 +5621,17 @@ exportAF3json <- function(db,
         list(proteinChain = list(
           sequence = antigen_aa,
           count = 1,
-          useStructureTemplate = useStructureTemplate
+          useStructureTemplate = useStructureTemplate_on["antigen"]
         )),
         list(proteinChain = list(
           sequence = db[[full_HC_aa]][i],
           count = 1,
-          useStructureTemplate = useStructureTemplate
+          useStructureTemplate = useStructureTemplate_on["HC"]
         )),
         list(proteinChain = list(
           sequence = db[[full_LC_aa]][i],
           count = 1,
-          useStructureTemplate = useStructureTemplate
+          useStructureTemplate = useStructureTemplate_on["LC"]
         ))
       ),
       dialect = "alphafoldserver",
