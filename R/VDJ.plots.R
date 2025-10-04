@@ -2158,8 +2158,9 @@ CircosClonotypes <- function(db,
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
 #' @param layers    names of columns to be plotted as layers (from inner to outer tracks)
-#' @param layers_col a named list of named vector for colors to be used for each group in each layer, if ayers or groups are missing will be automatically added 
-#' @param groups_to_plot which groups to plot: a vector that can mix groups from any of the plotted layers (i.e. c('donor1', 'donor2', 'timepoint1', 'timepoint3')
+#' @param layers_col a named list of named vector for colors to be used for each group in each layer, if layers or groups are missing will be automatically added 
+#' @param groups_to_plot which groups to plot. Should be a named list: list(layer1 = c(factor1, factor3), layer3 = c(...),...)). If no names are provided for a given layer, all group are plotted by default
+#' @param reorder   a named list with the layers to reorder and the new order: list(layer1 = c(factor2, factor1, factor3), layer2 = c(...), ...)
 #' @param links     which clonal relationships to plot: a combination of all, any layer (will plot layer-specific clones), any origin group (will plot all relationship with this group) or any particular clone.
 #' @param links_col a named vector providing one color per type of link to plot
 #' @param prefix    prefix to use for saved files
@@ -2197,6 +2198,7 @@ SingleCircosClonotypes <- function(db,
                                    layers = NULL,
                                    layers_col = NULL,
                                    groups_to_plot = "all",
+                                   reorder = NULL,
                                    links = NULL,
                                    links_col = NULL,
                                    locus = "locus",
@@ -2257,10 +2259,38 @@ SingleCircosClonotypes <- function(db,
   #first layer is use for inside circle grouping:
   origin <- layers[[1]]
   
+  #filter on chain to use and make sure all layers are factor columns:
   Plot_db <- db %>%
-    dplyr::filter(!!rlang::sym(locus) %in% use_chain)
+    dplyr::filter(!!rlang::sym(locus) %in% use_chain) %>%
+    dplyr::mutate(
+      across(
+        all_of(layers),
+        ~ factor(.x, levels = unique(.x)),
+        .names = "{.col}"
+      )
+    )
   
-  #filter groups to plot (groupps_to_plot should be a named list: list(layer1 = c(factor1, factor3), layer3 = c(...),...))
+  #reorder layers levels:
+  if(!is.null(reorder)){
+    Plot_db <- Plot_db %>%
+      mutate(
+        across(
+          any_of(names(reorder)),
+          ~ if (!is.null(reorder[[cur_column()]])) {
+            forcats::fct_relevel(.x, reorder[[cur_column()]])
+          } else {
+            .x
+          },
+          .names = "{.col}"
+        )
+      )
+    wrong_layers_in_reorder <- names(reorder)[!(names(reorder) %in% colnames(Plot_db))]
+    if(length(wrong_layers_in_reorder) >0){
+      warning("The following layers in 'reorder' were not found in the provided data frame: ", paste(wrong_layers_in_reorder, collapse = "; "))
+    }
+  }
+  
+  #filter groups to plot (groups_to_plot should be a named list: list(layer1 = c(factor1, factor3), layer3 = c(...),...))
   if(!groups_to_plot == "all"){
     for(layer in layers){
       if(!is.null(groups_to_plot[[layer]]) & any(groups_to_plot[[layer]] %in% levels(as.factor(Plot_db[[layer]])))){
@@ -2359,14 +2389,21 @@ SingleCircosClonotypes <- function(db,
   }
   
   ## update layers columns to reflect future sectors in circosplot
-  for(i in 1:length(layers)){
-    #order <- length(layers)-i
+  #for(i in 1:length(layers)){
+  #  Plot_db <- Plot_db %>%
+  #    dplyr::group_by(!!!rlang::syms(layers)) %>%
+  #    dplyr::mutate(
+  #      !!rlang::sym(paste0("layer", i)) := do.call(paste, c(dplyr::cur_group()[i:length(layers)], sep = "_"))
+  #    ) %>%
+  #    dplyr::ungroup()
+  #}
+  
+  for (i in seq_along(layers)) {
     Plot_db <- Plot_db %>%
-      dplyr::group_by(!!!rlang::syms(layers)) %>%
-      dplyr::mutate(
-        !!rlang::sym(paste0("layer", i)) := do.call(paste, c(dplyr::cur_group()[i:length(layers)], sep = "_"))
-      ) %>%
-      dplyr::ungroup()
+      mutate(
+        !!rlang::sym(paste0("layer", i)) :=
+          interaction(!!!rlang::syms(rev(layers[i:length(layers)])), sep = "_", lex.order = TRUE)
+      )
   }
   
   ## create full recap for each sectors to be plotted and respective colors to use
@@ -2381,8 +2418,6 @@ SingleCircosClonotypes <- function(db,
         !!rlang::sym(paste0("layer", i, "_col")) := layers_col[[layers[[i]]]][str_split(!!rlang::sym(paste0("layer", i)), "_")[[1]][1]]
       )
   }
-  
-  #TODO add a way to relevel the groups to plot
   
   origins <- groups_infos$layer1
   
@@ -2403,7 +2438,7 @@ SingleCircosClonotypes <- function(db,
   
   ## define clone order and length of each sectors: 
   df2.list <- lapply(origins, FUN = function(i){
-    df <- Clones_by_groups_to_plot[Clones_by_groups_to_plot[,i] >=1, c("clone_id",i)]
+    df <- Clones_by_groups_to_plot[Clones_by_groups_to_plot[,as.character(i)] >=1, c("clone_id",as.character(i))]
     colnames(df) <- c("clone_id", "nb_cells")
     df <- dplyr::arrange(df, desc(df$"nb_cells"))
     df$clone_segments_start <- cumsum(df$nb_cells)-df$nb_cells+1
@@ -2414,7 +2449,7 @@ SingleCircosClonotypes <- function(db,
   
   ## define clonal relationships to plot as links: 
   df3.list <- lapply(origins[-length(origins)], FUN = function(i, g=origins){
-    min <- match(i, g)+1
+    min <- match(as.character(i), g)+1
     max <- length(g)
     comparison <- g[min:max]
     df.all <- data.frame(clone_id=character(),
@@ -2424,15 +2459,15 @@ SingleCircosClonotypes <- function(db,
                          start_end=numeric(),
                          stringsAsFactors=FALSE)
     for (k in 1:length(comparison)){
-      common_clones_k <- intersect(df2.list[[i]]$clone_id, df2.list[[comparison[k]]]$clone_id)
-      if(!grepl(pattern = comparison[k], i) & (length(common_clones_k) > 0)){ 
-        is.common <- df2.list[[i]]$clone_id %in% common_clones_k
-        df <- df2.list[[i]][is.common, c("clone_id", "nb_cells", "clone_segments_start")]
+      common_clones_k <- intersect(df2.list[[as.character(i)]]$clone_id, df2.list[[as.character(comparison[k])]]$clone_id)
+      if(!grepl(pattern = comparison[k], as.character(i)) & (length(common_clones_k) > 0)){ 
+        is.common <- df2.list[[as.character(i)]]$clone_id %in% common_clones_k
+        df <- df2.list[[as.character(i)]][is.common, c("clone_id", "nb_cells", "clone_segments_start")]
         colnames(df) <- c("clone_id", "size_orig", "start_orig")
-        df$orig <- i
-        df$end <- comparison[k]
-        df$size_end <- df2.list[[comparison[k]]]$nb_cells[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
-        df$start_end <- df2.list[[comparison[k]]]$clone_segments_start[match(df$clone_id, df2.list[[comparison[k]]]$clone_id)]
+        df$orig <- as.character(i)
+        df$end <- as.character(comparison[k])
+        df$size_end <- df2.list[[as.character(comparison[k])]]$nb_cells[match(df$clone_id, df2.list[[as.character(comparison[k])]]$clone_id)]
+        df$start_end <- df2.list[[as.character(comparison[k])]]$clone_segments_start[match(df$clone_id, df2.list[[as.character(comparison[k])]]$clone_id)]
         df.all <- rbind(df.all, df)
       }
     }
