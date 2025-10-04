@@ -146,18 +146,14 @@ cloned_VDJ_db <- scFindBCRClones(VDJ_db, analysis_name = "All_seq_MPOX", only_he
 **Option 3: If you only have a table with a raw sequence column**:\ 
 In this case you need to run igblast first using **runAssignGenes()**, indicating which column to use as sequence_id (should be a unique identifier).\
 Below is an example were you import a excel table with only two columns with the following headers: "my_ids" and "my_sequences", with the data in the first worksheet and no blank rows or columns above or left of you data.\
-Set output = TRUE only if you want to keep all intermediate results from igblast.
+You can run **scFindBCRClones()** with the **igblast = "all"** argulent, adding **only_heavy = TRUE** if you only have heavy chain sequences.
 
 ``` r
 setwd("path to your file/")
-simple_db <- openxlsx::read.xlsx("your_table.xlsx", sheet="1", rowNames = FALSE)
-igblast_results <- runAssignGenes(simple_db, sequence = "my_sequences", sequence_id = "my_ids", output = TRUE)
-```
+simple_db <- openxlsx::read.xlsx("your_table.xlsx", sheet="1", rowNames = FALSE) %>%
+dplyr::mutate(sequence_id = my_ids)
 
-then you can run **scFindBCRClones()**, adding **only_heavy = TRUE** if you only have heavy chain sequences.
-
-``` r
-cloned_VDJ_db <- scFindBCRClones(igblast_results[["pass"]], only_heavy = TRUE)
+cloned_VDJ_db <- scFindBCRClones(simple_db, cell_id = "my_ids", igblast = "all", only_heavy = TRUE)
 ```
 
 all intermediate and final results files will be stored inside the "path to your file/" folder.
