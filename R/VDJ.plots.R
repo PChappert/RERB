@@ -2417,7 +2417,7 @@ SingleCircosClonotypes <- function(db,
     groups_infos <- groups_infos %>%
       dplyr::rowwise() %>%
       dplyr::mutate(
-        !!rlang::sym(paste0("layer", i, "_col")) := layers_col[[layers[[i]]]][str_split(!!rlang::sym(paste0("layer", i)), "_")[[1]][1]]
+        !!rlang::sym(paste0("layer", i, "_col")) := layers_col[[layers[[i]]]][dplyr::last(stringr::str_split(!!rlang::sym(paste0("layer", i)), "_")[[1]])]
       )
   }
   
