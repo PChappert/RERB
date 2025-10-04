@@ -2157,7 +2157,7 @@ CircosClonotypes <- function(db,
 #' \code{SingleCircosClonotypes} Plots a single circos plots and save it as pdf or return and/or return as a grob 
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
-#' @param layers    names of columns to be plotted as layers (from inner to outer tracks)
+#' @param layers    names of columns to be plotted as layers (from outer to inner tracks)
 #' @param layers_col a named list of named vector for colors to be used for each group in each layer, if layers or groups are missing will be automatically added 
 #' @param groups_to_plot which groups to plot. Should be a named list: list(layer1 = c(factor1, factor3), layer3 = c(...),...)). If no names are provided for a given layer, all group are plotted by default
 #' @param reorder   a named list with the layers to reorder and the new order: list(layer1 = c(factor2, factor1, factor3), layer2 = c(...), ...)
@@ -2256,6 +2256,8 @@ SingleCircosClonotypes <- function(db,
     stop("layers not properly defined : ", paste(layers[!layers %in% colnames(db)], collapse = " ;")," not in the profided data")
   }
   
+  layers <- rev(layers)
+  
   #first layer is use for inside circle grouping:
   origin <- layers[[1]]
   
@@ -2265,7 +2267,7 @@ SingleCircosClonotypes <- function(db,
     dplyr::mutate(
       across(
         all_of(layers),
-        ~ factor(.x, levels = unique(.x)),
+        ~ factor(.x, levels = levels(as.factor(.x))),
         .names = "{.col}"
       )
     )
