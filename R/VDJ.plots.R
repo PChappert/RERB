@@ -1249,7 +1249,8 @@ HexmapClonotypes <- function(db,
 #' @import tibble
 #' @import purrr
 #'
-#' @export
+#' @keywords internal
+#' 
 
 SingleHexmapClonotypes <- function(data,
                                    ordered = TRUE,
@@ -1645,7 +1646,8 @@ CDR3logos <- function(db,
 #'
 #' @import dplyr
 #'
-#' @export
+#' @keywords internal
+#' 
 
 SingleCDR3logo <- function(junctions,
                            junction_type = c("aa", "dna"),
@@ -2191,7 +2193,8 @@ CircosClonotypes <- function(db,
 #' @import dplyr
 #' @importFrom purrr map
 #'
-#' @export
+#' @keywords internal
+#' 
 
 SingleCircosClonotypes <- function(db,
                                    use_chain = "IGH",
@@ -2293,6 +2296,7 @@ SingleCircosClonotypes <- function(db,
   }
   
   #filter groups to plot (groups_to_plot should be a named list: list(layer1 = c(factor1, factor3), layer3 = c(...),...))
+  #TODO perform this step after defining Layer1, layer2... to allow filtering only one group?
   if(!groups_to_plot == "all"){
     for(layer in layers){
       if(!is.null(groups_to_plot[[layer]]) & any(groups_to_plot[[layer]] %in% levels(as.factor(Plot_db[[layer]])))){
@@ -2391,15 +2395,6 @@ SingleCircosClonotypes <- function(db,
   }
   
   ## update layers columns to reflect future sectors in circosplot
-  #for(i in 1:length(layers)){
-  #  Plot_db <- Plot_db %>%
-  #    dplyr::group_by(!!!rlang::syms(layers)) %>%
-  #    dplyr::mutate(
-  #      !!rlang::sym(paste0("layer", i)) := do.call(paste, c(dplyr::cur_group()[i:length(layers)], sep = "_"))
-  #    ) %>%
-  #    dplyr::ungroup()
-  #}
-  
   for (i in seq_along(layers)) {
     Plot_db <- Plot_db %>%
       mutate(
