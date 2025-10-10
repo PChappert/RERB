@@ -1,3 +1,16 @@
+
+#' Pipe operator
+#'
+#' See \code{dplyr::\link[dplyr]{\%>\%}} for details.
+#'
+#' @name %>%
+#' @rdname pipe
+#' @keywords internal
+#' @export
+#' @importFrom dplyr %>%
+#' @usage lhs %>% rhs
+NULL
+
 #' safely switch to lapply from mclapply if parallel is not found.
 #'
 #' \code{safe_mclapply}
@@ -300,4 +313,186 @@ time_and_log <- function(expr,
   }
   
   invisible(result)  # return result quietly
+}
+
+
+#### Function to quickly print an annotated table to the plot window usingb grid ####
+#' adds formatted title and subtitle to keep track of what is being printed
+#'
+#' \code{plot_recap_gtable}
+#'
+#' @param df a dataframe containing at least the two columns defined in factors
+#' @param factors names of columns to use, by default columns 1 and 2
+#' @param title title to use
+#' @param title_gp gpar for title
+#' @param subtitle whether to add a subtitle resuming the comparison made ('factor1 (rows) versus factor2 (cols'))
+#' @param subtitle_gp gpar for subtitle
+#' @param padding padding to use
+#' @param useNA one of 'ifany' [default], 'no' or "always', passed to table() 
+#' @param print_table whether to print final table grob object
+#' @param return_table whether to return the final table grob object
+#' 
+#' @export
+#' 
+plot_recap_gtable <- function(df, 
+                              factors = colnames(df)[1:2], 
+                              title = "", 
+                              title_gp = grid::gpar(fontsize = 14, fontface = "bold"), 
+                              subtitle = TRUE, 
+                              subtitle_gp = grid::gpar(fontsize = 9, fontface = "italic"), 
+                              padding = 5, 
+                              useNA = c("ifany", "no", "always"),
+                              print_table = TRUE,
+                              return_table = FALSE) {
+  
+  useNA <- match.arg(useNA)
+  padding <- unit(padding,"mm")
+  
+  table <- gridExtra::tableGrob(as.matrix(table(df[[factors[1]]], df[[factors[2]]], useNA=useNA)))
+  
+  title.list <- list()
+  if(!is.null(title)){
+    title <- grid::textGrob(title, gp = title_gp, just = "center", hjust = 0.5)
+    table <- gtable::gtable_add_rows(table, heights = grid::grobHeight(title) + padding, pos = 0)
+    title.list <- c(title.list, list(title))
+  }
+  if(subtitle){
+    subtitle <- grid::textGrob(paste0(factors[1], " (rows) by ", factors[2], " (cols)"), x=0.5, hjust=0.5, gp= subtitle_gp)
+    table <- gtable::gtable_add_rows(table, heights = grid::grobHeight(subtitle) + padding, pos = 0)
+    title.list <- c(title.list, list(subtitle))
+  }
+  if(length(title.list)==2){
+    table <- gtable::gtable_add_grob(table, title.list, t=c(1,2), b=c(1,2), l=c(1,1), r=ncol(table), clip = "off")
+  } 
+  if(length(title.list)==1){
+    table <- gtable::gtable_add_grob(table, title.list[[1]], t=1, b=1, l=1, r=ncol(table), clip = "off")
+  } 
+  
+  if (print_table){
+    grid::grid.newpage()
+    grid::grid.draw(table)
+    invisible(table)
+  }
+
+  if (return_table){
+    return(table)
+  }
+}
+
+#### Function to quickly export an annotated table() call to excel ####
+#' adds a new sheet to an existing opened excel workbook
+#'
+#' \code{excel_recap_table}
+#'
+#' @param wb which workbook to write into
+#' @param df data frame containing at least the two columns defined in factors to use for table generation
+#' @param factors which columns to use for table (factors[1] = rows; factors[2] = cols), by default colnames 1 and 2 of df
+#' @param add_header whether to add recap header with info on data and factors used
+#' @param writeData whether to write to a workbook sheet
+#' @param sheet name of the sheet to write too. Will overwrite any data in it.
+#' @param useNA whether to include NA in count table and or in freq table, if useNA="counts (default), only non-NA values will be used to calculate frequencies but NA counts will be included in the counts table.
+#' @param add_freq whether to add a freq table (row wise) next to the count table
+#' @param colNames whether to add rownames in the final excel sheet
+#' @param rowNmaes whether to add colnames in the final excel sheet
+#' 
+#' @return create a new sheet in the provided Workbook, with raw table outputs, absolute numbers (row-wise and column-wise), and frequencies (row-wise))
+#' 
+#' @export
+#' 
+excel_recap_table <- function(wb, 
+                              df, 
+                              factors = colnames(df)[1:2], 
+                              writeData = TRUE, 
+                              sheet = NULL, 
+                              add_header = TRUE, 
+                              useNA=c("counts", "no", "all"), 
+                              add_freq = TRUE, 
+                              colNames = TRUE, rowNames = TRUE){
+  
+  cmd <- deparse(substitute(df))
+  useNA <- match.arg(useNA)
+  if(useNA %in% c("counts", "all")){
+    useNA_counts <- "ifany"
+  } else { useNA_counts <- "no" }
+  
+  tb <- as.data.frame.matrix(table(df[[factors[1]]], df[[factors[2]]], useNA = useNA_counts))
+  # Clean up any NA row/column names
+  rownames(tb)[rownames(tb) == "NA."] <- "missing"
+  colnames(tb)[is.na(colnames(tb))] <- "missing"
+  tb$total_events <- rowSums(tb)
+  if("missing" %in% colnames(tb)){
+    tb <- tb %>% dplyr::mutate(total_events_woNA = total_events - missing)
+  } else {
+    tb <- tb %>% dplyr::mutate(total_events_woNA = total_events)
+  }
+  tb <- rbind(tb, total_events = colSums(tb))
+  tb <- rbind(tb, total_events_woNA = colSums(tb[!rownames(tb) %in% c("total_events", "missing"),]))
+  
+  n_rows_counts <- nrow(tb)
+  n_cols_counts <- ncol(tb)
+  
+  if(add_freq){
+    if(useNA == "all"){
+      tb_counts <- tb %>% dplyr::select(-any_of(c("total_events", "total_events_woNA")))
+    } else {
+      tb_counts <- tb %>% dplyr::select(-any_of(c("total_events", "total_events_woNA", "missing")))
+    }
+    
+    tb_freq <- tb_counts
+    tb_freq[,] <- NA  # initialize
+    for (r in 1:(nrow(tb_counts))) {
+      if(useNA == "all"){
+        row_total <- tb$total_events[r]
+      } else {
+        row_total <- tb$total_events_woNA[r]
+      }
+      if (row_total > 0) {
+        tb_freq[r, ] <- round(tb_counts[r, ] / row_total, 4)*100
+      }
+    }
+    colnames(tb_freq) <- paste0(colnames(tb_freq), "_freq")
+    tb <- cbind(tb, tb_freq)
+  }
+  
+  # Write to excel workbook
+  if(writeData){
+    if(!is.null(sheet)){
+      openxlsx::addWorksheet(wb, sheet)
+      totalStyle <- openxlsx::createStyle(fgFill = "lightblue", textDecoration = "bold")
+      #freqStyle <- createStyle(fgFill = "#FFD580")
+      total_events_rows <- which(grepl("total_events", rownames(df)))
+      total_events_cols <- which(grepl("total_events", colnames(df)))
+      
+      if(add_header){
+        header_text <- data.frame(
+          note = c(paste0(factors[1]," (rows) vs ", factors[2]," (columns)"), cmd)
+        )
+        openxlsx::writeData(wb, sheet, header_text, startRow = 1, colNames = FALSE)
+        openxlsx::writeData(wb, sheet, x = tb, startRow = 4, colNames = colNames, rowNames = rowNames)
+        openxlsx::addStyle(wb, sheet, totalStyle,
+                           rows = total_events_rows + 4, #including header
+                           cols = 1:(length(colnames(tb)) + 1), 
+                           gridExpand = TRUE)
+        openxlsx::addStyle(wb, sheet, totalStyle,
+                           rows = 4:(4 + n_rows_counts),
+                           cols = total_events_cols + 1,
+                           gridExpand = TRUE)
+      } else {
+        openxlsx::writeData(wb, sheet, x = tb, colNames = colNames, rowNames = rowNames)
+        openxlsx::addStyle(wb, sheet, totalStyle,
+                           rows = total_events_rows + 1,   
+                           cols = 1:(length(colnames(tb)) + 1), 
+                           gridExpand = TRUE)
+        openxlsx::addStyle(wb, sheet, totalStyle,
+                           rows = 1:(1 + n_rows_counts),
+                           cols = total_events_cols + 1,
+                           gridExpand = TRUE)
+      }
+    }else{
+      warning("missing worksheet name, returning results instead")
+      return(tb)
+    }
+  } else {
+    return(tb)
+  }
 }

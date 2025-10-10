@@ -1,6 +1,7 @@
-## Version 0.9.7: July, 2025
+## Version 0.9.7: Oct, 2025
+-   new set of functions to interact with AlphaFold3 server for antigen-antibodies interaction predictions
 -   new CircosClonotypes function
--   updated plotVGenePairing to had possibility to look at the family, gene or alleel levels
+-   updated plotVGenePairing to had possibility to look at the family, gene or allele levels
 -   plotCDR3logo is now rename CDR3logos and SingleCDR3logo and allows plotting of CDR3 sequenecs from different clone (and difference sizes) using ClustalW alignments.
 -   updated Ab1toAIRR to solve issue with reticulate connection
 -   fixed a few issues when merging Sanger plates with different metadata
