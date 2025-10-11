@@ -3,8 +3,8 @@
 # 
 #
 # Author:  Pascal Chappert
-# Date:    2025.07.09
-# version  2.0.1
+# Date:    2025.10.11
+# version  2.0.2
 # 
 # Comments: now completely interfaced with RERB, through the Ab1toAIRR R function.
 #
@@ -56,12 +56,22 @@ save="${save:-png}"
 tmp_r_file=$(mktemp /tmp/ab1toairr.XXXXXX.R)
 
 cat <<EOF 2>/dev/null > "$tmp_r_file"
-suppressMessages(devtools::load_all("~/R_packages/RERB"))
-files <- $r_file_list
-Ab1toAIRR(files = files, primers = "$primers", save = "$save", reticulate_py_env = "~/Library/r-miniconda-arm64/envs/r-reticulate/bin/python")
-EOF
 
-echo "running Ab1toAIRR through RERB - version 0.9.7-devel"
+suppressMessages({
+  devtools::load_all("~/R_packages/RERB")
+  desc <- read.dcf("~/R_packages/RERB/DESCRIPTION")
+  version <- if ("Version" %in% colnames(desc)) desc[1, "Version"] else "unknown"
+  cat("Running Ab1toAIRR through RERB - version", version, "\n")
+})
+
+files <- $r_file_list
+Ab1toAIRR(
+  files = files,
+  primers = "$primers",
+  save = "$save",
+  reticulate_py_env = "~/Library/r-miniconda-arm64/envs/r-reticulate/bin/python"
+)
+EOF
 
 # Run the R script and log stdout and stderr
 Rscript "$tmp_r_file" 

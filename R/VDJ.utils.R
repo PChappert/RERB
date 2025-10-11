@@ -559,6 +559,11 @@ Ab1toAIRR <- function(files,
     return(VDJ_db)
   })
   names(airr.list) <- files
+  
+  time_and_log({
+    print(sessionInfo())
+  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = "a")
+  
   if(return_db){
     return(airr.list)
   }
