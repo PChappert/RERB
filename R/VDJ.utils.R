@@ -556,13 +556,14 @@ Ab1toAIRR <- function(files,
       step <- paste0("elapsed:", sprintf("%.2f %s", end-start, units(difftime(end, start))))
       if(verbose){cat(step, "\n","\n")}
     }
+    time_and_log({
+      print(sessionInfo())
+    }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = "a")
+    
     return(VDJ_db)
   })
   names(airr.list) <- files
   
-  time_and_log({
-    print(sessionInfo())
-  }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "session info", open_mode = "a")
   
   if(return_db){
     return(airr.list)
