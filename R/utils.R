@@ -407,7 +407,10 @@ excel_recap_table <- function(wb,
                               add_header = TRUE, 
                               useNA=c("counts", "no", "all"), 
                               add_freq = TRUE, 
-                              colNames = TRUE, rowNames = TRUE){
+                              colNames = TRUE, 
+                              rowNames = TRUE,
+                              fgFill = "lightblue",
+                              textDecoration = "bold"){
   
   cmd <- deparse(substitute(df))
   useNA <- match.arg(useNA)
@@ -420,13 +423,17 @@ excel_recap_table <- function(wb,
   rownames(tb)[rownames(tb) == "NA."] <- "missing"
   colnames(tb)[is.na(colnames(tb))] <- "missing"
   tb$total_events <- rowSums(tb)
-  if("missing" %in% colnames(tb)){
-    tb <- tb %>% dplyr::mutate(total_events_woNA = total_events - missing)
-  } else {
-    tb <- tb %>% dplyr::mutate(total_events_woNA = total_events)
+  if(!useNA == "no"){
+    if("missing" %in% colnames(tb)){
+      tb <- tb %>% dplyr::mutate(total_events_woNA = total_events - missing)
+    } else {
+      tb <- tb %>% dplyr::mutate(total_events_woNA = total_events)
+    }
   }
   tb <- rbind(tb, total_events = colSums(tb))
-  tb <- rbind(tb, total_events_woNA = colSums(tb[!rownames(tb) %in% c("total_events", "missing"),]))
+  if(!useNA == "no"){
+    tb <- rbind(tb, total_events_woNA = colSums(tb[!rownames(tb) %in% c("total_events", "missing"),]))
+  }
   
   n_rows_counts <- nrow(tb)
   n_cols_counts <- ncol(tb)
@@ -441,7 +448,7 @@ excel_recap_table <- function(wb,
     tb_freq <- tb_counts
     tb_freq[,] <- NA  # initialize
     for (r in 1:(nrow(tb_counts))) {
-      if(useNA == "all"){
+      if(useNA %in% c("all", "no")){
         row_total <- tb$total_events[r]
       } else {
         row_total <- tb$total_events_woNA[r]
@@ -458,10 +465,10 @@ excel_recap_table <- function(wb,
   if(writeData){
     if(!is.null(sheet)){
       openxlsx::addWorksheet(wb, sheet)
-      totalStyle <- openxlsx::createStyle(fgFill = "lightblue", textDecoration = "bold")
+      totalStyle <- openxlsx::createStyle(fgFill = fgFill, textDecoration = textDecoration)
       #freqStyle <- createStyle(fgFill = "#FFD580")
-      total_events_rows <- which(grepl("total_events", rownames(df)))
-      total_events_cols <- which(grepl("total_events", colnames(df)))
+      total_events_rows <- which(grepl("total_events", rownames(tb)))
+      total_events_cols <- which(grepl("total_events", colnames(tb)))
       
       if(add_header){
         header_text <- data.frame(

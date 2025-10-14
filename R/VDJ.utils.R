@@ -994,6 +994,8 @@ reformatVDJinput <- function(db, tech,
 binContigs <- function(data,
                        plot = TRUE,
                        title = "Histogram + Density Plot with Antimode-Based Bins",
+                       x_title = "Value",
+                       y_title = "Density",
                        file = "DensityPlot.pdf"){
 
   #suppressMessages(library(dplyr))
@@ -1046,7 +1048,7 @@ binContigs <- function(data,
           ggplot2::geom_vline(xintercept = bin_edges, linetype = "dashed", color = "gray") +
           ggplot2::geom_vline(xintercept = bin_edges[selected_bins$Bin[length(selected_bins$Bin)]], linetype = "solid", color = "green", linewidth = 1) +
           ggplot2::labs(title = title,
-                        x = "Value", y = "Density") +
+                        x = x_title, y = y_title) +
           ggplot2::theme_minimal()
         
         if(grepl(".pdf", file)|grepl(".png", file)){
@@ -1261,6 +1263,7 @@ resolveMultiContigs <- function(db,
       unfiltered_bin = binContigs(log10(umi_count),
                                   plot = output,
                                   title = paste0(dplyr::first(!!rlang::sym(split.by)), " - ", paste(chain, collapse = "-"), " Density plot"),
+                                  x_title = "log10(umi_count)",
                                   file = paste0(output_folder, analysis_name, "_", dplyr::first(!!rlang::sym(split.by)), "_", paste(chain, collapse = "-"),"_density_plot.pdf"))[["bins"]],
     ) %>%
     ungroup()
@@ -1398,6 +1401,7 @@ resolveMultiContigs <- function(db,
       filtered_bin = binContigs(log10(umi_count),
                                 plot = output,
                                 title = paste0(dplyr::first(!!rlang::sym(split.by)), " - ", paste(chain, collapse = "-")," Density plot"),
+                                x_title = "log10(umi_count)",
                                 file = paste0(output_folder, analysis_name, "_", dplyr::first(!!rlang::sym(split.by)), "_filtered_", paste(chain, collapse = "-"),"_density_plot.pdf"))[["bins"]]) %>%
     ungroup()
 
