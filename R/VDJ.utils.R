@@ -355,31 +355,39 @@ Ab1toAIRR <- function(files,
         if(verbose){cat("importing additional info from ", paste0(outfolder, "_info.xlsx"), "\n","\n")}
         additional_info <- openxlsx::read.xlsx(paste0(outfolder, "_info.xlsx"), 1)
 
-        AddInfo <- function(db){
-          AIRR_collumns <- colnames(db)[!colnames(db) == "well_id"]
-          info_collumns <- setdiff(colnames(additional_info), AIRR_collumns)
-          redundant_columns <- intersect(colnames(additional_info), AIRR_collumns) #any column in the platename_info.xlsx file that share a name with existing output columns from igblast will not be taken into account except if a primer column is provided
-          if ("primers" %in% colnames(additional_info)){
-            db$primers <- NULL
-            redundant_columns <- redundant_columns[!redundant_columns == "primers"]
-          }
-          if (length(redundant_columns)>0){
-            warning("the following columns from ", outfolder, "_info.xlsx were renamed as info_'old_colname' to avoid duplicated colnames: ", paste(redundant_columns, collapse = ", "))
-            db <- dplyr::rename_with(db, .fn = ~ paste0("info_", .), .cols = all_of(redundant_columns))
-            redundant_columns <- paste0("info_", redundant_columns)
-            info_collumns <- c(info_collumns, redundant_columns)
-          }
-          #additional_info.xlsx file should have a "well_id" column
-          if("well_id" %in% info_collumns){
-            db <- dplyr::left_join(db, additional_info, by=join_by(well_id))
+        AddInfo <- function(db, info){
+          if(!"well_id" %in% colnames(info)){
+            #additional_info.xlsx file should have a "well_id" column
+            warning(paste0("missing well_id collumn in ", outfolder, "_info.xlsx; skipping import of infos"))
+            return(db)
+          } else {
+            AIRR_collumns <- colnames(db)[!colnames(db) == "well_id"]
+            info_collumns <- setdiff(colnames(info), AIRR_collumns)
+            redundant_columns <- intersect(colnames(info), AIRR_collumns) #any column in the platename_info.xlsx file that share a name with existing output columns from igblast will not be taken into account except if a primer column is provided
+            if ("primers" %in% redundant_columns){
+              db <- db %>% dplyr::select(-primers)
+              redundant_columns <- redundant_columns[!redundant_columns == "primers"]
+            }
+            if (length(redundant_columns)>0){
+              warning("the following columns from ", outfolder, "_info.xlsx were renamed as info_'old_colname' to avoid duplicated colnames: ", paste(redundant_columns, collapse = ", "))
+              db <- dplyr::rename_with(db, .fn = ~ paste0("info_", .), .cols = all_of(redundant_columns))
+              redundant_columns <- paste0("info_", redundant_columns)
+              info_collumns <- c(info_collumns, redundant_columns)
+            }
+            db <- dplyr::left_join(db, info, by=join_by(well_id))
             db <- db[,c(info_collumns, AIRR_collumns)]
-          } else {message(paste0("missing well_id collumn in ", outfolder, "_info.xlsx"))}
-          return(db)
+            return(db)
+          }
         }
-        VDJ_db <- AddInfo(VDJ_db)
-        if(!any(is.null(QC_failed), nrow(QC_failed)==0)){QC_failed <- AddInfo(QC_failed)}
-        if(!any(is.null(failed_VDJ_db), nrow(failed_VDJ_db)==0)){failed_VDJ_db <- AddInfo(failed_VDJ_db)}
+        VDJ_db <- AddInfo(VDJ_db, additional_info)
+        if(!any(is.null(QC_failed), nrow(QC_failed)==0)){QC_failed <- AddInfo(QC_failed, additional_info)}
+        if(!any(is.null(failed_VDJ_db), nrow(failed_VDJ_db)==0)){failed_VDJ_db <- AddInfo(failed_VDJ_db, additional_info)}
       }
+      
+      VDJ_db <- VDJ_db %>%
+        dplyr::mutate(
+          sequence_id = ifelse(!(is.na(cell_id)|is.na(primers)), paste0(cell_id, "_", primers), sequence_id)
+        )
 
       #remove unproductive sequences:
       VDJ_db_nonprod <- VDJ_db %>%
@@ -3360,7 +3368,11 @@ importSangerVDJ <- function(sanger_files, db = NULL,
   sanger_VDJ_db <- safe_bind_rows(AIRR.list)
 
   # update sequence_id column:
-  sanger_VDJ_db$sequence_id <- paste0(sanger_VDJ_db$cell_id, "_", sanger_VDJ_db$primers) # required for DefineClones()
+  # required for DefineClones()
+  sanger_VDJ_db <- sanger_VDJ_db %>%
+    dplyr::mutate(
+      sequence_id = ifelse(!(is.na(cell_id)|is.na(primers)), paste0(cell_id, "_", primers), sequence_id)
+    )
 
   # rename or remove a few columns:
   for(pair in rename.columns) {
