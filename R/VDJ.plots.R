@@ -1791,7 +1791,7 @@ plotVGenePairing <- function(db,
                          height = NULL,
                          width = NULL,
                          return_plot = TRUE,
-                         ncol = 2) {
+                         n_col = 2) {
                              
   save_as <- match.arg(save_as)
 
@@ -2002,7 +2002,7 @@ plotVGenePairing <- function(db,
     ) +
     ggplot2::scale_size(range = c(2, 6), name = "Frequency") +
     ggplot2::scale_y_discrete(limits = rev) +
-    ggplot2::facet_wrap(vars(!!rlang::sym(split.by)), ncol = ncol) +
+    ggplot2::facet_wrap(vars(!!rlang::sym(split.by)), ncol = n_col) +
     ggplot2::labs(
       title = "VH/VL Pairing",
       x = "VL", y = "VH"
@@ -2027,10 +2027,18 @@ plotVGenePairing <- function(db,
     } else {
       filename <- paste0(plots_folder, "Vgene-pairing.pdf")
     }
-    if (any(is.null(height), is.null(width))) {
-      width <- 8 * ncol + 2
-      height <- 7 * ceiling(length(groups) / 2)
+    
+    n_y <- ifelse(invert_axis, length(unique(dplyr::filter(db_plot, freq > 0)$VL)), length(unique(dplyr::filter(db_plot, freq > 0)$VH)))
+    n_x <- ifelse(invert_axis, length(unique(dplyr::filter(db_plot, freq > 0)$VH)), length(unique(dplyr::filter(db_plot, freq > 0)$VL)))
+    n_row <- ceiling(length(groups) / n_col)
+    
+    if (is.null(height)) {
+      height <- (0.15 * n_y)*n_row + 1.5
     }
+    if (is.null(width)){
+      width <- (0.1 * n_x)*n_col + 2.5
+    }
+    
     if (save_as == "pdf") {
       pdf(file = filename, height = height, width = width)
       plot(p)
