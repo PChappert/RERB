@@ -4149,6 +4149,9 @@ scFindClones <- function(db,
   #suppressMessages(library(dowser))
 
   seq_type <- match.arg(seq_type)
+  organism <- match.arg(organism)
+  igblast <- match.arg(igblast)
+  method <- match.arg(method)
   
   if(seq_type == "Ig"){
     heavy <- "IGH"
@@ -4164,7 +4167,6 @@ scFindClones <- function(db,
   }
   #TODO any change made here must be also implemented at the resolveMultiContigs() step
   
-  organism <- match.arg(organism)
   igblast_dir <- ifelse(stringr::str_ends(igblast_dir,"/"), igblast_dir, paste0(igblast_dir, "/"))
   imgt_dir <- ifelse(stringr::str_ends(imgt_dir,"/"), imgt_dir, paste0(imgt_dir, "/"))
 
@@ -4213,7 +4215,6 @@ scFindClones <- function(db,
     }
   } 
 
-  method <- match.arg(method)
   if(!method %in% c("changeo", "identical", "hierarchical", "spectral")){
     stop("need to choose a method for clustering among one of the following: identical, hierarchical or spectral (see https://scoper.readthedocs.io/en/stable/ for detailed informations) or changeo for the older version of hierarchicalClones")
   }
@@ -4224,7 +4225,6 @@ scFindClones <- function(db,
     }
   }
 
-  igblast <- match.arg(igblast)
   update_c_call <- match.arg(update_c_call)
   if(!update_c_call %in% c("filtered light", "all")){warning("It is highly recommended to update light chains c_call using Blastn to avoid artificial selection of one c_call by igblast when multiple calls have similar scores (set update_c_call = light or all)")}
 

@@ -1747,7 +1747,6 @@ SingleCDR3logo <- function(junctions,
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by  name of column to use to group sequence.
 #' @param groups_to_plot which groups to plot
-#' @param prefix    prefix to use for saved files
 #' @param plots_folder name for export folder [default: "Vgene_plots"]
 #' @param downsample_clones whether to reduce clone to one value
 #' @param locus     name of column containing locus values.
@@ -1760,6 +1759,7 @@ SingleCDR3logo <- function(junctions,
 #' @param ref       which group in groups_to_plot to use as ref. [default: first group in groups_to_plot]
 #' @param save_plot whether to save the plot.
 #' @param save_as   options for plot saving format (pdf or png)
+#' @param filename  name for saved file 
 #' @param return_plot whether to return the plot as a ggplot object
 #'
 #' @return a ggplot object with associated frequency and binomial test results for inputed data.
@@ -1771,28 +1771,28 @@ SingleCDR3logo <- function(junctions,
 #' @export
 
 plotVGenePairing <- function(db,
-                         split.by = NULL, # max one column
-                         groups_to_plot = NULL,
-                         prefix = NULL,
-                         plots_folder = "Vgene_plots",
-                         downsample_clones = FALSE,
-                         locus = "locus",
-                         seq_type = c("Ig", "TCR"),
-                         v_call = "v_call",
-                         h_level = c("gene", "family", "allele"),
-                         l_level = c("gene", "family", "allele"),
-                         invert_axis = FALSE,
-                         clone_id = "clone_id",
-                         plot_freq = TRUE,
-                         plot_significance = FALSE,
-                         ref = NULL,
-                         save_plot = FALSE,
-                         save_as = c("pdf", "png"),
-                         height = NULL,
-                         width = NULL,
-                         return_plot = TRUE,
-                         n_col = 2) {
-                             
+                             split.by = NULL, # max one column
+                             groups_to_plot = NULL,
+                             plots_folder = "Vgene_plots",
+                             downsample_clones = FALSE,
+                             locus = "locus",
+                             seq_type = c("Ig", "TCR"),
+                             v_call = "v_call",
+                             h_level = c("gene", "family", "allele"),
+                             l_level = c("gene", "family", "allele"),
+                             invert_axis = FALSE,
+                             clone_id = "clone_id",
+                             plot_freq = TRUE,
+                             plot_significance = FALSE,
+                             ref = NULL,
+                             save_plot = FALSE,
+                             save_as = c("pdf", "png"),
+                             filename = NULL,
+                             height = NULL,
+                             width = NULL,
+                             return_plot = TRUE,
+                             n_col = 2) {
+                         
   save_as <- match.arg(save_as)
 
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
@@ -2022,30 +2022,27 @@ plotVGenePairing <- function(db,
     if (isFALSE(dir.exists(plots_folder))) {
       dir.create(plots_folder)
     }
-    if (!is.null(prefix)) {
-      filename <- paste0(plots_folder, prefix, "_Vgene-pairing.pdf")
-    } else {
-      filename <- paste0(plots_folder, "Vgene-pairing.pdf")
-    }
+    
+    filename <- paste0(plots_folder, ifelse(is.null(filename), "VGene-pairing", gsub(".pdf", "", gsub(".png", "", filename))))
     
     n_y <- ifelse(invert_axis, length(unique(dplyr::filter(db_plot, freq > 0)$VL)), length(unique(dplyr::filter(db_plot, freq > 0)$VH)))
     n_x <- ifelse(invert_axis, length(unique(dplyr::filter(db_plot, freq > 0)$VH)), length(unique(dplyr::filter(db_plot, freq > 0)$VL)))
     n_row <- ceiling(length(groups) / n_col)
     
     if (is.null(height)) {
-      height <- (0.15 * n_y)*n_row + 1.5
+      height <- (0.1 * n_y)*n_row + 1.5
     }
     if (is.null(width)){
-      width <- (0.1 * n_x)*n_col + 2.5
+      width <- (0.12 * n_x)*n_col + 2
     }
     
     if (save_as == "pdf") {
-      pdf(file = filename, height = height, width = width)
+      pdf(file = paste0(filename, ".pdf"), height = height, width = width)
       plot(p)
       dev.off()
     }
     if (save_as == "png") {
-      png(filename = filename, height = height, width = width)
+      png(filename = paste0(filename, ".png"), height = height, width = width)
       plot(p)
       dev.off()
     }
