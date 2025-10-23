@@ -420,8 +420,14 @@ excel_recap_table <- function(wb,
   
   tb <- as.data.frame.matrix(table(df[[factors[1]]], df[[factors[2]]], useNA = useNA_counts))
   # Clean up any NA row/column names
-  rownames(tb)[rownames(tb) == "NA."] <- "missing"
-  colnames(tb)[is.na(colnames(tb))] <- "missing"
+  if(!useNA_counts == "no" & (any(rownames(tb) == "NA.") | any(is.na(colnames(tb))))){
+    rownames(tb)[rownames(tb) == "NA."] <- "missing"
+    colnames(tb)[is.na(colnames(tb))] <- "missing"
+  } else {
+    # this way final recap table are not polluted with duplicated total and total_woNA col or rows...
+    useNA <- "no"
+  }
+  
   tb$total_events <- rowSums(tb)
   if(!useNA == "no"){
     if("missing" %in% colnames(tb)){
