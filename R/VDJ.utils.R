@@ -382,12 +382,14 @@ Ab1toAIRR <- function(files,
         VDJ_db <- AddInfo(VDJ_db, additional_info)
         if(!any(is.null(QC_failed), nrow(QC_failed)==0)){QC_failed <- AddInfo(QC_failed, additional_info)}
         if(!any(is.null(failed_VDJ_db), nrow(failed_VDJ_db)==0)){failed_VDJ_db <- AddInfo(failed_VDJ_db, additional_info)}
+        
+        if(all(c("cell_id", "primers") %in% colnames(VDJ_db))){
+          VDJ_db <- VDJ_db %>%
+            dplyr::mutate(
+              sequence_id = ifelse(!(is.na(cell_id)|is.na(primers)), paste0(cell_id, "_", primers), sequence_id)
+            )
+        }
       }
-      
-      VDJ_db <- VDJ_db %>%
-        dplyr::mutate(
-          sequence_id = ifelse(!(is.na(cell_id)|is.na(primers)), paste0(cell_id, "_", primers), sequence_id)
-        )
 
       #remove unproductive sequences:
       VDJ_db_nonprod <- VDJ_db %>%
