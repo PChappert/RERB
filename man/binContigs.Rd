@@ -8,6 +8,8 @@ binContigs(
   data,
   plot = TRUE,
   title = "Histogram + Density Plot with Antimode-Based Bins",
+  x_title = "Value",
+  y_title = "Density",
   file = "DensityPlot.pdf"
 )
 }

@@ -47,6 +47,8 @@ BiocManager::install("msa")
 devtools::load_all("~/path_to_the_folder/RERB")
 ```
 
+6.  To use Ab1toAIRR, you also need to install a few more packages (see here: vignettes/How_to_Ab1toAIRR.md)
+
 ## How to use it:
 
 load RERB:
