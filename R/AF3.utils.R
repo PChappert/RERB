@@ -240,18 +240,19 @@ exportAF3json <- function(db,
 #' @return
 #' If which = "all", a list containing a data frame with QC_scores for each run_id and three matrices of AF3 predicted contacts(HC, LC and all)
 #' If which = "contacts", only a list of contact matrices is returned.
-#' If which = "Qc_scores", only the QC scores dat frame is returned.
+#' If which = "QC_scores", only the QC scores dat frame is returned.
 #' 
 #' @export
 
 extractAF3contacts <- function(db,
-                                which = c("all", "contacts", "QC_scores"),
-                                run_id = "run_id",
-                                main_folder = "main_folder",
-                                run_folder = "run_id",
-                                QC_cutoff = 0.6,
-                                verbose = TRUE,
-                                ...){
+                               which = c("all", "contacts", "QC_scores"),
+                               run_id = "run_id",
+                               main_folder = "main_folder",
+                               run_folder = "run_id",
+                               type_of_run = "alphafoldserver",
+                               QC_cutoff = 0.6,
+                               verbose = TRUE,
+                               ...){
   
   which <- match.arg(which)
   
@@ -259,12 +260,30 @@ extractAF3contacts <- function(db,
   if(length(missing_collumns)>0){
     stop("the following columns could not be found in the provided dataframe: ", paste(missing_collumns, collapse = "; "))
   }
+  db <- db %>% 
+    dplyr::mutate(
+      main_folder = .data[[main_folder]],
+      run_folder = .data[[run_folder]],
+      run_id = .data[[run_id]]
+      )
+  
+  # validate type_of_run
+  valid_types <- c("local", "alphafoldserver")
+  if (is.character(type_of_run) && length(type_of_run) == 1 && type_of_run %in% valid_types) {
+    db$type_of_run <- type_of_run
+    
+  } else if (is.character(type_of_run) && length(type_of_run) == 1 && type_of_run %in% names(db)) {
+    db <- db %>% dplyr::mutate(type_of_run = .data[[type_of_run]])
+  } else {
+    stop("`type_of_run` must be either 'local', 'server', or a column name in `db`.")
+  }
   
   predicted_contacts.list <- purrr::pmap(
     c(
       list(
-        main_folder = db[[main_folder]],
-        run_folder = db[[run_folder]]
+        main_folder = db$main_folder,
+        run_folder = db$run_folder,
+        type_of_run = db$type_of_run
       ),
       list(...)
     ),
@@ -280,7 +299,7 @@ extractAF3contacts <- function(db,
   QC_scores <- as.data.frame(do.call(rbind, lapply(predicted_contacts.list, FUN = function(prediction){
     return(prediction[["QC_scores"]])
   })))
-  QC_scores <- rownames_to_column(QC_scores, var = "run_id")
+  QC_scores <- rownames_to_column(QC_scores, var = "run_id") 
     
   predicted_HC_contacts <- t(do.call(cbind, lapply(predicted_contacts.list, FUN = function(prediction){
     return(prediction[["predicted_HC_contacts"]])
@@ -302,6 +321,11 @@ extractAF3contacts <- function(db,
     predicted_HC_contacts <- predicted_HC_contacts[rownames(predicted_HC_contacts) %in% run_to_keep, ]
     predicted_LC_contacts <- predicted_LC_contacts[rownames(predicted_LC_contacts) %in% run_to_keep, ]
     predicted_all_contacts <- predicted_all_contacts[rownames(predicted_all_contacts) %in% run_to_keep, ]
+  }
+  
+  if(run_id != run_folder){
+    QC_scores <- QC_scores %>% 
+      dplyr::left_join(dplyr::select(db, all_of(c("run_id", "run_folder"))), by = join_by(run_id))
   }
   
   #return results
@@ -334,8 +358,8 @@ extractAF3contacts <- function(db,
 #' @param prefix whether to add a prefix or not to the run folder name (by default AlphaFold server adds a "fold_" prefix to all files but only to the folder itself if results are individually downloaded)
 #' @param chains a named vector giving the order of chains used for AlphaFold3 modeling, expected names are "HC", "LC", "Ag" in any given order and not needing to start at A if a fourth protein was used.
 #' @param Ag_start_num option to start numbering of AA in Ag chain somewhere else than 1 if part of the protein was truncated
-#' @param QC-cutoff which cutoff to use to filter models based on local ipTM scores (if set to NULL, no filtering is done)
 #' @param Af3_model which of the 5 outputted AlphaFold3 models to use, by default model 0 is the best one.
+#' @param type_of_run which implementation of AlphaFold3 was used: one of "local" or "alphafoldserver". Naming and organisation of folders and files changes between both.  
 #' @return
 #' a list with QC scores, predicted HC contacts and predicted LC contacts. 
 #'
@@ -346,61 +370,94 @@ extractSingleAF3contacts <- function(main_folder,
                                      prefix = "fold_",
                                      chains = c(A = "Ag", B = "HC", C = "LC"),
                                      Ag_start_num = 1,
-                                     AF3_model = 0){
-  
+                                     AF3_model = NULL,
+                                     type_of_run = c("alphafoldserver", "local")
+                                     ){
+                                      
+  #check if folder exists:
   full_run_folder <- paste0(main_folder, "/", run_folder)
-  if(dir.exists(full_run_folder)){
-    json_confidence <- jsonlite::fromJSON(txt = paste0(full_run_folder, "/", prefix, run_folder, "_summary_confidences_", AF3_model,".json"), flatten = TRUE)
-    
-    #check if name is correct when order of Ag/HC and LC are changed
-    global_ipTM <- json_confidence$iptm
-    local_ipTMs <- json_confidence$chain_pair_iptm
-    colnames(local_ipTMs) <- paste0(tolower(chains), "_local_ipTMs")
-    rownames(local_ipTMs) <- paste0(tolower(chains), "_local_ipTMs")
-    
-    ipTMs <- c(global_ipTM = global_ipTM, local_ipTMs["ag_local_ipTMs", c("hc_local_ipTMs", "lc_local_ipTMs")])
-    
-    json_data <- jsonlite::fromJSON(txt = paste0(full_run_folder,"/", prefix, run_folder, "_full_data_", AF3_model,".json"), flatten = TRUE)
-    contact_mat <- as.data.frame(json_data$contact_probs)
-    
-    request <- jsonlite::fromJSON(txt = paste0(full_run_folder,"/", prefix, run_folder, "_job_request.json"), flatten = FALSE)
-    
-    chains_aa <- list()
-    chains_length <- list()
-    for (i in seq_along(chains)){
-      chains_aa[[i]] <- request$sequences[[1]]$proteinChain[i,1]
-      chains_length[[i]] <- nchar(request$sequences[[1]]$proteinChain[i,1])
-    }
-    names(chains_aa) <- chains
-    
-    Ag_aa_seq <- unlist(strsplit(chains_aa[["Ag"]], split = ""))
-    Ag_numbered_aa_seq <- paste0(Ag_aa_seq, (seq_along(Ag_aa_seq)+Ag_start_num-1))
-    
-    .contact_positions <- function(chain, chains_length){
-      chain_position <- match(chain, LETTERS)
-      if(chain_position>1){
-        first_aa <- sum(unlist(chains_length[1:(chain_position-1)]))+1
-      } else {first_aa <- 1}
-      last_aa <- sum(unlist(chains_length[1:(chain_position)]))
-      return(list(first_aa = first_aa, last_aa = last_aa))
-    }
-    Ag_pos <- .contact_positions(names(chains[chains == "Ag"]), chains_length)
-    HC_pos <- .contact_positions(names(chains[chains == "HC"]), chains_length)
-    LC_pos <- .contact_positions(names(chains[chains == "LC"]), chains_length)
-    
-    HCvsAg_contacts <- contact_mat[Ag_pos[["first_aa"]]:Ag_pos[["last_aa"]], HC_pos[["first_aa"]]:HC_pos[["last_aa"]]] 
-    predicted_HC_contacts <- apply(HCvsAg_contacts, 1, max)
-    names(predicted_HC_contacts) <- Ag_numbered_aa_seq
-    
-    LCvsAg_contacts <- contact_mat[Ag_pos[["first_aa"]]:Ag_pos[["last_aa"]], LC_pos[["first_aa"]]:LC_pos[["last_aa"]]]
-    predicted_LC_contacts <- apply(LCvsAg_contacts, 1, max)
-    names(predicted_LC_contacts) <- Ag_numbered_aa_seq
-    
-    return(list(QC_scores = ipTMs, predicted_HC_contacts = predicted_HC_contacts, predicted_LC_contacts = predicted_LC_contacts))
-  } else {
-    warning(paste0("missing json file for ", run_folder))
+  if(!dir.exists(full_run_folder)){
+    warning(paste0("missing folder for ", run_folder))
     return(NULL)
   }
+  
+  #define model to use based on the type of run (alphafold server vs local install:
+  type_of_run <- match.arg(type_of_run)
+  if(!type_of_run %in% c("alphafoldserver", "local")){
+    stop("type_of_run should be one of 'alphafoldserver' or 'local'")
+  }
+    
+  if(type_of_run == "alphafoldserver"){
+    if(is.null(AF3_model)){
+      #using by default model zero
+      AF3_model <- "_0"
+      #TODO scan summary confidence json and select the best ranking score?
+      } else { AF3_model <- paste0("_", AF3_model) }
+  } else {
+    if(!is.null(AF3_model)){
+      #TODO open "run_folder_ranking_scores.csv", get seed (column 1) and redefine folder to use using seed-"795906"seed nb"_sample-"AF3_model" 
+    }
+  }
+  
+  #define file name and check if they exist:
+  if(type_of_run == "alphafoldserver") {
+    json_confidence_filename <- paste0(full_run_folder, "/", prefix, run_folder, "_summary_confidences", AF3_model,".json")
+    data_filename <- paste0(full_run_folder, "/", prefix, run_folder, "_full_data", AF3_model,".json")
+    request_filename <- paste0(full_run_folder,"/", prefix, run_folder, "_job_request.json")
+  } else if(type_of_run == "local") {
+    json_confidence_filename <- paste0(full_run_folder, "/", run_folder, "_summary_confidences", AF3_model,".json")
+    data_filename <- paste0(full_run_folder, "/", run_folder, "_confidences", AF3_model,".json")
+    request_filename <- paste0(full_run_folder,"/", run_folder, "_data", AF3_model,".json")
+  }
+  
+  json_confidence <- jsonlite::fromJSON(txt = json_confidence_filename, flatten = TRUE)
+  json_data <- jsonlite::fromJSON(txt = data_filename, flatten = TRUE)
+  
+  #extract ipTMs  
+  global_ipTM <- json_confidence$iptm
+  local_ipTMs <- json_confidence$chain_pair_iptm
+  
+  if(!length(colnames(local_ipTMs)) == length(chains)){
+    stop("issue with : ", full_run_folder, ", ",length(colnames(local_ipTMs)), " chains in request file instead of 3 (Ag, HC and LC)")
+  }
+  colnames(local_ipTMs) <- paste0(tolower(chains), "_local_ipTMs")
+  rownames(local_ipTMs) <- paste0(tolower(chains), "_local_ipTMs")
+  
+  ipTMs <- c(global_ipTM = global_ipTM, local_ipTMs["ag_local_ipTMs", c("hc_local_ipTMs", "lc_local_ipTMs")])
+    
+  #extract contacts:
+  contact_mat <- as.data.frame(json_data$contact_probs)
+    
+  colnames(contact_mat) <- paste0(json_data$token_chain_ids, json_data$token_res_ids)
+  rownames(contact_mat) <- paste0(json_data$token_chain_ids, json_data$token_res_ids)
+    
+  chains_aa <- list()
+  if(type_of_run == "alphafoldserver") {
+    request <- jsonlite::fromJSON(txt = request_filename, flatten = FALSE)
+    for (i in seq_along(chains)){
+      chains_aa[[i]] <- request$sequences[[1]]$proteinChain[i,1]
+    }
+    names(chains_aa) <- chains
+  } else if(type_of_run == "local") {
+    request <- jsonlite::fromJSON(txt = request_filename, flatten = TRUE)
+    for (i in seq_along(chains)){
+      chains_aa[[i]] <- request$sequences$protein.sequence[i]
+    }
+    names(chains_aa) <- chains
+  }
+    
+  Ag_aa_seq <- unlist(strsplit(chains_aa[["Ag"]], split = ""))
+  Ag_numbered_aa_seq <- paste0(Ag_aa_seq, (seq_along(Ag_aa_seq)+Ag_start_num-1))
+  
+  HCvsAg_contacts <- contact_mat[grepl(names(chains[chains == "Ag"]), colnames(contact_mat)), grepl(names(chains[chains == "HC"]), rownames(contact_mat))]
+  predicted_HC_contacts <- apply(HCvsAg_contacts, 1, max)
+  names(predicted_HC_contacts) <- Ag_numbered_aa_seq
+  
+  LCvsAg_contacts <- contact_mat[grepl(names(chains[chains == "Ag"]), colnames(contact_mat)), grepl(names(chains[chains == "LC"]), rownames(contact_mat))]
+  predicted_LC_contacts <- apply(LCvsAg_contacts, 1, max)
+  names(predicted_LC_contacts) <- Ag_numbered_aa_seq
+  
+  return(list(QC_scores = ipTMs, predicted_HC_contacts = predicted_HC_contacts, predicted_LC_contacts = predicted_LC_contacts))
 }
 
 #### Function to plot an enriched Heatmap for AlphaFold3 predicted contacts on a given antigen ####
@@ -411,14 +468,14 @@ extractSingleAF3contacts <- function(main_folder,
 #' @param dend provided dendrogram for row clustering
 #' @param show_row_dend whether to plot dendrogram
 #' @param hclust_method method for hclust if dendrogram is to be internally calculated (default = "ward.D2")
-#' @param split_by a column in row_annot to split the heatmap. Should match the clustering in the provided dendrogram.
-#' @param split_heatmap whether to split heatmap (add gaps between clustered groups of row)
+#' @param cluster_rows 	If the value is a logical, it controls whether to make cluster on rows. The value can also be a hclust or a dendrogram which already contains clustering. Check https://jokergoo.github.io/ComplexHeatmap-reference/book/a-single-heatmap.html#clustering .
+#' @param row_split A vector or a data frame by which the rows are split. But if cluster_rows is a clustering object, split can only be a single number indicating to split the dendrogram by cutree.
 #' @param border whether to add border to the heatmap
-#' @param k the number of cluster to split the heatmap (if set to NULL but split_by is provide, will default to the  number of unique levels in split_by column)
 #' @param heatmap_gap size of gap to be introduced (default = unit(1, "mm")
-#' @param cluster_columns whether to cluster columns too (passed to ComplexHeatmap)
 #' @param show_column_dend whether to display column dendrogram too (passed to ComplexHeatmap)
-#' @param col color to use for the heatmap (default = colorRamp2(c(0, 0.25, 0.5, 1), c("white", "cornflowerblue", "yellow", "red")))
+#' @param cluster_columns whether to cluster columns too (passed to ComplexHeatmap)
+#' @param row_split A vector or a data frame by which the rows are split. But if cluster_rows is a clustering object, split can only be a single number indicating to split the dendrogram by cutree.
+#' @param col color to use for the heatmap (default = circlize::colorRamp2(c(0, 0.25, 0.5, 1), c("white", "cornflowerblue", "yellow", "red")))
 #' @param legend_name name to use for the heatmap color legend (default = "AlphaFold contact probability")
 #' @param show_row_names whether to show rownames (of note highlight_row_names will supersede that call)
 #' @param row_names_side which side of the heatmap to display rownames (left or right (default))
@@ -432,7 +489,7 @@ extractSingleAF3contacts <- function(main_folder,
 #' @param height global height of the heatmap
 #' @param row_height individual height of row (setting a value for height will supersede row_height)
 #' @param width global width of the heatmap
-#' @param row_width individual width of col (setting a value for width will supersede row_height)
+#' @param col_width individual width of col (setting a value for width will supersede row_height)
 #' @param plot_average_contacts whether to plot average contacts for each individual clusters as defined by split_by as barplots underneath the heatmap
 #' @param annot_col a list of all colors scheme related to any annotation on the enriched heatmap
 #' @param row_annot all row annotations
@@ -454,27 +511,28 @@ extractSingleAF3contacts <- function(main_folder,
 #' @param filename name of saved pdf file (without the ".pdf")
 #' @param file_width width of the saved pdf 
 #' @param file_height height of the saved pdf 
-#' @param plot_dendrogram whether to also save the dendrogram
+#' @param plot_row_dendrogram whether to also save the dendrogram
 #' @param return_plot whether to return the ComplexHeatmap grop
+#' @param ... additional arguments to pass to ComplexHeatmap::Heatmap
+#' 
 #' @return
 #' If return_plot = TRUE, a complexHeatmap grob.
-#' If save_pdf = TRUE will automatically save a pdf with the enriched Heatmap (page 1) as well as the dendrogram for all rows (page 2) if plot_dendrogram = TRUE.
+#' If save_pdf = TRUE will automatically save a pdf with the enriched Heatmap (page 1) as well as the dendrogram for all rows (page 2) if plot_row_dendrogram = TRUE.
 #' 
 #' @export
 
 contactsHeatmap <- function(contact_mat,
-                            legend_name = "AlphaFold contact probability",
-                            dend = NULL,
+                            cluster_rows = FALSE,
                             show_row_dend = FALSE,
-                            hclust_method = "ward.D2",
-                            split_by = NULL, # a collumn in row_annot , if leveled properly, 
-                            split_heatmap = FALSE,
-                            border = TRUE,
-                            k = NULL,
-                            heatmap_gap = unit(1, "mm"),
+                            row_split = NULL,
                             cluster_columns = FALSE,
                             show_column_dend = FALSE,
-                            col = colorRamp2(c(0, 0.25, 0.5, 1), c("white", "cornflowerblue", "yellow", "red")),
+                            column_split = NULL,
+                            border = TRUE,
+                            heatmap_gap = unit(1, "mm"),
+                            hclust_method = "ward.D2",
+                            col = circlize::colorRamp2(c(0, 0.25, 0.5, 1), c("white", "cornflowerblue", "yellow", "red")),
+                            legend_name = "AlphaFold contact probability",
                             show_row_names = TRUE,
                             row_names_side = "right",
                             show_column_names = TRUE,
@@ -487,8 +545,8 @@ contactsHeatmap <- function(contact_mat,
                             height = NULL,
                             row_height = unit(2, "mm"),
                             width = NULL,
-                            row_width = unit(2, "mm"),
-                            plot_average_contacts = FALSE,
+                            col_width = unit(2, "mm"),
+                            average_contacts = NULL,
                             annot_col = list(),
                             row_annot = list(),
                             row_annot_name_side = "top",
@@ -511,69 +569,144 @@ contactsHeatmap <- function(contact_mat,
                             filename = "all_contacts_heatmap",
                             file_width = 20, 
                             file_height = 20,
-                            plot_dendrogram = TRUE,
-                            return_plot = TRUE){
+                            plot_row_dendrogram = TRUE,
+                            plot_column_dendrogram = TRUE,
+                            return_plot = TRUE,
+                            ...){
                                
-                            
   if(is.null(contact_mat)){
     stop("no contact matrix provided")
   }
   
-  #create dendrogram if missing and set show_row_dend to TRUE if one is provided
-  if(is.null(dend)){
-    if(show_row_dend){
-      h_clusters <- hclust(dist(contact_mat), method = hclust_method)
-      dend = as.dendrogram(contact_mat)
-      cluster_rows <- dend
-    } else {
-      cluster_rows <- FALSE
-      plot_dendrogram <-  FALSE
-    }
-  } else {
-    cluster_rows <- dend
-  } 
-  
   #define row annotation:
-  if(!is.null(row_annot)){
+  if(length(row_annot)>0){
     common_rownames <- rownames(contact_mat)[rownames(contact_mat) %in% rownames(row_annot)]
     missing_rownames <- rownames(contact_mat)[!rownames(contact_mat) %in% rownames(row_annot)]
     row_annot <- row_annot[common_rownames, ]
     if(length(missing_rownames)>0){
       warning("Provided row annotation dataframe is missing information regding the following two rownames: ", paste(missing_rownames, collapse = "; "))
       missing_rows <- as.data.frame(matrix(NA, nrow = length(missing_rownames), ncol = ncol(row_annot),
-                                               dimnames = list(missing_rownames, colnames(row_annot))))
+                                           dimnames = list(missing_rownames, colnames(row_annot))))
       row_annot <- row_annot %>%
         dplyr::bind_rows(missing_rows)
     }
     if(row_annot_borders){
       row_anno_gp <- grid::gpar(col = "black")
     } else {row_anno_gp <- NULL}
-    row_ha = ComplexHeatmap::rowAnnotation(df = row_annot, 
-                           col = annot_col[names(annot_col) %in% colnames(row_annot)], 
-                           gp = row_anno_gp, 
-                           border = border,
-                           annotation_name_side = row_annot_name_side)
+    row_ha = ComplexHeatmap::rowAnnotation(df = row_annot[rownames(contact_mat),], 
+                                           col = annot_col[names(annot_col) %in% colnames(row_annot)], 
+                                           gp = row_anno_gp, 
+                                           border = border,
+                                           annotation_name_side = row_annot_name_side)
   } else {
     row_ha <- NULL
-    if(!is.null(split_by)){
-      warning("The 'split_by' argument must point to a column in 'row_annot'. No row annotations dataframe provided, 'split_by' will be set to NULL. Use the 'k' argument instead to split the heatmap without row annotations.")
-      split_by <- NULL
+    if(!is.null(average_contacts)){
+      warning("The 'average_contacts' argument must point to a column in 'row_annot'. No row annotations dataframe provided, 'average_contacts' will be set to NULL.")
+      average_contacts <- NULL
     }
   }
   
-  #define bottom annotation:
-  if(!is.null(split_by)){
-    split_heatmap <- TRUE
-    if(split_by %in% colnames(row_annot)){
-      classes <- levels(droplevels(as.factor(row_annot[[split_by]])))
-      if(is.null(k)){
-        if(length(classes)>1){
-          k <- length(classes) #k should be >= 2 
-        }
+  #define row clustering and splits (dendrogram or annotation-based)
+  if(isFALSE(cluster_rows)){
+    if(show_row_dend) {
+      #define dendrogram and use it to cluster rows and also rename it as dend to be able to plot it in the recap pdf
+      h_rows <- hclust(dist(contact_mat), method = hclust_method)
+      row_dend = as.dendrogram(h_rows)
+      cluster_rows <- row_dend
+    } else {
+      plot_row_dendrogram = FALSE
+      row_split = NULL
+      k_rows = NULL
+    }
+  } else if(isTRUE(cluster_rows)){
+    if(show_row_dend) {
+      #define dendrogram and use it to cluster rows and also rename it as dend to be able to plot it in the recap pdf
+      h_rows <- hclust(dist(contact_mat), method = hclust_method)
+      row_dend =  as.dendrogram(h_rows)
+      cluster_rows <- row_dend
+    } 
+  } else if(class(cluster_rows) %in% c("dendrogram", "hclust")){
+    if(class(cluster_rows) == "hclust"){
+      cluster_rows <- as.dendrogram(cluster_rows)
+    } 
+    row_dend = cluster_rows
+  } else {
+    warning("cluster_rows should be one of logical value or dendrogram/hclust object")
+    cluster_rows = FALSE
+    show_row_dend = FALSE
+    plot_row_dendrogram = FALSE
+    row_split = NULL
+  }
+    
+  if(isTRUE(cluster_rows)){
+    if(!row_split %in% colnames(row_annot)){
+      if(!is.null(row_split)){
+        warning("cluster_rows should be a column in row_annot or a numeric value if a dendrogram is used to cluster rows")
+        row_split = NULL
       }
+      k_rows = NULL
+    } else {
+      row_split = row_annot[[row_split]]
+      k_rows = length(levels(as.factor(row_split)))
+    }
+  } else if(class(cluster_rows) == "dendrogram"){
+    if(!is.numeric(row_split)){
+      if(!is.null(row_split)){
+        warning("cluster_rows should be a numeric value if a dendrogram is used to cluster rows")
+        row_split = NULL
+      }
+    }
+    k_rows = row_split
+  }
+  
+  #define column clustering and splits (only dendrogram-based for columns)
+  if(isFALSE(cluster_columns)){
+    if(show_column_dend) {
+      #define dendrogram and use it to cluster columns and also rename it as column_dend to be able to plot it in the recap pdf
+      h_columns <- hclust(dist(t(contact_mat)), method = hclust_method)
+      column_dend = as.dendrogram(h_columns)
+      cluster_columns <- column_dend
+    } else {
+      plot_column_dendrogram = FALSE
+      column_split = NULL
+      k_columns = NULL
+    }
+  } else if(isTRUE(cluster_columns)){
+    #define dendrogram and use it to cluster columns and also rename it as column_dend to be able to plot it in the recap pdf
+    h_columns <- hclust(dist(t(contact_mat)), method = hclust_method)
+    column_dend = as.dendrogram(h_columns)
+    cluster_columns <- column_dend
+  } else if(class(cluster_columns) %in% c("dendrogram", "hclust")){
+    if(class(cluster_columns) == "hclust"){
+      cluster_columns <- as.dendrogram(cluster_columns)
+    } 
+    column_dend = cluster_columns
+  } else {
+    warning("cluster_columns should be one of logical value or dendrogram/hclust object")
+    cluster_columns = FALSE
+    show_column_dend = FALSE
+    plot_column_dendrogram = FALSE
+    column_split = NULL
+  }
+  
+  if(class(cluster_columns) == "dendrogram"){
+    if(!is.numeric(column_split)){
+      if(!is.null(column_split)){
+        warning("cluster_rows should be a numeric value if a dendrogram is used to cluster rows")
+        column_split = NULL
+      }
+    }
+    k_columns = column_split
+  }
+  
+  #define bottom annotation:
+  if(!is.null(average_contacts)){
+    if(average_contacts %in% colnames(row_annot)){
+      classes <- levels(droplevels(as.factor(row_annot[[average_contacts]])))
       base_mean.list <- lapply(classes, FUN = function(class){
-        rownames_in_class <- rownames(row_annot[!is.na(row_annot[[split_by]]) & row_annot[[split_by]] == class, ])
-        if(!is.null(nrow(contact_mat[rownames_in_class,]))){
+        rownames_in_class <- rownames(row_annot[!is.na(row_annot[[average_contacts]]) & row_annot[[average_contacts]] == class, ])
+        rownames_in_class <- rownames_in_class[rownames_in_class %in% rownames(contact_mat)]
+        if(length(rownames_in_class)>1){
           colMeans(as.matrix(contact_mat[rownames_in_class,]))
         } else {
           #cases of only one VH/VL pair in a class
@@ -581,10 +714,18 @@ contactsHeatmap <- function(contact_mat,
         }
       })
       names(base_mean.list) <- classes
-      base_col <- annot_col[[split_by]]
-      base_fill <- annot_col[[split_by]]
+      base_col <- annot_col[[average_contacts]]
+      missing_base_col <- setdiff(classes, names(base_col))
+      if (length(missing_base_col) > 0) {
+        warning("Missing colors for the following ", split_by, " levels: ", paste(missing_base_col, collapse = "; "),"; assigning automatically.")
+        add_base_col <- RColorBrewer::brewer.pal(n = length(missing_base_col), "Accent")
+        names(add_base_col) <- missing_base_col
+        base_col <- c(base_col, add_base_col)
+        annot_col[[average_contacts]] <- base_col
+      }
+      base_fill <- base_col
     } else {
-      warning("missing ", split_by," in row_annot dataframe.")
+      warning("missing ", average_contacts," in row_annot dataframe.")
       if(!is.null(nrow(contact_mat))){
         base_mean.list <- list("Average_binding" = colMeans(contact_mat))
       } else {
@@ -602,13 +743,14 @@ contactsHeatmap <- function(contact_mat,
     base_col <- c("Average_binding" = "black")
     base_fill <- c("Average_binding" = "black")
   }
-  
+   
+  #define size of the final plot based on row_height, col_width and number of gaps (k_rows, k_cols)
   if(is.null(height)){
     if(!is.null(nrow(contact_mat))){
-      if(is.null(k)){
+      if(is.null(k_rows)){
         height <- nrow(contact_mat) * row_height
       } else {
-        height <- (nrow(contact_mat) * row_height) + ((k-1)* heatmap_gap)
+        height <- (nrow(contact_mat) * row_height) + ((k_rows-1)* heatmap_gap)
       }
     } else {
       #case of only one row
@@ -617,14 +759,14 @@ contactsHeatmap <- function(contact_mat,
   }
   if(is.null(width)){
     if(!is.null(ncol(contact_mat))){
-      width <- ncol(contact_mat) * row_width
+      width <- ncol(contact_mat) * col_width
     } else {
       #case of only one row
-      width <- length(contact_mat) * row_width
+      width <- length(contact_mat) * col_width
     }
   }
   
-  if(plot_average_contacts){
+  if(!is.null(average_contacts)){
     # Build barplot annotations iteratively
     barplot_annos <- lapply(seq_along(base_mean.list), function(i) {
       name <- names(base_mean.list)[i]
@@ -692,33 +834,36 @@ contactsHeatmap <- function(contact_mat,
 
   #plot heatmap:
   HM <- ComplexHeatmap::Heatmap(contact_mat,
-                name = legend_name, 
-                cluster_rows = cluster_rows,
-                show_row_dend = show_row_dend,
-                split = k,
-                gap = heatmap_gap,
-                border = border,
-                cluster_columns = cluster_columns,
-                show_column_dend = show_column_dend,
-                col = col,
-                left_annotation = row_ha, 
-                top_annotation = top_annos$ha,
-                bottom_annotation = bottom_annos$ha,
-                show_row_names = show_row_names,
-                row_names_side = row_names_side,
-                show_column_names = show_column_names,
-                column_names_side = column_names_side,
-                row_names_gp = row_names_gp,
-                column_names_gp = column_names_gp,
-                row_title = row_title,
-                column_title = title,
-                column_title_gp = title_gp,
-                height = height,
-                width = width)
+                                name = legend_name, 
+                                cluster_rows = cluster_rows,
+                                show_row_dend = show_row_dend,
+                                row_split = row_split, 
+                                gap = heatmap_gap,
+                                border = border,
+                                cluster_columns = cluster_columns,
+                                show_column_dend = show_column_dend,
+                                column_split = column_split,
+                                col = col,
+                                left_annotation = row_ha, 
+                                top_annotation = top_annos$ha,
+                                bottom_annotation = bottom_annos$ha,
+                                show_row_names = show_row_names,
+                                row_names_side = row_names_side,
+                                show_column_names = show_column_names,
+                                column_names_side = column_names_side,
+                                row_names_gp = row_names_gp,
+                                column_names_gp = column_names_gp,
+                                row_title = row_title,
+                                column_title = title,
+                                column_title_gp = title_gp,
+                                height = height,
+                                width = width,
+                                ...)
+                
   
   if(!is.null(highlight_row_names)){
     HM <- HM +
-      ComplexHeatmap::rowAnnotation(link = anno_mark(at = which(rownames(contact_mat) %in% highlight_row_names), 
+      ComplexHeatmap::rowAnnotation(link = ComplexHeatmap::anno_mark(at = which(rownames(contact_mat) %in% highlight_row_names), 
                                      labels = rownames(contact_mat)[rownames(contact_mat) %in% highlight_row_names], 
                                      labels_gp = highlight_labels_gp, 
                                      padding = highlight_padding))
@@ -727,7 +872,7 @@ contactsHeatmap <- function(contact_mat,
   if(save_pdf){
     pdf(paste0(filename, ".pdf"), width = unit(file_width, "cm"), height = unit(file_height, "cm"))
     plot(HM)
-    if(plot_dendrogram){
+    if(plot_row_dendrogram){
       plot(dendextend::circlize_dendrogram(dend))
     }
     dev.off()
@@ -804,9 +949,6 @@ generate_tb_annotations <- function(annots,
       )
       
     } else if (type == "structure") {
-      structure_fill_col <- annot_col[[name]] %||%
-        c("Helix" = "moccasin", "Strand" = "lightblue")
-      
       annotations_height <- if (!is.null(structure_annot_height) &&
                                 is.list(structure_annot_height) &&
                                 name %in% names(structure_annot_height)) {
@@ -830,39 +972,59 @@ generate_tb_annotations <- function(annots,
         grid::gpar(col = "black")
       }
       
-      struct_types <- unique(unlist(structure_type[[name]]))
-      missing_struct_col <- setdiff(struct_types, names(structure_fill_col))
-      if (length(missing_struct_col) > 0) {
-        warning("Missing colors for ", name, " structure; assigning automatically.")
-        add_struct_col <- RColorBrewer::brewer.pal(n = length(missing_struct_col), "Accent")
-        names(add_struct_col) <- missing_struct_col
-        structure_fill_col <- c(structure_fill_col, add_struct_col)
+      structure_fill_col <- annot_col[[name]]
+      
+      if (is.character(structure_fill_col) && length(structure_fill_col) == 1 && is.null(names(structure_fill_col))) {
+        structure_fill_col <- c("Helix" = structure_fill_col, "Strand" = structure_fill_col)
       }
       
-      anno_obj <- ComplexHeatmap::anno_block(
-        align_to = annot,
-        labels = names(annot),
-        panel_fun = function(index, level) {
-          struct_type <- structure_type[[name]][[level]]
-          fill_col <- as.character(structure_fill_col[struct_type])
-          if (is.na(fill_col) || length(fill_col) == 0) fill_col <- "grey"
-          
-          grid::grid.rect(gp = grid::gpar(fill = fill_col, col = "black"))
-          if (isTRUE(print_structure_name[name])) {
-            grid::grid.text(level, 0.5, 0.5, rot = 0, gp = gp)
-          }
-          if (index[1] == index[length(index)]) {
-            grid::grid.text(
-              "test",
-              x = unit(1, "npc") + unit(2, "mm"),
-              y = 0.5,
-              just = "left",
-              gp = grid::gpar(fontsize = 9, fontface = "bold")
-            )
-          }
-        },
-        height = annotations_height
-      )
+      if (is.null(structure_fill_col)) {
+        structure_fill_col <- c("Helix" = "moccasin", "Strand" = "lightblue")
+      }
+      
+      if(name %in% names(structure_type)){
+        struct_types <- unique(unlist(structure_type[[name]]))
+        missing_struct_col <- setdiff(struct_types, names(structure_fill_col))
+        if (length(missing_struct_col) > 0) {
+          warning("Missing colors for ", name, " structure; assigning automatically.")
+          add_struct_col <- RColorBrewer::brewer.pal(n = length(missing_struct_col), "Accent")
+          names(add_struct_col) <- missing_struct_col
+          structure_fill_col <- c(structure_fill_col, add_struct_col)
+        }
+        
+        anno_obj <- ComplexHeatmap::anno_block(
+          align_to = annot,
+          labels = names(annot),
+          panel_fun = function(index, level) {
+            struct_type <- structure_type[[name]][[level]]
+            fill_col <- as.character(structure_fill_col[struct_type])
+            if (is.null(fill_col) || length(fill_col) == 0 || is.na(fill_col)) {
+              fill_col <- "moccasin"
+            }
+            grid::grid.rect(gp = grid::gpar(fill = fill_col, col = "black"))
+            if (isTRUE(print_structure_name[name])) {
+              grid::grid.text(level, 0.5, 0.5, rot = 0, gp = gp)
+            }
+          },
+          height = annotations_height
+        )
+      } else {
+        anno_obj <- anno_block(
+          align_to = annot,
+          labels = names(annot),
+          panel_fun = function(index, level) {
+            fill_col <- as.character(structure_fill_col[1])
+            if (is.null(fill_col) || length(fill_col) == 0 || is.na(fill_col)) {
+              fill_col <- "moccasin"
+            }
+            grid.rect(gp = gpar(fill = fill_col, col = "black"))
+            if (isTRUE(print_structure_name[name])) {
+              grid::grid.text(level, 0.5, 0.5, rot = 0, gp = gp)
+            }
+          },
+          height = annotations_height
+        )
+      }
       
       list(
         anno = anno_obj,
