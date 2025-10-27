@@ -417,7 +417,7 @@ extractSingleAF3contacts <- function(main_folder,
   global_ipTM <- json_confidence$iptm
   local_ipTMs <- json_confidence$chain_pair_iptm
   
-  if(!length(colnames(local_ipTMs)) == length(chains)){
+  if(!ncol(local_ipTMs) == length(chains)){
     stop("issue with : ", full_run_folder, ", ",length(colnames(local_ipTMs)), " chains in request file instead of 3 (Ag, HC and LC)")
   }
   colnames(local_ipTMs) <- paste0(tolower(chains), "_local_ipTMs")
@@ -465,16 +465,15 @@ extractSingleAF3contacts <- function(main_folder,
 #'
 #' \code{AF3contactsHeatmap} plot AlphaFold3 predicted interactions 
 #' @param contact_mat a contact matrix in the format provided by extractsAF3contacts 
-#' @param dend provided dendrogram for row clustering
-#' @param show_row_dend whether to plot dendrogram
-#' @param hclust_method method for hclust if dendrogram is to be internally calculated (default = "ward.D2")
 #' @param cluster_rows 	If the value is a logical, it controls whether to make cluster on rows. The value can also be a hclust or a dendrogram which already contains clustering. Check https://jokergoo.github.io/ComplexHeatmap-reference/book/a-single-heatmap.html#clustering .
+#' @param show_row_dend whether to plot dendrogram
 #' @param row_split A vector or a data frame by which the rows are split. But if cluster_rows is a clustering object, split can only be a single number indicating to split the dendrogram by cutree.
-#' @param border whether to add border to the heatmap
-#' @param heatmap_gap size of gap to be introduced (default = unit(1, "mm")
 #' @param show_column_dend whether to display column dendrogram too (passed to ComplexHeatmap)
 #' @param cluster_columns whether to cluster columns too (passed to ComplexHeatmap)
-#' @param row_split A vector or a data frame by which the rows are split. But if cluster_rows is a clustering object, split can only be a single number indicating to split the dendrogram by cutree.
+#' @param column_split A vector or a data frame by which the rows are split. But if cluster_rows is a clustering object, split can only be a single number indicating to split the dendrogram by cutree.
+#' @param border whether to add border to the heatmap
+#' @param heatmap_gap size of gap to be introduced (default = unit(1, "mm")
+#' @param hclust_method method for hclust if dendrogram is to be internally calculated (default = "ward.D2")
 #' @param col color to use for the heatmap (default = circlize::colorRamp2(c(0, 0.25, 0.5, 1), c("white", "cornflowerblue", "yellow", "red")))
 #' @param legend_name name to use for the heatmap color legend (default = "AlphaFold contact probability")
 #' @param show_row_names whether to show rownames (of note highlight_row_names will supersede that call)
@@ -490,7 +489,7 @@ extractSingleAF3contacts <- function(main_folder,
 #' @param row_height individual height of row (setting a value for height will supersede row_height)
 #' @param width global width of the heatmap
 #' @param col_width individual width of col (setting a value for width will supersede row_height)
-#' @param plot_average_contacts whether to plot average contacts for each individual clusters as defined by split_by as barplots underneath the heatmap
+#' @param average_contacts whether to plot average contacts for each individual clusters, should point to a column in row_annot. 
 #' @param annot_col a list of all colors scheme related to any annotation on the enriched heatmap
 #' @param row_annot all row annotations
 #' @param row_annot_name_side where to print row annotation names (top (default) or bottom)
@@ -529,7 +528,7 @@ contactsHeatmap <- function(contact_mat,
                             show_column_dend = FALSE,
                             column_split = NULL,
                             border = TRUE,
-                            heatmap_gap = unit(1, "mm"),
+                            heatmap_gap = grid::unit(1, "mm"),
                             hclust_method = "ward.D2",
                             col = circlize::colorRamp2(c(0, 0.25, 0.5, 1), c("white", "cornflowerblue", "yellow", "red")),
                             legend_name = "AlphaFold contact probability",
@@ -543,9 +542,9 @@ contactsHeatmap <- function(contact_mat,
                             title = "VH/VL_predicted_residues",
                             title_gp = grid::gpar(fontsize = 20, fontface = "bold"),
                             height = NULL,
-                            row_height = unit(2, "mm"),
+                            row_height = grid::unit(2, "mm"),
                             width = NULL,
-                            col_width = unit(2, "mm"),
+                            col_width = grid::unit(2, "mm"),
                             average_contacts = NULL,
                             annot_col = list(),
                             row_annot = list(),
@@ -554,15 +553,15 @@ contactsHeatmap <- function(contact_mat,
                             row_annot_borders = FALSE,
                             highlight_row_names = NULL,
                             highlight_labels_gp = grid::gpar(fontsize = 9), 
-                            highlight_padding = unit(1, "mm"),
+                            highlight_padding = grid::unit(1, "mm"),
                             top_annot = list(),
                             bottom_annot = list(),
                             annot_type = list(),
                             structure_type = list(),
                             print_structure_name = TRUE,
-                            column_annot_gap = unit(2, "mm"),
-                            barplot_annot_height = unit(4 , "mm"),
-                            site_annot_height = unit(4, "mm"),
+                            column_annot_gap = grid::unit(2, "mm"),
+                            barplot_annot_height = grid::unit(4 , "mm"),
+                            site_annot_height = grid::unit(4, "mm"),
                             structure_annot_height = list(),
                             annotation_name_gp = grid::gpar(fontsize = 9),
                             save_pdf = TRUE,
@@ -584,7 +583,7 @@ contactsHeatmap <- function(contact_mat,
     missing_rownames <- rownames(contact_mat)[!rownames(contact_mat) %in% rownames(row_annot)]
     row_annot <- row_annot[common_rownames, ]
     if(length(missing_rownames)>0){
-      warning("Provided row annotation dataframe is missing information regding the following two rownames: ", paste(missing_rownames, collapse = "; "))
+      warning("Provided row annotation dataframe is missing information regarding the following rownames: ", paste(missing_rownames, collapse = "; "))
       missing_rows <- as.data.frame(matrix(NA, nrow = length(missing_rownames), ncol = ncol(row_annot),
                                            dimnames = list(missing_rownames, colnames(row_annot))))
       row_annot <- row_annot %>%
@@ -717,8 +716,8 @@ contactsHeatmap <- function(contact_mat,
       base_col <- annot_col[[average_contacts]]
       missing_base_col <- setdiff(classes, names(base_col))
       if (length(missing_base_col) > 0) {
-        warning("Missing colors for the following ", split_by, " levels: ", paste(missing_base_col, collapse = "; "),"; assigning automatically.")
-        add_base_col <- RColorBrewer::brewer.pal(n = length(missing_base_col), "Accent")
+        warning("Missing colors for the following ", average_contacts, " levels: ", paste(missing_base_col, collapse = "; "),"; assigning automatically.")
+        add_base_col <- RColorBrewer::brewer.pal(n = 12, "Paired")[1:length(missing_base_col)]
         names(add_base_col) <- missing_base_col
         base_col <- c(base_col, add_base_col)
         annot_col[[average_contacts]] <- base_col
@@ -870,7 +869,7 @@ contactsHeatmap <- function(contact_mat,
   }
   
   if(save_pdf){
-    pdf(paste0(filename, ".pdf"), width = unit(file_width, "cm"), height = unit(file_height, "cm"))
+    pdf(paste0(filename, ".pdf"), width = grid::unit(file_width, "cm"), height = grid::unit(file_height, "cm"))
     plot(HM)
     if(plot_row_dendrogram){
       plot(dendextend::circlize_dendrogram(dend))
@@ -914,10 +913,10 @@ generate_tb_annotations <- function(annots,
                                     annot_col = list(),
                                     structure_type = list(),
                                     structure_annot_height = list(),
-                                    site_annot_height = unit(5, "mm"),
+                                    site_annot_height = grid::unit(5, "mm"),
                                     annotation_name_gp = NULL,
                                     print_structure_name = NULL,
-                                    column_annot_gap = unit(2, "mm"),
+                                    column_annot_gap = grid::unit(2, "mm"),
                                     column_annot_name_side = "right",
                                     barplot_annos = list())
                                     {
@@ -936,7 +935,7 @@ generate_tb_annotations <- function(annots,
         missing_sites_col <- setdiff(unique(annot), names(col_map))
         if (length(missing_sites_col) > 0) {
           warning("Missing colors for ", name, " sites; assigning automatically.")
-          add_col <- RColorBrewer::brewer.pal(n = length(missing_sites_col), "Accent")
+          add_col <- RColorBrewer::brewer.pal(n = 12, "Paired")[1:length(missing_sites_col)]
           names(add_col) <- missing_sites_col
           col_map <- c(col_map, add_col)
         }
@@ -987,7 +986,7 @@ generate_tb_annotations <- function(annots,
         missing_struct_col <- setdiff(struct_types, names(structure_fill_col))
         if (length(missing_struct_col) > 0) {
           warning("Missing colors for ", name, " structure; assigning automatically.")
-          add_struct_col <- RColorBrewer::brewer.pal(n = length(missing_struct_col), "Accent")
+          add_struct_col <- RColorBrewer::brewer.pal(n = 9, "Pastel1")[1:length(missing_struct_col)]
           names(add_struct_col) <- missing_struct_col
           structure_fill_col <- c(structure_fill_col, add_struct_col)
         }
@@ -1009,7 +1008,7 @@ generate_tb_annotations <- function(annots,
           height = annotations_height
         )
       } else {
-        anno_obj <- anno_block(
+        anno_obj <- ComplexHeatmap::anno_block(
           align_to = annot,
           labels = names(annot),
           panel_fun = function(index, level) {
@@ -1103,7 +1102,13 @@ generate_tb_annotations <- function(annots,
 #'        and optionally $extra_legends (a list of Legend objects)
 #' @return Invisibly returns what `ComplexHeatmap::draw()` returns.
 
-heatmap_draw <- function(ht_obj) {
+heatmap_draw <- function(ht_obj,
+                         heatmap_legend_side = "bottom",
+                         annotation_legend_side = "bottom",
+                         heatmap_legend_direction = "horizontal",
+                         annotation_legend_direction = "horizontal",
+                         padding = grid::unit(c(5, 20, 5, 5), "mm"),
+                         ...) {
   
   ht <- ht_obj$heatmap
   if (is.list(ht) && length(ht) == 1 && inherits(ht[[1]], "Heatmap")) {
@@ -1128,6 +1133,11 @@ heatmap_draw <- function(ht_obj) {
   
   ComplexHeatmap::draw(
     ht,
-    annotation_legend_list = unique_legends
-  )
+    annotation_legend_list = unique_legends,
+    heatmap_legend_side = heatmap_legend_side,
+    annotation_legend_side = annotation_legend_side,
+    #heatmap_legend_direction = heatmap_legend_direction,
+    #annotation_legend_direction = annotation_legend_direction,
+    padding = padding, # extra space on right
+    ...)
 }

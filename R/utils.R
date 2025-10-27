@@ -418,6 +418,11 @@ excel_recap_table <- function(wb,
     useNA_counts <- "ifany"
   } else { useNA_counts <- "no" }
   
+  if(any(!factors %in% colnames(df))){
+    missing_cols <- factors[!factors %in% colnames(df)]
+    stop("the following factor(s) is/are not in the provided data frame: ", paste(missing_cols, collapse = "; "))
+  }
+  
   tb <- as.data.frame.matrix(table(df[[factors[1]]], df[[factors[2]]], useNA = useNA_counts))
   # Clean up any NA row/column names
   if(!useNA_counts == "no" & (any(rownames(tb) == "NA.") | any(is.na(colnames(tb))))){
@@ -459,7 +464,7 @@ excel_recap_table <- function(wb,
       } else {
         row_total <- tb$total_events_woNA[r]
       }
-      if (row_total > 0) {
+      if (!row_total == 0) {
         tb_freq[r, ] <- round(tb_counts[r, ] / row_total, 4)*100
       }
     }
