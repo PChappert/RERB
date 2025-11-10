@@ -313,7 +313,7 @@ extractAF3contacts <- function(db,
   
   #filter results
   if(!is.null(QC_cutoff)){
-    run_to_keep <- dplyr::filter(QC_scores, hc_local_ipTMs > QC_cutoff & lc_local_ipTMs > QC_cutoff)$run_id
+    run_to_keep <- dplyr::filter(QC_scores, hc_local_ipTMs >= QC_cutoff & lc_local_ipTMs >= QC_cutoff)$run_id
     run_to_discard <- dplyr::filter(QC_scores, hc_local_ipTMs < QC_cutoff | lc_local_ipTMs < QC_cutoff)$run_id
     if(length(run_to_discard)>0 & verbose){
       warning(paste0("the following predictions were of poor quality: ", paste(run_to_discard, collapse = "; ")))
@@ -467,10 +467,10 @@ extractSingleAF3contacts <- function(main_folder,
 #' @param contact_mat a contact matrix in the format provided by extractsAF3contacts 
 #' @param cluster_rows 	If the value is a logical, it controls whether to make cluster on rows. The value can also be a hclust or a dendrogram which already contains clustering. Check https://jokergoo.github.io/ComplexHeatmap-reference/book/a-single-heatmap.html#clustering .
 #' @param show_row_dend whether to plot dendrogram
-#' @param row_split A vector or a data frame by which the rows are split. But if cluster_rows is a clustering object, split can only be a single number indicating to split the dendrogram by cutree.
+#' @param row_split A vector or a column in row_annot data frame by which the rows are split if cluster_rows is a logical. But if cluster_rows is a clustering object, split can only be a single number indicating to split the dendrogram by cutree.
 #' @param show_column_dend whether to display column dendrogram too (passed to ComplexHeatmap)
 #' @param cluster_columns whether to cluster columns too (passed to ComplexHeatmap)
-#' @param column_split A vector or a data frame by which the rows are split. But if cluster_rows is a clustering object, split can only be a single number indicating to split the dendrogram by cutree.
+#' @param column_split A vector by which the rows are split if cluster_rows is a logical. But if cluster_rows is a clustering object, split can only be a single number indicating to split the dendrogram by cutree.
 #' @param border whether to add border to the heatmap
 #' @param heatmap_gap size of gap to be introduced (default = unit(1, "mm")
 #' @param hclust_method method for hclust if dendrogram is to be internally calculated (default = "ward.D2")
@@ -607,48 +607,24 @@ contactsHeatmap <- function(contact_mat,
   
   #define row clustering and splits (dendrogram or annotation-based)
   if(isFALSE(cluster_rows)){
-    if(show_row_dend) {
-      #define dendrogram and use it to cluster rows and also rename it as dend to be able to plot it in the recap pdf
-      h_rows <- hclust(dist(contact_mat), method = hclust_method)
-      row_dend = as.dendrogram(h_rows)
-      cluster_rows <- row_dend
-    } else {
-      plot_row_dendrogram = FALSE
-      row_split = NULL
-      k_rows = NULL
-    }
-  } else if(isTRUE(cluster_rows)){
-    if(show_row_dend) {
-      #define dendrogram and use it to cluster rows and also rename it as dend to be able to plot it in the recap pdf
-      h_rows <- hclust(dist(contact_mat), method = hclust_method)
-      row_dend =  as.dendrogram(h_rows)
-      cluster_rows <- row_dend
-    } 
-  } else if(class(cluster_rows) %in% c("dendrogram", "hclust")){
-    if(class(cluster_rows) == "hclust"){
-      cluster_rows <- as.dendrogram(cluster_rows)
-    } 
-    row_dend = cluster_rows
-  } else {
-    warning("cluster_rows should be one of logical value or dendrogram/hclust object")
-    cluster_rows = FALSE
     show_row_dend = FALSE
     plot_row_dendrogram = FALSE
-    row_split = NULL
-  }
-    
-  if(isTRUE(cluster_rows)){
-    if(!row_split %in% colnames(row_annot)){
+    if(row_split %in% colnames(row_annot)){
+      row_split = row_annot[[row_split]]
+      k_rows = length(levels(as.factor(row_split)))
+    } else if(is.vector(row_split)){
+      k_rows = length(levels(as.factor(row_split)))
+    } else {
       if(!is.null(row_split)){
-        warning("cluster_rows should be a column in row_annot or a numeric value if a dendrogram is used to cluster rows")
+        warning("row_split should be a vector or a column in row_annot when setting cluster_rows = FALSE")
         row_split = NULL
       }
       k_rows = NULL
-    } else {
-      row_split = row_annot[[row_split]]
-      k_rows = length(levels(as.factor(row_split)))
     }
-  } else if(class(cluster_rows) == "dendrogram"){
+  } else if(isTRUE(cluster_rows)){
+    #define dendrogram and use it to cluster rows and also rename it as dend to be able to plot it in the recap pdf
+    h_rows <- hclust(dist(contact_mat), method = hclust_method)
+    cluster_rows <-  as.dendrogram(h_rows)
     if(!is.numeric(row_split)){
       if(!is.null(row_split)){
         warning("cluster_rows should be a numeric value if a dendrogram is used to cluster rows")
@@ -656,39 +632,55 @@ contactsHeatmap <- function(contact_mat,
       }
     }
     k_rows = row_split
+    
+  } else if(class(cluster_rows) %in% c("dendrogram", "hclust")){
+    if(class(cluster_rows) == "hclust"){
+      cluster_rows <- as.dendrogram(cluster_rows)
+    } 
+    if(!is.numeric(row_split)){
+      if(!is.null(row_split)){
+        warning("cluster_rows should be a numeric value if a dendrogram is used to cluster rows")
+        row_split = NULL
+      }
+    }
+    k_rows = row_split
+  } else {
+    warning("cluster_rows should be one of logical value or dendrogram/hclust object: set to FALSE")
+    cluster_rows = FALSE
+    show_row_dend = FALSE
+    plot_row_dendrogram = FALSE
+    
+    if(row_split %in% colnames(row_annot)){
+      row_split = row_annot[[row_split]]
+      k_rows = length(levels(as.factor(row_split)))
+    } else if(is.vector(row_split)){
+      k_rows = length(levels(as.factor(row_split)))
+    } else {
+      if(!is.null(row_split)){
+        warning("row_split should be a vector or a column in row_annot when setting cluster_rows = FALSE")
+        row_split = NULL
+      }
+      k_rows = NULL
+    }
   }
   
-  #define column clustering and splits (only dendrogram-based for columns)
+  #define columns clustering and splits (dendrogram or vector-based)
   if(isFALSE(cluster_columns)){
-    if(show_column_dend) {
-      #define dendrogram and use it to cluster columns and also rename it as column_dend to be able to plot it in the recap pdf
-      h_columns <- hclust(dist(t(contact_mat)), method = hclust_method)
-      column_dend = as.dendrogram(h_columns)
-      cluster_columns <- column_dend
+    show_column_dend = FALSE
+    plot_column_dendrogram = FALSE
+    if(is.vector(column_split)){
+      k_columns = length(levels(as.factor(column_split)))
     } else {
-      plot_column_dendrogram = FALSE
-      column_split = NULL
+      if(!is.null(column_split)){
+        warning("row_split should be a vector or a column in row_annot when setting cluster_rows = FALSE")
+        column_split = NULL
+      }
       k_columns = NULL
     }
   } else if(isTRUE(cluster_columns)){
-    #define dendrogram and use it to cluster columns and also rename it as column_dend to be able to plot it in the recap pdf
-    h_columns <- hclust(dist(t(contact_mat)), method = hclust_method)
-    column_dend = as.dendrogram(h_columns)
-    cluster_columns <- column_dend
-  } else if(class(cluster_columns) %in% c("dendrogram", "hclust")){
-    if(class(cluster_columns) == "hclust"){
-      cluster_columns <- as.dendrogram(cluster_columns)
-    } 
-    column_dend = cluster_columns
-  } else {
-    warning("cluster_columns should be one of logical value or dendrogram/hclust object")
-    cluster_columns = FALSE
-    show_column_dend = FALSE
-    plot_column_dendrogram = FALSE
-    column_split = NULL
-  }
-  
-  if(class(cluster_columns) == "dendrogram"){
+    #define dendrogram and use it to cluster rows and also rename it as dend to be able to plot it in the recap pdf
+    h_columns <- hclust(dist(contact_mat), method = hclust_method)
+    cluster_rows <-  as.dendrogram(h_columns)
     if(!is.numeric(column_split)){
       if(!is.null(column_split)){
         warning("cluster_rows should be a numeric value if a dendrogram is used to cluster rows")
@@ -696,6 +688,33 @@ contactsHeatmap <- function(contact_mat,
       }
     }
     k_columns = column_split
+    
+  } else if(class(cluster_columns) %in% c("dendrogram", "hclust")){
+    if(class(cluster_columns) == "hclust"){
+      cluster_columns <- as.dendrogram(cluster_columns)
+    } 
+    if(!is.numeric(column_split)){
+      if(!is.null(column_split)){
+        warning("cluster_rows should be a numeric value if a dendrogram is used to cluster rows")
+        column_split = NULL
+      }
+    }
+    k_columns = column_split
+  } else {
+    warning("cluster_rows should be one of logical value or dendrogram/hclust object: set to FALSE")
+    cluster_columns = FALSE
+    show_column_dend = FALSE
+    plot_column_dendrogram = FALSE
+    
+    if(is.vector(column_split)){
+      k_columns = length(levels(as.factor(column_split)))
+    } else {
+      if(!is.null(column_split)){
+        warning("row_split should be a vector or a column in row_annot when setting cluster_rows = FALSE")
+        column_split = NULL
+      }
+      k_columns = NULL
+    }
   }
   
   #define bottom annotation:
