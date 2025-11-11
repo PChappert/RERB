@@ -30,7 +30,7 @@ summarizeBCRClones <- function(db,
                                import_global = c("cell_id", "clone_id"), 
                                include_meta = c("selected", "all"),
                                selected_meta = NULL,
-                               filter_incomplete_bcr = TRUE){
+                               filter_incomplete_bcr = FALSE){
   
   #suppressMessages(library(dplyr))
   
@@ -294,6 +294,14 @@ extractAF3contacts <- function(db,
   #deals with missing file cases (NULL is returned)
   predicted_contacts.list <- predicted_contacts.list %>%
     purrr::discard(is.null)
+  
+  lengths <- sapply(predicted_contacts.list, function(pred) length(pred[["predicted_HC_contacts"]]))
+  if(length(unique(lengths))>1){
+    median = median(lengths)
+    names(lengths) <- names(predicted_contacts.list)
+    suspicious_lengths <- lengths[!lengths == median]
+    warning("not all predictions were done with an antigen of the same length; check the following predictitons: ", paste(names(suspicious_lengths), collapse = "; "))
+  }
   
   #concatenate individual results
   QC_scores <- as.data.frame(do.call(rbind, lapply(predicted_contacts.list, FUN = function(prediction){
@@ -609,36 +617,37 @@ contactsHeatmap <- function(contact_mat,
   if(isFALSE(cluster_rows)){
     show_row_dend = FALSE
     plot_row_dendrogram = FALSE
-    if(row_split %in% colnames(row_annot)){
-      row_split = row_annot[[row_split]]
-      k_rows = length(levels(as.factor(row_split)))
-    } else if(is.vector(row_split)){
-      k_rows = length(levels(as.factor(row_split)))
-    } else {
-      if(!is.null(row_split)){
+    if(!is.null(row_split)){
+      if(row_split %in% colnames(row_annot)){
+        row_split = row_annot[[row_split]]
+        k_rows = length(levels(as.factor(row_split)))
+      } else if(is.vector(row_split)){
+        k_rows = length(levels(as.factor(row_split)))
+      } else {
         warning("row_split should be a vector or a column in row_annot when setting cluster_rows = FALSE")
         row_split = NULL
+        k_rows = NULL
       }
+    } else {
       k_rows = NULL
     }
   } else if(isTRUE(cluster_rows)){
     #define dendrogram and use it to cluster rows and also rename it as dend to be able to plot it in the recap pdf
     h_rows <- hclust(dist(contact_mat), method = hclust_method)
     cluster_rows <-  as.dendrogram(h_rows)
-    if(!is.numeric(row_split)){
-      if(!is.null(row_split)){
+    if(!is.null(row_split)){
+      if(!is.numeric(row_split)){
         warning("cluster_rows should be a numeric value if a dendrogram is used to cluster rows")
         row_split = NULL
       }
     }
     k_rows = row_split
-    
   } else if(class(cluster_rows) %in% c("dendrogram", "hclust")){
     if(class(cluster_rows) == "hclust"){
       cluster_rows <- as.dendrogram(cluster_rows)
     } 
-    if(!is.numeric(row_split)){
-      if(!is.null(row_split)){
+    if(!is.null(row_split)){
+      if(!is.numeric(row_split)){
         warning("cluster_rows should be a numeric value if a dendrogram is used to cluster rows")
         row_split = NULL
       }
@@ -650,16 +659,18 @@ contactsHeatmap <- function(contact_mat,
     show_row_dend = FALSE
     plot_row_dendrogram = FALSE
     
-    if(row_split %in% colnames(row_annot)){
-      row_split = row_annot[[row_split]]
-      k_rows = length(levels(as.factor(row_split)))
-    } else if(is.vector(row_split)){
-      k_rows = length(levels(as.factor(row_split)))
-    } else {
-      if(!is.null(row_split)){
+    if(!is.null(row_split)){
+      if(row_split %in% colnames(row_annot)){
+        row_split = row_annot[[row_split]]
+        k_rows = length(levels(as.factor(row_split)))
+      } else if(is.vector(row_split)){
+        k_rows = length(levels(as.factor(row_split)))
+      } else {
         warning("row_split should be a vector or a column in row_annot when setting cluster_rows = FALSE")
         row_split = NULL
+        k_rows = NULL
       }
+    } else {
       k_rows = NULL
     }
   }
@@ -668,33 +679,34 @@ contactsHeatmap <- function(contact_mat,
   if(isFALSE(cluster_columns)){
     show_column_dend = FALSE
     plot_column_dendrogram = FALSE
-    if(is.vector(column_split)){
-      k_columns = length(levels(as.factor(column_split)))
-    } else {
-      if(!is.null(column_split)){
+    if(!is.null(column_split)){
+      if(is.vector(column_split)){
+        k_columns = length(levels(as.factor(column_split)))
+      } else {
         warning("row_split should be a vector or a column in row_annot when setting cluster_rows = FALSE")
         column_split = NULL
+        k_columns = NULL
       }
+    } else {
       k_columns = NULL
     }
   } else if(isTRUE(cluster_columns)){
     #define dendrogram and use it to cluster rows and also rename it as dend to be able to plot it in the recap pdf
     h_columns <- hclust(dist(contact_mat), method = hclust_method)
-    cluster_rows <-  as.dendrogram(h_columns)
-    if(!is.numeric(column_split)){
-      if(!is.null(column_split)){
+    cluster_columns <-  as.dendrogram(h_columns)
+    if(!is.null(column_split)){
+      if(!is.numeric(column_split)){
         warning("cluster_rows should be a numeric value if a dendrogram is used to cluster rows")
         column_split = NULL
       }
     }
     k_columns = column_split
-    
   } else if(class(cluster_columns) %in% c("dendrogram", "hclust")){
     if(class(cluster_columns) == "hclust"){
       cluster_columns <- as.dendrogram(cluster_columns)
     } 
-    if(!is.numeric(column_split)){
-      if(!is.null(column_split)){
+    if(!is.null(column_split)){
+      if(!is.numeric(column_split)){
         warning("cluster_rows should be a numeric value if a dendrogram is used to cluster rows")
         column_split = NULL
       }
@@ -706,13 +718,15 @@ contactsHeatmap <- function(contact_mat,
     show_column_dend = FALSE
     plot_column_dendrogram = FALSE
     
-    if(is.vector(column_split)){
-      k_columns = length(levels(as.factor(column_split)))
-    } else {
-      if(!is.null(column_split)){
+    if(!is.null(column_split)){
+      if(is.vector(column_split)){
+        k_columns = length(levels(as.factor(column_split)))
+      } else {
         warning("row_split should be a vector or a column in row_annot when setting cluster_rows = FALSE")
         column_split = NULL
+        k_columns = NULL
       }
+    } else {
       k_columns = NULL
     }
   }
