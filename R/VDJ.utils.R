@@ -1317,6 +1317,7 @@ resolveMultiContigs <- function(db,
       #1. clonal clustering of all light chain contigs using a stringent threshold because light chains are less diverses and with overall smaller cdr3s...:
       cloned_exp_db <- exp_db
       cloned_exp_db[[locus]] <- "IGH" #we trick scoper::defineClonesScoper in believing these are actually heavy chains...
+      cloned_exp_db$cell_id <- NULL #prevents an issue with scoper::defineClonesScoper when finding a cell_id collumn
       if("light_clone" %in% colnames(cloned_exp_db)){
         cloned_exp_db$light_clone <- NULL
       }
