@@ -2650,14 +2650,13 @@ runAssignGenes <- function(db,
   imgt_dir <- ifelse(stringr::str_ends(imgt_dir,"/"), imgt_dir, paste0(imgt_dir, "/"))
 
   if(!output){
-    output_folder = "temp/"
+    output_folder = tempdir()
   } else {
     # check if output folder is properly formatted
     if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
-  }
-
-  if(!dir.exists(output_folder)){
-    dir.create(output_folder)
+    if(!dir.exists(output_folder)){
+      dir.create(output_folder)
+    }
   }
 
   if(sequence != "sequence"){ # make sure columns are renamed properly to adapt to igblast formatting; old column name is kept
@@ -2746,7 +2745,7 @@ runAssignGenes <- function(db,
   results <- list(pass = as.data.frame(VDJ_db),
                   fail = as.data.frame(failed_VDJ_db))
 
-  if(!output){unlink(output_folder, recursive = TRUE)}
+  #if(!output){unlink(output_folder, recursive = TRUE)}
 
   return(results)
 }
@@ -2806,14 +2805,13 @@ runIgblastn <- function(db,
   nproc_igblast <- min(nproc_igblast, parallel::detectCores())
 
   if(!output){
-    output_folder = "temp/"
+    output_folder = tempdir()
   } else {
     # check if output folder is properly formatted
     if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
-  }
-
-  if(!dir.exists(output_folder)){
-    dir.create(output_folder)
+    if(!dir.exists(output_folder)){
+      dir.create(output_folder)
+    }
   }
 
   if(sequence != "sequence"){ # make sure columns are renamed properly to adapt to igblast formatting; old column name is kept
@@ -2938,11 +2936,11 @@ runIgblastn <- function(db,
     )
     cat(log, sep = "\n")
 
-    if(!output){unlink(output_folder, recursive = TRUE)}
+    #if(!output){unlink(output_folder, recursive = TRUE)}
     return(results)
 
   } else {
-    if(!output){unlink(output_folder, recursive = TRUE)}
+    #if(!output){unlink(output_folder, recursive = TRUE)}
     stop("issue running igblast, no output file")
   }
   #TODO add germline_aligments, imgt gaps, v_germline_length,	d_germline_length,	j_germline_length,	germline_alignment_d_mask to bypass Dowser::createGermline()
@@ -4093,7 +4091,8 @@ scFindClones <- function(db,
                          trim_lengths = TRUE,
                          force_trim = TRUE,
                          SHM = TRUE,
-                         full_seq_aa = TRUE,
+                         CDR3_properties = TRUE,
+                         full_seq_aa = FALSE,
                          #passed to Scoper:
                          method = c("changeo", "hierarchical", "identical", "spectral"), spectral_method = c("novj", "vj"),
                          threshold = c(0.12, 0.15),
@@ -4257,6 +4256,7 @@ scFindClones <- function(db,
     cat("split_by_light: ", split_by_light, "\n")
     cat("update_germline: ", update_germline, "\n")
     cat("SHM: ", SHM, "\n")
+    cat("CDR3_properties: ", CDR3_properties, "\n")
     cat("full_seq_aa: ", full_seq_aa, "\n")
   }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = paste0("scFind", fct_type,"Clones"), open_mode = "wt")
   
@@ -4269,7 +4269,7 @@ scFindClones <- function(db,
   }
   
   ##initiate step counter and filename:
-  n <- 1 + sum(clean_LC, (igblast %in% c("light", "all")), (update_c_call %in% c("light", "all")), split_by_light, update_germline, SHM, full_seq_aa)
+  n <- 1 + sum(clean_LC, (igblast %in% c("light", "all")), (update_c_call %in% c("light", "all")), split_by_light, update_germline, SHM, CDR3_properties, full_seq_aa)
   # create filename
   filename <- paste0(output_folder, analysis_name)
   step <- 0
@@ -4971,12 +4971,12 @@ scFindClones <- function(db,
     readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
   } else {reference_origin <- NA}
   
-  ## 7. calculate somatic mutations::
+  ## 7. calculate somatic mutations:
   if(SHM){
     step = step + 1
     message(
       "------------\n",
-      "Part ", step, " of ", n,": running somatic mutation analysis on V genes (you are almost there...)\n",
+      "Part ", step, " of ", n,": running somatic mutation analysis on V genes\n",
       "------------\n"
     )
     
@@ -4996,7 +4996,25 @@ scFindClones <- function(db,
     readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
   }
   
-  ## 8. reconstruct the full VDJ when possible:
+  ## 8. CDR3 amino acids properties:
+  if(CDR3_properties){
+    step = step + 1
+    message(
+      "------------\n",
+      "Part ", step, " of ", n,": running CDR3 analysis (you are almost there...)\n",
+      "------------\n"
+    )
+    
+    if(verbose){cat("Calculating CDR3 amino acids properties.")}
+    time_and_log({
+      cloned_VDJ_db <- alakazam::aminoAcidProperties(cloned_VDJ_db, seq = "junction", trim = TRUE,,label = "cdr3")
+    }, verbose = verbose, log_file = log_file, log_title = "Calculating CDR3 amino acids properties.", open_mode = "a")
+    
+    filename <- paste0(filename, "_cdr3-pass")
+    readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
+  }
+  
+  ## 9. [optional] reconstruct the full VDJ when possible:
   if(full_seq_aa){
     # useful for AlphaFold analysis (!should be run again after clonal assigments)
     # sequences missing too much pb (early VH or Ns in sequence) will failed reconstruction
@@ -5253,15 +5271,16 @@ scFindTCRClones <- function(db,
                             update_c_call = c("none"), 
                             method = c("changeo", "identical"),
                             threshold = 0,
+                            SHM = FALSE,
+                            update_germline = FALSE,
+                            CDR3_properties = FALSE,
+                            full_seq_aa = FALSE,
                             shared.tech = NULL, #for now only expected to be used for scRNAseq datasets
                             clean_LC = FALSE, # also setting up this last two option as FALSE as they haven't yet been properly tested for TCR datasets:
                             ...){
   
   # no need for mutation analysis and clone-based germline inference
-  SHM = FALSE
-  update_germline = FALSE
   # no need for full VDJ reconstruction (mostly for Alphafold prediction of Ab/Antigen interaction)
-  full_seq_aa = FALSE
   
   cloned_db <- scFindClones(db,
                             seq_type = "TCR",
@@ -5271,6 +5290,7 @@ scFindTCRClones <- function(db,
                             update_c_call = update_c_call,
                             SHM = SHM,
                             update_germline = update_germline,
+                            CDR3_properties = CDR3_properties,
                             full_seq_aa = full_seq_aa,
                             shared.tech = shared.tech,
                             ...)
@@ -5301,7 +5321,7 @@ scFindTCRClones <- function(db,
 #' Before using AddAIRRmetadata() ensure the cell_ids of the seurat object match the "cell_id" in the AIRR formatted dataframe.
 #' By default, if "clone_id" column exists for tcra and tcrb or for heavy_chain this function also calculates the size and frequencies of the clonotypes (as defined in the clone_id column).
 #' (use the "groupBy =" argument, by default NULL will return frequency among all cells in the dataset, if set to NULL, no frequency is returned).
-#' Grouping in done at the sc level post incorporation of the VDJ info so all collumns from both sc and import can be used.
+#' Grouping in done at the sc level post incorporation of the VDJ info so all columns from both sc and import can be used.
 #'
 #' @import dplyr
 #' @import purrr
@@ -5426,6 +5446,9 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
    dplyr::mutate(
      clone_size = NA,
      clone_freq = NA
+   ) %>%
+   dplyr::rename_with(
+     ~ paste0(tolower(type), "_", .), all_of(c(clone_id, "clone_size", "clone_freq"))
    )
 
  sc_vdj_db <- sc_vdj_db %>%
@@ -5438,7 +5461,7 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
    dplyr::mutate(
      clone_size = n(),  # Count occurrences of clone_id
      clone_freq = n()/group_size # Frequency among group
-   ) %>%
+   ) 
    dplyr::rename_with(
      ~ paste0(tolower(type), "_", .), all_of(c(clone_id, "clone_size", "clone_freq"))
    ) %>%
