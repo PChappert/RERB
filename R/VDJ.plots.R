@@ -137,168 +137,173 @@ vdjQCplot <- function(db,
     group_db[[colour.group]] <- factor(group_db[[colour.group]], levels = names(col))
     group_db <- group_db %>%
       dplyr::arrange(desc(!!rlang::sym(colour.group)))
-
-    # generate dominant versus second umi plots for each chain
-    if (type == "vdj_doublet") {
-      if (plot_cutoff) {
-        if (variable_cutoff) {
-          # if not already in the dataframe, learn dataset (split.by) and locus specific cutoffs (adapted to library depth):
-          # 1st quartile of dominant VDJ umi_count (in 75% of doublets the second VDJ should be above this value) and minimum of 10 and 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
-          if (!(all(c("upper_cutoff", "lower_cutoff") %in% colnames(group_db)))) {
+    
+    if(nrow(group_db) > 1){
+      # generate dominant versus second umi plots for each chain
+      if (type == "vdj_doublet") {
+        if (plot_cutoff) {
+          if (variable_cutoff) {
+            # if not already in the dataframe, learn dataset (split.by) and locus specific cutoffs (adapted to library depth):
+            # 1st quartile of dominant VDJ umi_count (in 75% of doublets the second VDJ should be above this value) and minimum of 10 and 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
+            if (!(all(c("upper_cutoff", "lower_cutoff") %in% colnames(group_db)))) {
+              group_db <- group_db %>%
+                dplyr::group_by(locus_simplified) %>%
+                dplyr::mutate(
+                  upper_cutoff = quantile(!!rlang::sym(umi_count), 0.25, na.rm = TRUE),
+                  lower_cutoff = ceiling(median(!!rlang::sym(umi_count), na.rm = TRUE) / 10)
+                ) %>%
+                dplyr::ungroup()
+            }
+          } else { # otherwise, use provided cutoffs
             group_db <- group_db %>%
-              dplyr::group_by(locus_simplified) %>%
               dplyr::mutate(
-                upper_cutoff = quantile(!!rlang::sym(umi_count), 0.25, na.rm = TRUE),
-                lower_cutoff = ceiling(median(!!rlang::sym(umi_count), na.rm = TRUE) / 10)
-              ) %>%
-              dplyr::ungroup()
+                upper_cutoff = high_cutoff,
+                lower_cutoff = low_cutoff
+              )
           }
-        } else { # otherwise, use provided cutoffs
-          group_db <- group_db %>%
-            dplyr::mutate(
-              upper_cutoff = high_cutoff,
-              lower_cutoff = low_cutoff
-            )
+          
+          plots.list <- lapply(chains, FUN = function(chain) {
+            plot_data <- group_db %>%
+              dplyr::filter(locus_simplified %in% chain) %>%
+              dplyr::mutate(
+                !!rlang::sym(second_umi_count) := ifelse(is.na(!!rlang::sym(second_umi_count)), 0.1, !!rlang::sym(second_umi_count))
+              )
+            
+            max <- max(plot_data[[umi_count]])
+            upper_cutoff <- max(na.omit(plot_data[["upper_cutoff"]]))
+            lower_cutoff <- max(na.omit(plot_data[["lower_cutoff"]]))
+            
+            line1 <- data.frame(x = seq(0.1, 3 * upper_cutoff))
+            line1$y <- line1$x / 3
+            line2 <- data.frame(x = seq(3 * lower_cutoff, max))
+            line2$y <- lower_cutoff
+            line3 <- data.frame(x = seq(3 * upper_cutoff, max))
+            line3$y <- upper_cutoff
+            
+            if (chain == "heavy") {
+              full_chain_list <- paste(heavy, collapse = "-")
+            } else {
+              full_chain_list <- paste(light, collapse = "-")
+            }
+            
+            p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = !!rlang::sym(umi_count), y = !!rlang::sym(second_umi_count), colour = !!rlang::sym(colour.group))) +
+              ggplot2::geom_point() +
+              ggplot2::geom_abline(intercept = 0, slope = 1, color = "black", linetype = "dashed") +
+              ggplot2::geom_line(data = line1, aes(x = x, y = y), color = "black", linetype = "dashed") +
+              ggplot2::geom_line(data = line2, aes(x = x, y = y), color = "black", linetype = "dashed") +
+              ggplot2::geom_line(data = line3, aes(x = x, y = y), color = "black", linetype = "dashed") +
+              ggplot2::scale_color_manual(values = col) +
+              ggplot2::labs(
+                title = paste0(group, " - ", analysis_name),
+                x = paste0(full_chain_list, " Dominant contig"),
+                y = paste0(full_chain_list, " Secondary contig")
+              ) +
+              scale_x_log10() +
+              scale_y_log10()
+            
+            return(p)
+          })
+          names(plots.list) <- chains
+        } else {
+          plots.list <- lapply(chains, FUN = function(chain) {
+            plot_data <- group_db %>%
+              dplyr::filter(locus_simplified %in% chain) %>%
+              dplyr::mutate(
+                !!rlang::sym(second_umi_count) := ifelse(is.na(!!rlang::sym(second_umi_count)), 0.1, !!rlang::sym(second_umi_count))
+              )
+            p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = !!rlang::sym(umi_count), y = !!rlang::sym(second_umi_count), colour = !!rlang::sym(colour.group))) +
+              ggplot2::geom_point() +
+              ggplot2::geom_abline(intercept = 0, slope = 1, color = "black", linetype = "dashed") +
+              ggplot2::scale_color_manual(values = col) +
+              ggplot2::labs(
+                title = paste0(group, " - ", analysis_name),
+                x = paste0(paste(unlist(mget(chain)), collapse = "-"), " Dominant contig"),
+                y = paste0(paste(unlist(mget(chain)), collapse = "-"), " Secondary contig")
+              ) +
+              scale_x_log10() +
+              scale_y_log10()
+            return(p)
+          })
+          names(plots.list) <- chains
         }
-
-        plots.list <- lapply(chains, FUN = function(chain) {
-          plot_data <- group_db %>%
-            dplyr::filter(locus_simplified %in% chain) %>%
-            dplyr::mutate(
-              !!rlang::sym(second_umi_count) := ifelse(is.na(!!rlang::sym(second_umi_count)), 0.1, !!rlang::sym(second_umi_count))
-            )
-
-          max <- max(plot_data[[umi_count]])
-          upper_cutoff <- max(na.omit(plot_data[["upper_cutoff"]]))
-          lower_cutoff <- max(na.omit(plot_data[["lower_cutoff"]]))
-
-          line1 <- data.frame(x = seq(0.1, 3 * upper_cutoff))
-          line1$y <- line1$x / 3
-          line2 <- data.frame(x = seq(3 * lower_cutoff, max))
-          line2$y <- lower_cutoff
-          line3 <- data.frame(x = seq(3 * upper_cutoff, max))
-          line3$y <- upper_cutoff
-
-          if (chain == "heavy") {
-            full_chain_list <- paste(heavy, collapse = "-")
-          } else {
-            full_chain_list <- paste(light, collapse = "-")
-          }
-
-          p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = !!rlang::sym(umi_count), y = !!rlang::sym(second_umi_count), colour = !!rlang::sym(colour.group))) +
-            ggplot2::geom_point() +
-            ggplot2::geom_abline(intercept = 0, slope = 1, color = "black", linetype = "dashed") +
-            ggplot2::geom_line(data = line1, aes(x = x, y = y), color = "black", linetype = "dashed") +
-            ggplot2::geom_line(data = line2, aes(x = x, y = y), color = "black", linetype = "dashed") +
-            ggplot2::geom_line(data = line3, aes(x = x, y = y), color = "black", linetype = "dashed") +
-            ggplot2::scale_color_manual(values = col) +
-            ggplot2::labs(
-              title = paste0(group, " - ", analysis_name),
-              x = paste0(full_chain_list, " Dominant contig"),
-              y = paste0(full_chain_list, " Secondary contig")
-            ) +
-            scale_x_log10() +
-            scale_y_log10()
-
-          return(p)
-        })
-        names(plots.list) <- chains
-      } else {
-        plots.list <- lapply(chains, FUN = function(chain) {
-          plot_data <- group_db %>%
-            dplyr::filter(locus_simplified %in% chain) %>%
-            dplyr::mutate(
-              !!rlang::sym(second_umi_count) := ifelse(is.na(!!rlang::sym(second_umi_count)), 0.1, !!rlang::sym(second_umi_count))
-            )
-          p <- ggplot2::ggplot(plot_data, ggplot2::aes(x = !!rlang::sym(umi_count), y = !!rlang::sym(second_umi_count), colour = !!rlang::sym(colour.group))) +
-            ggplot2::geom_point() +
-            ggplot2::geom_abline(intercept = 0, slope = 1, color = "black", linetype = "dashed") +
-            ggplot2::scale_color_manual(values = col) +
-            ggplot2::labs(
-              title = paste0(group, " - ", analysis_name),
-              x = paste0(paste(unlist(mget(chain)), collapse = "-"), " Dominant contig"),
-              y = paste0(paste(unlist(mget(chain)), collapse = "-"), " Secondary contig")
-            ) +
-            scale_x_log10() +
-            scale_y_log10()
-          return(p)
-        })
-        names(plots.list) <- chains
       }
-    }
-
-    # generate heavy versus light plots
-    HvsL_plot_db <- group_db %>%
-      dplyr::select(!!rlang::sym(cell_id), locus_simplified, !!rlang::sym(umi_count), !!rlang::sym(colour.group)) %>%
-      tidyr::pivot_wider(names_from = locus_simplified, values_from = !!rlang::sym(umi_count))
-
-    if ("heavy" %in% colnames(HvsL_plot_db)) {
-      HvsL_plot_db <- HvsL_plot_db %>%
-        dplyr::mutate(
-          heavy = ifelse(is.na(heavy), 0.1, heavy)
-        )
-    }
-    if ("light" %in% colnames(HvsL_plot_db)) {
-      HvsL_plot_db <- HvsL_plot_db %>%
-        dplyr::mutate(
-          light = ifelse(is.na(light), 0.1, light)
-        )
-    }
-
-    if (type == "vdj_doublet") {
-      secondary_plot_db <- group_db %>%
-        dplyr::filter(!is.na(!!rlang::sym(second_umi_count))) %>%
-        dplyr::select(!!rlang::sym(cell_id), locus_simplified, !!rlang::sym(second_umi_count), !!rlang::sym(colour.group)) %>%
-        tidyr::pivot_wider(names_from = locus_simplified, values_from = !!rlang::sym(second_umi_count))
-
-      if ("heavy" %in% colnames(secondary_plot_db)) {
-        secondary_plot_db <- secondary_plot_db %>%
+      
+      # generate heavy versus light plots
+      HvsL_plot_db <- group_db %>%
+        dplyr::select(!!rlang::sym(cell_id), locus_simplified, !!rlang::sym(umi_count), !!rlang::sym(colour.group)) %>%
+        tidyr::pivot_wider(names_from = locus_simplified, values_from = !!rlang::sym(umi_count))
+      
+      if ("heavy" %in% colnames(HvsL_plot_db)) {
+        HvsL_plot_db <- HvsL_plot_db %>%
           dplyr::mutate(
             heavy = ifelse(is.na(heavy), 0.1, heavy)
           )
       }
-      if ("light" %in% colnames(secondary_plot_db)) {
-        secondary_plot_db <- secondary_plot_db %>%
+      if ("light" %in% colnames(HvsL_plot_db)) {
+        HvsL_plot_db <- HvsL_plot_db %>%
           dplyr::mutate(
             light = ifelse(is.na(light), 0.1, light)
           )
       }
-
-      col <- c(col, "primary_umi_counts" = "grey")
-      HvsL_plot_db <- HvsL_plot_db %>%
-        dplyr::mutate(
-          !!rlang::sym(colour.group) := "primary_umi_counts"
-        ) %>%
-        dplyr::bind_rows(secondary_plot_db)
-    }
-
-    p2 <- ggplot2::ggplot(HvsL_plot_db, ggplot2::aes(x = heavy, y = light, colour = !!rlang::sym(colour.group))) +
-      ggplot2::geom_point() +
-      ggplot2::scale_color_manual(values = col) +
-      ggplot2::labs(
-        title = paste0(group, " - ", analysis_name),
-        x = paste0(paste(heavy, collapse = "-"), " - UMI Count"),
-        y = paste0(paste(light, collapse = "-"), " - UMI Count")
-      ) +
-      scale_x_log10() +
-      scale_y_log10()
-
-    if (type == "vdj_doublet") {
-      plots.list[[length(chains) + 1]] <- p2
-      # organize final page
-      combined_plot <- plots.list[[1]] + plots.list[[2]]
-      if (length(chains) > 1) {
-        for (i in 3:(length(chains) + 1)) {
-          combined_plot <- combined_plot + plots.list[[i]]
+      
+      if (type == "vdj_doublet") {
+        secondary_plot_db <- group_db %>%
+          dplyr::filter(!is.na(!!rlang::sym(second_umi_count))) %>%
+          dplyr::select(!!rlang::sym(cell_id), locus_simplified, !!rlang::sym(second_umi_count), !!rlang::sym(colour.group)) %>%
+          tidyr::pivot_wider(names_from = locus_simplified, values_from = !!rlang::sym(second_umi_count))
+        
+        if ("heavy" %in% colnames(secondary_plot_db)) {
+          secondary_plot_db <- secondary_plot_db %>%
+            dplyr::mutate(
+              heavy = ifelse(is.na(heavy), 0.1, heavy)
+            )
         }
-        combined_plot <- combined_plot + patchwork::plot_layout(ncol = 2)
-      } else {
-        combined_plot <- combined_plot + patchwork::plot_layout(ncol = 1)
+        if ("light" %in% colnames(secondary_plot_db)) {
+          secondary_plot_db <- secondary_plot_db %>%
+            dplyr::mutate(
+              light = ifelse(is.na(light), 0.1, light)
+            )
+        }
+        
+        col <- c(col, "primary_umi_counts" = "grey")
+        HvsL_plot_db <- HvsL_plot_db %>%
+          dplyr::mutate(
+            !!rlang::sym(colour.group) := "primary_umi_counts"
+          ) %>%
+          dplyr::bind_rows(secondary_plot_db)
       }
+      
+      p2 <- ggplot2::ggplot(HvsL_plot_db, ggplot2::aes(x = heavy, y = light, colour = !!rlang::sym(colour.group))) +
+        ggplot2::geom_point() +
+        ggplot2::scale_color_manual(values = col) +
+        ggplot2::labs(
+          title = paste0(group, " - ", analysis_name),
+          x = paste0(paste(heavy, collapse = "-"), " - UMI Count"),
+          y = paste0(paste(light, collapse = "-"), " - UMI Count")
+        ) +
+        scale_x_log10() +
+        scale_y_log10()
+      
+      if (type == "vdj_doublet") {
+        plots.list[[length(chains) + 1]] <- p2
+        # organize final page
+        combined_plot <- plots.list[[1]] + plots.list[[2]]
+        if (length(chains) > 1) {
+          for (i in 3:(length(chains) + 1)) {
+            combined_plot <- combined_plot + plots.list[[i]]
+          }
+          combined_plot <- combined_plot + patchwork::plot_layout(ncol = 2)
+        } else {
+          combined_plot <- combined_plot + patchwork::plot_layout(ncol = 1)
+        }
+      } else {
+        combined_plot <- p2 + patchwork::plot_layout(ncol = 1)
+      }
+      return(combined_plot)
     } else {
-      combined_plot <- p2 + patchwork::plot_layout(ncol = 1)
-    }
-    return(combined_plot)
+      message("not enough values for group: ", group, ", skiping QC plots")
+      return(NULL)
+      }
   })
   names(combined.plots) <- groups
 
@@ -332,7 +337,9 @@ vdjQCplot <- function(db,
     if (save_plot == "png") {
       png(filename, width = 11.69, height = 8.27)
       for (group in groups) {
-        print(combined.plots[[group]])
+        if(!is.null(combined.plots[[group]])){
+          print(combined.plots[[group]])
+        }
       }
       dev.off()
     }
