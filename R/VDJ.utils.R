@@ -2079,9 +2079,9 @@ homotypicVDJdoublets <- function(db,
   db <- db %>%
     dplyr::left_join(flagged_db, by = join_by(cell_id)) %>%
     dplyr::mutate(
-      upper_cutoff = ifelse(locus_simplified == "heavy", upper_cutoff_heavy, 
+      upper_cutoff_doublets = ifelse(locus_simplified == "heavy", upper_cutoff_heavy, 
                               ifelse(locus_simplified == "light", upper_cutoff_light, NA)),
-      lower_cutoff = ifelse(locus_simplified == "heavy", lower_cutoff_heavy, 
+      lower_cutoff_doublets = ifelse(locus_simplified == "heavy", lower_cutoff_heavy, 
                                                       ifelse(locus_simplified == "light", lower_cutoff_light, NA))
     )
   
@@ -2111,10 +2111,10 @@ homotypicVDJdoublets <- function(db,
       dplyr::filter(!!rlang::sym(split.by) == group, !!rlang::sym(locus) %in% heavy)
     cells_in_group <- nrow(group_db)
     doublets <- nrow(dplyr::filter(group_db, is.VDJ_doublet))
-    upper_group_cutoff_heavy <- group_db[[paste0("upper_cutoff_", paste(heavy, collapse = "-"))]][1]
-    upper_group_cutoff_light <- group_db[[paste0("upper_cutoff_", paste(light, collapse = "-"))]][1]
-    lower_group_cutoff_heavy <- group_db[[paste0("lower_cutoff_", paste(heavy, collapse = "-"))]][1]
-    lower_group_cutoff_light <- group_db[[paste0("lower_cutoff_", paste(light, collapse = "-"))]][1]
+    upper_group_cutoff_heavy <- group_db[["upper_cutoff_heavy"]][1]
+    upper_group_cutoff_light <- group_db[["upper_cutoff_light"]][1]
+    lower_group_cutoff_heavy <- group_db[["lower_cutoff_heavy"]][1]
+    lower_group_cutoff_light <- group_db[["lower_cutoff_light"]][1]
     group_log_message <- paste0(group, ": out of ", cells_in_group," cells:\n",
                                 doublets/cells_in_group*100,"% cells (n = ",doublets,") identified as high probability doublets, using ", paste(unlist(mget(chains)), collapse = "-")," contigs;\n",
                                 "upper cutoff used:", upper_group_cutoff_heavy, " for ", paste(heavy, collapse = "-"), " and ",upper_group_cutoff_light, " for ", paste(light, collapse = "-"),"\n",
@@ -2453,10 +2453,10 @@ heterotypicVDJdoublets <- function(db,
     high_doublets <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "high"))
     low_doublets <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "low"))
     ambient_RNA <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "ambient RNA"))
-    upper_group_cutoff_heavy <- group_db[[paste0("upper_cutoff_", paste(heavy, collapse = "-"))]][1]
-    upper_group_cutoff_light <- group_db[[paste0("upper_cutoff_", paste(light, collapse = "-"))]][1]
-    lower_group_cutoff_heavy <- group_db[[paste0("lower_cutoff_", paste(heavy, collapse = "-"))]][1]
-    lower_group_cutoff_light <- group_db[[paste0("lower_cutoff_", paste(light, collapse = "-"))]][1]
+    upper_group_cutoff_heavy <- group_db[["upper_cutoff_heavy"]][1]
+    upper_group_cutoff_light <- group_db[["upper_cutoff_light"]][1]
+    lower_group_cutoff_heavy <- group_db[["lower_cutoff_heavy"]][1]
+    lower_group_cutoff_light <- group_db[["lower_cutoff_light"]][1]
     group_log_message <- paste0(group, ": out of ", cells_in_group," cells:\n",
                                 non_VDJ_cell_in_group/cells_in_group*100,"% cells (n = ",non_VDJ_cell_in_group,") identified as non-",cell_type, " cells\n",
                                 high_doublets/cells_in_group*100,"% cells (n = ",high_doublets,") identified as high probability non-",cell_type ,"/",cell_type," doublets, using ", paste(unlist(mget(chains)), collapse = "-")," contigs;\n",
@@ -2552,7 +2552,7 @@ flagVDJdoublets <- function(db,
     }
   }
   
-  log_file <- paste0(output_folder, analysis_name, "_flagVDJdoublets_logfile.txt")
+  log_file <- paste0(output_folder, analysis_name, "_flagVDJdoublets.log")
   open_mode = "wt"
   
   if(homotypic){
@@ -5461,7 +5461,7 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
    dplyr::mutate(
      clone_size = n(),  # Count occurrences of clone_id
      clone_freq = n()/group_size # Frequency among group
-   ) 
+   ) %>%
    dplyr::rename_with(
      ~ paste0(tolower(type), "_", .), all_of(c(clone_id, "clone_size", "clone_freq"))
    ) %>%
@@ -5478,9 +5478,14 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
  rownames(sc_vdj_db) <- sc_vdj_db$cell_id
 
  # remove columns common between sc_vdj_db and seurat object:
- seurat_columns <- intersect(colnames(sc), colnames(sc_vdj_db))
+ seurat_columns <- intersect(colnames(sc_meta), colnames(sc_vdj_db))
  sc_vdj_db <- sc_vdj_db %>%
    dplyr::select(-all_of(seurat_columns))
+ 
+ not_imported <- seurat_columns[!seurat_columns %in% c(cell_id, split.by)]
+ if(length(not_imported) > 0){
+   warning("the following collumns are already in the provided seurat object and will not be (re)imported: ", paste(not_imported, collapse =  "; "))
+ }
 
  # import in seurat object:
  sc <- SeuratObject::AddMetaData(sc, sc_vdj_db)

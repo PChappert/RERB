@@ -301,7 +301,7 @@ vdjQCplot <- function(db,
       }
       return(combined_plot)
     } else {
-      message("not enough values for group: ", group, ", skiping QC plots")
+      message("not enough values for group: ", group, ", skipping QC plots")
       return(NULL)
       }
   })
@@ -329,7 +329,9 @@ vdjQCplot <- function(db,
     if (save_plot == "pdf") {
       pdf(filename, width = 11.69, height = 8.27)
       for (group in groups) {
-        print(combined.plots[[group]])
+        if(!is.null(combined.plots[[group]])){
+          print(combined.plots[[group]])
+        }
       }
       dev.off()
     }
