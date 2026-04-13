@@ -23,7 +23,7 @@
 #' @examples
 #' data(AI2B_COVID_dataset)
 #' AI2B_COVID_dataset$data
-#' AI2B_COVID_dataset$metadata$donor_metadata
-#' AI2B_COVID_dataset$metadata$sampling_metadata
+#' AI2B_COVID_dataset$metadata$donors
+#' AI2B_COVID_dataset$metadata$sampling
 #' AI2B_COVID_dataset$metadata$codebook
 "AI2B_COVID_dataset"

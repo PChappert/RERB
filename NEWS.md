@@ -1,8 +1,9 @@
 ## Version 0.9.7 - devel: Oct, 2025
 
+-   new COVID dataset included
 -   new set of functions to interact with AlphaFold3 server for antigen-antibodies interaction predictions
 -   new CircosClonotypes function
--   updated reconstructFullVDJ to deal with Ns added at the createGermlines step of Dowser.
+-   updated reconstructFullVDJ to deal with Ns added at the createGermlines step of Dowser and remaining gaps in the J segment.
 -   updated plotVGenePairing to had possibility to look at the family, gene or allele levels
 -   plotCDR3logo is now rename CDR3logos and SingleCDR3logo and allows plotting of CDR3 sequenecs from different clone (and difference sizes) using ClustalW alignments.
 -   updated Ab1toAIRR to solve issue with reticulate connection
