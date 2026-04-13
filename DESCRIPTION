@@ -92,4 +92,5 @@ Collate:
     'FlowJo.utils.R'
     'AF3.utils.R'
     'utils.R'
+    'data.R'
     

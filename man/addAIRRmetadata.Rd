@@ -57,5 +57,5 @@ Cell_ids with duplicated heavy and light chain should also have been excluded du
 Before using AddAIRRmetadata() ensure the cell_ids of the seurat object match the "cell_id" in the AIRR formatted dataframe.
 By default, if "clone_id" column exists for tcra and tcrb or for heavy_chain this function also calculates the size and frequencies of the clonotypes (as defined in the clone_id column).
 (use the "groupBy =" argument, by default NULL will return frequency among all cells in the dataset, if set to NULL, no frequency is returned).
-Grouping in done at the sc level post incorporation of the VDJ info so all collumns from both sc and import can be used.
+Grouping in done at the sc level post incorporation of the VDJ info so all columns from both sc and import can be used.
 }
