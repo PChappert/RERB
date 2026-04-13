@@ -3200,7 +3200,7 @@ reconstructFullVDJ <- function(db,
   #then proceed with reconstructing the full sequence when possible
   for(i in seq_along(db$sequence_id)){
     ##heavy chain:
-    if(!is.na(db$v_call[i])){
+    if(!(is.na(db$v_call[i])|grepl("\\*", db$sequence[i]))){
       db$missing_v_bp[i] <- gregexpr("G|C|A|T", db$sequence_alignment[i])[[1]][1]-1
       db$missing_j_bp[i] <- length(IMGT_j[strsplit(db$j_call[i], ",")[[1]][1]][[1]]) - db$j_germline_end[i]
       
@@ -3260,6 +3260,10 @@ reconstructFullVDJ <- function(db,
         } else {
           db$comments[i] <- paste(na.omit(c(db$comments[i], "still non A|C|T|G characters in full sequence after reverting to germline, check germline_alignment")), collapse = "; ")
         }
+      }
+    } else {
+      if(grepl("\\*", db$sequence[i])){
+        db$comments[i] <- paste(na.omit(c(db$comments[i], "remaining gap(s) in sequence, if it passed igblast/makedb, likely located in j segment")), collapse = "; ")
       }
     }
   }
