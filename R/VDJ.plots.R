@@ -1109,12 +1109,12 @@ HexmapClonotypes <- function(db,
       message("'RColorBrewer' not installed — please provide you own color palette using the 'highlight_col' argument")
       return(invisible(NULL))
     }
-    levels <- levels(as.factor(Plot_db[[highlight]]))
-    if (!requireNamespace("grDevice", quietly = TRUE)) {
+    levels <- levels(droplevels(as.factor(Plot_db[[highlight]])))
+    if (!requireNamespace("grDevices", quietly = TRUE)) {
       if(length(levels) <= 12) {
         palette <- RColorBrewer::brewer.pal(n = length(levels), name = "Paired")
       } else {
-        message("'grDevice' not installed — please provide you own color palette using the 'highlight_col' argument to accomodate ",length(levels)," levels")
+        message("'grDevices' not installed — please provide you own color palette using the 'highlight_col' argument to accomodate ",length(levels)," levels")
         return(invisible(NULL))
       }
     } else {
@@ -1310,10 +1310,10 @@ SingleHexmapClonotypes <- function(data,
     stop("duplicated ", cell_id, "s, fiilter before running HexmapClonotypes()")
   }
 
-  if (ordered) {
-    data <- data %>%
-      dplyr::arrange(fill_col)
-  }
+  #if (ordered) {
+  #  data <- data %>%
+  #    dplyr::arrange(fill_col)
+  #}
 
   # Step 1: Compute dominant origin per clone and add it to all sequence rows
   dominant_origin_lookup <- data %>%
@@ -1390,13 +1390,17 @@ SingleHexmapClonotypes <- function(data,
     clone <- centroid_layout$clone_id[i]
     subset <- data %>%
       dplyr::filter(!!rlang::sym(clone_id) == clone)
-
+    if (ordered) {
+      subset <- subset %>%
+        dplyr::arrange(!!rlang::sym(fill_col))
+    }
     coords <- packed_clones[[i]]$coords
     coords[[cell_id]] <- subset[[cell_id]]
     coords$x <- coords$dx + centroid_layout$x_c[i]
     coords$y <- coords$dy + centroid_layout$y_c[i]
-    coords[[fill_col]] <- subset[[fill_col]]
-
+    #coords[[fill_col]] <- subset[[fill_col]]
+    coords[[fill_col]] <- rep(subset[[fill_col]], length.out = nrow(coords))
+    
     coords_list[[i]] <- coords
   }
 
