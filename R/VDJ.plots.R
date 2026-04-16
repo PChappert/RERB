@@ -487,10 +487,10 @@ DonutPlotClonotypes <- function(db,
 
     plot_group <- function(data) {
       # Extract group name
-      group_name <- unique(data[[split.by[1]]])
+      group_name <- as.character(unique(data[[split.by[1]]]))
       if (length(split.by) > 1) {
         for (i in seq(2, length(split.by))) {
-          group_name <- paste0(group_name, "_", unique(data[[split.by[i]]]))
+          group_name <- paste0(group_name, "_", as.character(unique(data[[split.by[i]]])))
         }
       }
 
@@ -725,7 +725,7 @@ SingleDonutPlotClonotypes <- function(db,
   }
 
   ## create list of dataframes for plotting of circosplots for each time points:
-  origins <- levels(as.factor(Plot_db[[origin]]))
+  origins <- levels(droplevels(as.factor(Plot_db[[origin]])))
   Clones_by_groups_to_plot.list <- lapply(origins, FUN = function(y) {
     data <- Clones_by_groups_to_plot %>%
       dplyr::select(all_of(c(y, "shared", "overall_clone_size", "clone_id"))) %>%
