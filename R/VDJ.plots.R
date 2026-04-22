@@ -1468,7 +1468,6 @@ SingleHexmapClonotypes <- function(data,
   }
 }
 
-
 #### Function to plot CDR3 logos from repertoire data ####
 #' Plots multiple individual CDR3 logo plots and save as pdf
 #'
@@ -2736,6 +2735,11 @@ SingleCircosClonotypes <- function(db,
       names_link <- c(names_link, list(paste0("clone: ", clone)))
       names(names_link)[length(names(names_link))] <- clone
     }
+  }
+  
+  if(any(!names(links_col) %in% names(names_link))){
+    message("the following clone_id are not amongst links: ", names(links_col)[!names(links_col) %in% names(names_link)])
+    links_col <- links_col[names(links_col) %in% names(names_link)]
   }
   
   links_infos <- data.frame(
