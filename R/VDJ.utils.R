@@ -3248,15 +3248,23 @@ reconstructFullVDJ <- function(db,
 
       if(!is.na(db$full_sequence[i])){
         if(length(stringr::str_extract_all(db$full_sequence[i], "[^ACGT]")[[1]]) == 0){
-          options(warn=-1)
-          db$full_sequence_aa[i] <- as.character(Biostrings::translate(Biostrings::DNAStringSet(db$full_sequence[i])))
-          options(warn=0)
+          db$full_sequence_aa[i] <- withCallingHandlers(
+            {
+              as.character(Biostrings::translate(Biostrings::DNAStringSet(db$full_sequence[i])))
+            },
+            warning = function(w) {
+              if (grepl("last base was ignored", conditionMessage(w))) {
+                invokeRestart("muffleWarning")
+              }
+              if (grepl("last 2 bases were ignored", conditionMessage(w))) {
+                invokeRestart("muffleWarning")
+              }
+            }
+          )
           if(seq_type == "Ig" & organism == "human"){
             CH1 <- CH1_AA[[tail(stringr::str_split(db$c_call[i], pattern = "\\|")[[1]], n=1)]]
             db$full_sequence_fab_aa[i] <- paste0(db$full_sequence_aa[i], CH1)
-          } else {
-            warning("Full Fab reconstruction is only implemented for human Ig sequences")
-          }
+          } 
         } else {
           db$comments[i] <- paste(na.omit(c(db$comments[i], "still non A|C|T|G characters in full sequence after reverting to germline, check germline_alignment")), collapse = "; ")
         }
@@ -3265,6 +3273,9 @@ reconstructFullVDJ <- function(db,
       if(grepl("\\*", db$sequence[i])){
         db$comments[i] <- paste(na.omit(c(db$comments[i], "remaining gap(s) in sequence, if it passed igblast/makedb, likely located in j segment")), collapse = "; ")
       }
+    }
+    if(!(seq_type == "Ig" & organism == "human")){
+      warning("Full Fab reconstruction is only implemented for human Ig sequences")
     }
   }
   return(db)
