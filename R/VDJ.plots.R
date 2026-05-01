@@ -1077,6 +1077,12 @@ HexmapClonotypes <- function(db,
   Plot_db <- db %>%
     dplyr::filter(!!rlang::sym(locus) %in% use_chain)
   
+  if(any(is.na(Plot_db[[clone_id]]))){
+    warning("some cell_ids are not associated with a clone_id (clone_id == NA), will be removed")
+    Plot_db <- Plot_db %>%
+      dplyr::filter(!is.na(!!rlang::sym(clone_id)))
+  }
+  
   if(productive_only){
     Plot_db <- Plot_db %>%
       dplyr::filter(!!rlang::sym(productive))
@@ -1102,7 +1108,7 @@ HexmapClonotypes <- function(db,
 
   if (highlight %in% names(highlight_col)) {
     palette <- highlight_col[[highlight]]
-    Plot_db$origin <- ifelse(Plot_db[[highlight]] %in% names(palette), Plot_db[[highlight]], NA)
+    Plot_db[[highlight]] <- ifelse(Plot_db[[highlight]] %in% names(palette), Plot_db[[highlight]], NA)
   } else {
     # palette <- NULL
     if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
@@ -1121,7 +1127,7 @@ HexmapClonotypes <- function(db,
       palette <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 12, name = "Paired"))(length(levels))
     }
     names(palette) <- levels
-    Plot_db$origin <- Plot_db[[highlight]]
+    #Plot_db$origin <- Plot_db[[highlight]]
   }
 
   if (is.null(split.by)) {
@@ -1136,7 +1142,7 @@ HexmapClonotypes <- function(db,
       ordered = ordered,
       radius = radius,
       padding = padding,
-      fill_col = "origin",
+      fill_col = highlight,
       cell_id = cell_id,
       clone_id = clone_id,
       title = title,
@@ -1191,7 +1197,7 @@ HexmapClonotypes <- function(db,
         ordered = ordered,
         radius = radius,
         padding = padding,
-        fill_col = "origin",
+        fill_col = highlight,
         cell_id = cell_id,
         clone_id = clone_id,
         title = title,
@@ -1457,7 +1463,9 @@ SingleHexmapClonotypes <- function(data,
       }
     } +
     ggplot2::coord_equal() +
-    ggplot2::scale_fill_manual(values = colors) +
+    ggplot2::scale_fill_manual(
+      values = colors
+      ) +
     ggplot2::theme_void() +
     ggplot2::labs(title = title, fill = fill_col)
 

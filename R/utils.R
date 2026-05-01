@@ -346,7 +346,7 @@ plot_recap_gtable <- function(df,
                               return_table = FALSE) {
   
   useNA <- match.arg(useNA)
-  padding <- unit(padding,"mm")
+  padding <- grid::unit(padding,"mm")
   
   table <- gridExtra::tableGrob(as.matrix(table(df[[factors[1]]], df[[factors[2]]], useNA=useNA)))
   
