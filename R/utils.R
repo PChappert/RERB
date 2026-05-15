@@ -393,17 +393,17 @@ plot_recap_gtable <- function(df,
 #' @param useNA whether to include NA in count table and or in freq table, if useNA="counts (default), only non-NA values will be used to calculate frequencies but NA counts will be included in the counts table.
 #' @param add_freq whether to add a freq table (row wise) next to the count table
 #' @param colNames whether to add rownames in the final excel sheet
-#' @param rowNmaes whether to add colnames in the final excel sheet
+#' @param rowNames whether to add colnames in the final excel sheet
 #' 
 #' @return create a new sheet in the provided Workbook, with raw table outputs, absolute numbers (row-wise and column-wise), and frequencies (row-wise))
 #' 
 #' @export
 #' 
 excel_recap_table <- function(wb, 
+                              sheet = NULL, 
                               df, 
                               factors = colnames(df)[1:2], 
                               writeData = TRUE, 
-                              sheet = NULL, 
                               add_header = TRUE, 
                               useNA=c("counts", "no", "all"), 
                               add_freq = TRUE, 
@@ -512,6 +512,132 @@ excel_recap_table <- function(wb,
     }
   } else {
     return(tb)
+  }
+}
+
+#### Function to quickly export an annotated table() call to excel ####
+#' adds a new sheet with formatted VDJ data to an existing opened excel workbook
+#'
+#' \code{excel_VDJ_table}
+#'
+#' @param wb which workbook to write into
+#' @param sheet name of the sheet to write too. Will overwrite any data in it.
+#' @param df data frame containing at least the two columns defined in factors to use for table generation
+#' @param select_columns which columns to include in final table
+#' @param color_by which column factors to use for coloring of rows
+#' @param arrange_by which additional column(s) to use for ordering (by default ordered based on color_by)
+#' @param change_font which column to target for changing fonts
+#' @param new_fontName new font name
+#' @param new_fontSize new font size
+#' @param new_fontColor new font color
+#' 
+#' @return create a new sheet in the provided Workbook, with raw table outputs, absolute numbers (row-wise and column-wise), and frequencies (row-wise))
+#' 
+#' @export
+#' 
+excel_VDJ_table <- function(wb,
+                            sheet,
+                            df,
+                            select_columns = NULL,
+                            color_by = "clone_id",
+                            colors = c("lightgrey", "white"),
+                            arrange_by = "clone_id",
+                            change_font = c("junction", "junction_aa"),
+                            new_fontName = "Courier New",
+                            new_fontSize = 11,
+                            new_fontColor = "black"){
+  
+  if(!is.null(color_by)){
+    if(!color_by %in% c(colnames(df))){
+      stop("color_by: missing ", color_by, " column in the provided dataframe")
+    }
+    
+    if(is.null(colors)){
+      warning("color_by: missing colors, switching to default.")
+      colors <- c("lightgrey", "white")
+    } else {
+      if(length(colors) == 1){
+        colors <- c(colors, "white")
+      }
+    }
+    
+    styles <- lapply(colors, FUN=function(col){
+      style <- openxlsx::createStyle(fgFill = col)
+    })
+  }
+  
+  if(!is.null(arrange_by)){
+    if(any(!arrange_by %in% c(colnames(df)))){
+      warning("arrange_by: missing ", paste(arrange_by[!arrange_by %in% c(colnames(df))], collapse = " ;"), " column(s) in the provided dataframe.")
+      arrange_by <- arrange_by[!arrange_by %in% c(colnames(df))]
+    }
+  }
+  df <- df %>%
+       dplyr::arrange(!!!rlang::syms(arrange_by))
+  
+  if(!is.null(select_columns)){
+    if(any(!select_columns %in% c(colnames(df)))){
+      warning("select_columns: missing ", paste(select_columns[!select_columns %in% c(colnames(df))], collapse = " ;"), " column(s) in the provided dataframe")
+      select_columns <- arrange_by[!select_columns %in% c(colnames(df))]
+    }
+  }
+  
+  if(!is.null(change_font)){
+    if(any(!change_font %in% c(colnames(df)))){
+      warning("change_font: missing ", paste(change_font[!change_font %in% c(colnames(df))], collapse = " ;"), " column(s) in the provided dataframe")
+      change_font <- arrange_by[!change_font %in% c(colnames(df))]
+    }
+    font_style <- openxlsx::createStyle(
+      fontName = new_fontName,
+      fontSize = new_fontSize,
+      fontColour = new_fontColor
+    )
+  }
+  
+  #TODO: force ordering by clone_id (color_by) to avoid issues? for now jus a default option in arrange_by to kep the function flexible
+  #order_by <- c(color_by, arrange_by[!arrange_by %in% color_by])
+  #if(!is.null(order_by)){
+  #  df <- df %>%
+  #    dplyr::arrange(!!!rlang::syms(order_by))
+  #}
+  
+  if(!is.null(select_columns)){
+    df <- df %>%
+      dplyr::select(all_of(columns))
+  }
+  
+  openxlsx::addWorksheet(wb, sheet)
+  openxlsx::writeData(wb, 
+                      sheet = sheet,
+                      x = df, 
+                      colNames = TRUE, 
+                      rowNames = FALSE)
+  
+  if(!is.null(color_by)){
+    groups <- cumsum(c(TRUE, df[[color_by]][-1] != df[[color_by]][-nrow(df)]))
+    for (i in seq_len(nrow(df))) {
+      style_to_use <- if (groups[i] %% 2 == 1) styles[[1]] else styles[[2]]
+      openxlsx::addStyle(
+        wb,
+        sheet= sheet,
+        style = style_to_use,
+        rows = i + 1,
+        cols = 1:ncol(df),
+        gridExpand = TRUE
+      )
+    }
+  }
+  
+  if(!is.null(change_font)){
+    openxlsx::addStyle(
+      wb,
+      sheet = sheet,
+      style = font_style,
+      rows = 2:(nrow(df) + 1),   # skip header
+      cols = which(names(df) %in% change_font),
+      gridExpand = TRUE,
+      stack = TRUE
+    )
   }
 }
 
