@@ -1077,12 +1077,18 @@ HexmapClonotypes <- function(db,
   Plot_db <- db %>%
     dplyr::filter(!!rlang::sym(locus) %in% use_chain)
   
+  if(nrow(Plot_db) == 0){
+    stop("no cell with an ", paste(use_chain, collapse = " or "), " contig; consider updating the use_chain argument [default = IGH]")
+  }
+  
   if(any(is.na(Plot_db[[clone_id]]))){
     warning("some cell_ids are not associated with a clone_id (clone_id == NA), will be removed")
     Plot_db <- Plot_db %>%
       dplyr::filter(!is.na(!!rlang::sym(clone_id)))
   }
-  
+  if (!highlight %in% colnames(Plot_db)) {
+    stop(highlight, " column not found in the provided dataframe")
+  }
   if(productive_only){
     Plot_db <- Plot_db %>%
       dplyr::filter(!!rlang::sym(productive))
@@ -1132,8 +1138,8 @@ HexmapClonotypes <- function(db,
 
   if (is.null(split.by)) {
     if (!is.null(prefix)) {
-      title <- paste0(prefix, "All_sequences\n (n=", nrow(Plot_db), ")")
-      filename <- paste0(plots_folder, prefix, "/", prefix, "All_sequences_by_", highlight, ".pdf")
+      title <- paste0(prefix, "_all_sequences\n (n=", nrow(Plot_db), ")")
+      filename <- paste0(plots_folder, prefix, "/", prefix, "_all_sequences_by_", highlight, ".pdf")
     } else {
       title <- paste("All_sequences\n (n=", nrow(Plot_db), ")")
       filename <- paste0(plots_folder, "All_sequences_by_", highlight, ".pdf")
@@ -1164,6 +1170,9 @@ HexmapClonotypes <- function(db,
         dev.off()
       }
     }
+    
+    plots <- p
+    
   } else {
     if (any(!split.by %in% colnames(db))) {
       stop("not all split.by columns exist in the provided dataframe, missing: ", paste(split.by[!split.by %in% colnames(db)], collapse = ", "))
@@ -1592,7 +1601,7 @@ CDR3logos <- function(db,
   if (clone_id %in% split.by) {
     split.by <- c(split.by[split.by != clone_id], clone_id)
     warn_length <- TRUE
-  }
+  } else {warn_length <- FALSE}
 
   groups <- db %>%
     dplyr::filter(!!rlang::sym(locus) %in% chains) %>%
@@ -1632,15 +1641,15 @@ CDR3logos <- function(db,
     }
     for (i in seq_along(plots)) {
       g <- plots[[i]][[1]]
-      l <- plots[[i]][[2]]
+      width = ((2 + as.numeric(levels(plots[[i]][[2]]$cdr3_length[1]))) / 4)
       name <- names(plots)[i]
 
       save_as <- match.arg(save_as)
       if (save_as == "pdf") {
-        ggsave(g, filename = paste0(plots_folder, "/", name, "_CDR3_logo.pdf"), width = ((2 + l) / 4), height = 2)
+        ggsave(g, filename = paste0(plots_folder, "/", name, "_CDR3_logo.pdf"), width = width, height = 2)
       }
       if (save_as == "png") {
-        png(filename = paste0(plots_folder, "/", name, "_CDR3_logo.png"), width = ((2 + l) / 4), height = 2)
+        png(filename = paste0(plots_folder, "/", name, "_CDR3_logo.png"), width = width, height = 2)
         plot(g)
         dev.off()
       }
