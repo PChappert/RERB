@@ -547,25 +547,6 @@ excel_VDJ_table <- function(wb,
                             new_fontSize = 11,
                             new_fontColor = "black"){
   
-  if(!is.null(color_by)){
-    if(!color_by %in% c(colnames(df))){
-      stop("color_by: missing ", color_by, " column in the provided dataframe")
-    }
-    
-    if(is.null(colors)){
-      warning("color_by: missing colors, switching to default.")
-      colors <- c("lightgrey", "white")
-    } else {
-      if(length(colors) == 1){
-        colors <- c(colors, "white")
-      }
-    }
-    
-    styles <- lapply(colors, FUN=function(col){
-      style <- openxlsx::createStyle(fgFill = col)
-    })
-  }
-  
   if(!is.null(arrange_by)){
     if(any(!arrange_by %in% c(colnames(df)))){
       warning("arrange_by: missing ", paste(arrange_by[!arrange_by %in% c(colnames(df))], collapse = " ;"), " column(s) in the provided dataframe.")
@@ -594,7 +575,7 @@ excel_VDJ_table <- function(wb,
     )
   }
   
-  #TODO: force ordering by clone_id (color_by) to avoid issues? for now jus a default option in arrange_by to kep the function flexible
+  #TODO? force ordering by clone_id (color_by) to avoid issues? for now just a default option in arrange_by to keep the function flexible
   #order_by <- c(color_by, arrange_by[!arrange_by %in% color_by])
   #if(!is.null(order_by)){
   #  df <- df %>%
@@ -606,26 +587,69 @@ excel_VDJ_table <- function(wb,
       dplyr::select(all_of(columns))
   }
   
-  openxlsx::addWorksheet(wb, sheet)
-  openxlsx::writeData(wb, 
-                      sheet = sheet,
-                      x = df, 
-                      colNames = TRUE, 
-                      rowNames = FALSE)
-  
-  if(!is.null(color_by)){
-    groups <- cumsum(c(TRUE, df[[color_by]][-1] != df[[color_by]][-nrow(df)]))
-    for (i in seq_len(nrow(df))) {
-      style_to_use <- if (groups[i] %% 2 == 1) styles[[1]] else styles[[2]]
-      openxlsx::addStyle(
-        wb,
-        sheet= sheet,
-        style = style_to_use,
-        rows = i + 1,
-        cols = 1:ncol(df),
-        gridExpand = TRUE
-      )
+  if(!is.null(color_by) & nrow(df) > 0){
+    
+    if(!color_by %in% c(colnames(df))){
+      stop("color_by: missing ", color_by, " column in the provided dataframe")
     }
+    
+    if(is.null(colors)){
+      warning("color_by: missing colors, switching to default.")
+      colors <- c("lightgrey", "white")
+    } else {
+      if(length(colors) == 1){
+        colors <- c(colors, "white")
+      }
+    }
+    
+    styles <- lapply(colors, FUN=function(col){
+      style <- openxlsx::createStyle(fgFill = col)
+    })
+    
+    if(any(is.na(df[[color_by]]))){
+      warning("NA values in column ", color_by, "; will be removed from sheet: ", sheet, " of recap table")
+      df <- df %>%
+        dplyr::filter(!is.na(!!rlang::sym(color_by)))
+    }
+    
+    openxlsx::addWorksheet(wb, sheet)
+    openxlsx::writeData(wb, 
+                        sheet = sheet,
+                        x = df, 
+                        colNames = TRUE, 
+                        rowNames = FALSE)
+    
+    groups <- cumsum(c(TRUE, df[[color_by]][-1] != df[[color_by]][-nrow(df)]))
+    rows1 <- which(groups %% 2 == 1) + 1
+    rows2 <- which(groups %% 2 == 0) + 1
+    
+    openxlsx::addStyle(
+      wb,
+      sheet = sheet,
+      style = styles[[1]],
+      rows = rows1,
+      cols = 1:ncol(df),
+      gridExpand = TRUE,
+      stack = TRUE
+    )
+    
+    openxlsx::addStyle(
+      wb,
+      sheet = sheet,
+      style = styles[[2]],
+      rows = rows2,
+      cols = 1:ncol(df),
+      gridExpand = TRUE,
+      stack = TRUE
+    )
+    
+  } else {
+    openxlsx::addWorksheet(wb, sheet)
+    openxlsx::writeData(wb, 
+                        sheet = sheet,
+                        x = df, 
+                        colNames = TRUE, 
+                        rowNames = FALSE)
   }
   
   if(!is.null(change_font)){
@@ -640,4 +664,3 @@ excel_VDJ_table <- function(wb,
     )
   }
 }
-
