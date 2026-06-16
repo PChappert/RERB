@@ -39,16 +39,16 @@ Depends:
 biocViews:
 Imports:
     airr,
-    alakazam (>= 1.1.0),
+    alakazam (>= 1.4.2),
     Biostrings,
-    dowser (>= 2.3),
+    dowser (>= 2.4.0),
     dplyr (>= 1.0),
     fs,
     purrr,
     readr,
     rlang,
     sangeranalyseR,
-    shazam (>= 1.1.1),
+    shazam (>= 1.3.0),
     stringr,
     tibble,
     tidyr
@@ -80,7 +80,7 @@ Suggests:
     knitr,
     rmarkdown,
     sangerseqR,
-    scoper,
+    scoper (>= 1.4.0),
     testthat,
     pwalign,
     Seurat,
