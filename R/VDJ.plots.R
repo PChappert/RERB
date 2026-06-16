@@ -2822,6 +2822,7 @@ SingleCircosClonotypes <- function(db,
 #' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain. Only use if cell_id is not set to NULL
 #' @param locus     name of column containing locus values.
 #' @param split_by  name of the column containing groups information (if NULL all sequences are considered as part of the same group).
+#' @param order_by_tree whether to perform lineage analysis using dowser igphyml implementation and order sequences accordingly
 #' @param plots_folder name for export folder [default: "SHM_plots"]
 #' @param prefix    prefix to use for saved files
 #' @param imgt_dir  path to imgt-gapped database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]
@@ -2840,7 +2841,8 @@ SingleCircosClonotypes <- function(db,
 #' @param return_plot whether to return the plot as a ggplot object
 #' 
 #' @return
-#' a ggplot2 plot with sequences ordered as in the input and mutated nucleotide as compared to germline or consensus CDR3 highlighted. 
+#' if order_by_tree = FALSE, returns a ggplot2 plot with sequences ordered as in the input and mutated nucleotide as compared to germline or consensus CDR3 highlighted. 
+#' if order_by_tree = TRUE, returns a tree and a ggplot2 plot with sequences ordered in the order of tree tips. 
 #' if no common germline is found in the object, will rerun dowser::createGermline() beforehand.
 #'
 #' @export
@@ -2851,6 +2853,9 @@ sharedMutationsPlot <- function(clone,
                                 use_chain = "IGH",
                                 locus = "locus",
                                 split_by = NULL, 
+                                order_by_tree = FALSE,
+                                tree_model = "igphyml",
+                                igphyml_dir = "~/igphyml/src/igphyml",
                                 plots_folder = "SHM_plots",
                                 prefix = NULL,
                                 imgt_dir = "~/share/germlines/imgt/",
@@ -2941,8 +2946,36 @@ sharedMutationsPlot <- function(clone,
     }
   }
   
+  
+  if(order_by_tree){
+    #generate tree on collapse clone db
+    collapsed_clone <- alakazam::collapseDuplicates(clone, id = sequence_id, seq = sequence_alignment, add_count = FALSE)
+    
+    if(length(collapsed_clone[[sequence_id]]) > 1){
+      dowser_clone <- dowser::formatClones(collapsed_clone, text_fields=sequence_id, mask_char = ".", max_mask = 0, minseq=2)
+      tree <- dowser::getTrees(dowser_clone, build=tree_model, exec=igphyml_dir, collapse = FALSE, nproc=10)
+      
+      tree_tips <- tree$trees[[1]]$tip.label
+      tree_tips <- tree_tips[!tree_tips == "Germline"]
+      
+      duplicate_seqs <- alakazam::collapseDuplicates(clone, id = sequence_id, seq = sequence_alignment, add_count = FALSE, dry=TRUE)
+      
+      ordered_seqs <- list()
+      for(i in seq_along(tree_tips)){
+        ident_seqs <- duplicate_seqs[duplicate_seqs$collapse_id == duplicate_seqs$collapse_id[match(tree_tips[i], duplicate_seqs[[sequence_id]])], ][[sequence_id]]
+        ordered_seqs[[i]] <- ident_seqs
+      }
+      ordered_seqs <- unlist(ordered_seqs)
+      
+      clone <- clone %>%
+        dplyr::arrange(match(sequence_id, ordered_seqs))
+      
+    } else {
+      if(length(clone[[sequence_id]])>1){warning("all sequences are identical, ignoring order_by_tree call")}
+    }
+  }
+  
   seqs <- clone[[sequence_id]]
-  #TODO add step to perform tree analysis for automatic reordering of sequences 
   
   if(align %in% c("d_masked", "d_included")){
     #create mutation table
@@ -2952,7 +2985,7 @@ sharedMutationsPlot <- function(clone,
         muts = purrr::map2(
           !!rlang::sym(sequence_alignment),
           !!rlang::sym(reference_seq),
-          \(x, y) get_mutations(x, y, filter_query = TRUE, return = "tibble")
+          \(x, y) get_mutations(x, y, filter_query = FALSE, return = "tibble")
         )
       )
   }
@@ -2966,7 +2999,7 @@ sharedMutationsPlot <- function(clone,
         muts = purrr::map2(
           !!rlang::sym(cdr3),
           cdr3_consensus,
-          \(x, y) get_mutations(x, y, filter_query = TRUE, return = "tibble")
+          \(x, y) get_mutations(x, y, filter_query = FALSE, return = "tibble")
         )
       )
   }
@@ -3245,7 +3278,14 @@ sharedMutationsPlot <- function(clone,
   }
   
   if(return_plot){
-    return(g)
+    if(order_by_tree){
+      return(
+        list(plot = g,
+             tree = tree)
+      )
+    } else {
+      return(g)
+    }
   }  
 }
 
