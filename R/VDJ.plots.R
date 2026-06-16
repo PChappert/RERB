@@ -404,20 +404,6 @@ plotHistogram <- function(df, density = TRUE, feature, label_column, vline) {
 #' if the split.by argument points to more than one column, will group the dataset based on the first element(s) of the split.by argument
 #' and keep only the last as split.by argument of the SingleDonutPlotClonotypes function.
 #'
-#' @details
-#' db should be an AIRR formated database with a defined "clone_id" column
-#' Defines clones to plot and colors based on clones properties:
-#' Expanded clone = clone size >1 in one donor
-#' Shared clone = clone found in at least two donors
-#' Persisting clone = clone found in at least two time points and/or pop
-#' Color choice:
-#' Single Greys scale based on clone size in that donor (to account for sampling): "white" = singlets, "black"= biggest clone in all donors
-#' Color for shared clones between donors
-#' highlight = c("expanded", "top5")
-#' Consistent color throughout time-points for persisting-expanded clones
-#' Grey for non-persisting expanded clones
-#' White for non expanded clones and regroup all sequences found only once in the dataset (non-persisting/non-expanded)
-#'
 #' @import dplyr
 #' @importFrom purrr map
 #'
@@ -595,13 +581,13 @@ SingleDonutPlotClonotypes <- function(db,
   }
   suppressMessages(library(circlize))
   
-  if( !save_plot & return_plot){
-    save_plot <- TRUE
-    save_as <- TRUE
-    tmp_file_only <- TRUE
-  } else {
-    tmp_file_only <- FALSE
-  }
+  #if( !save_plot & return_plot){
+  #  save_plot <- TRUE
+  #  save_as <- TRUE
+  #  tmp_file_only <- TRUE
+  #} else {
+  #  tmp_file_only <- FALSE
+  #}
   
   save_as <- match.arg(save_as)
   if (save_plot) {
@@ -2330,7 +2316,9 @@ SingleCircosClonotypes <- function(db,
   }
   
   #filter groups to plot (groups_to_plot should be a named list: list(layer1 = c(factor1, factor3), layer3 = c(...),...))
+  
   #TODO perform this step after defining Layer1, layer2... to allow filtering only one group?
+  
   if(!groups_to_plot == "all"){
     for(layer in layers){
       if(!is.null(groups_to_plot[[layer]]) & any(groups_to_plot[[layer]] %in% levels(as.factor(Plot_db[[layer]])))){
@@ -2824,4 +2812,440 @@ SingleCircosClonotypes <- function(db,
 }
 
 
+#### Function to plot a heatmap highlighting shared and discordant mutations between members of a clone ####
+#' Extract mutations and plot shared versus private mutations based on defined groups (split_by argument) 
+#'
+#' \code{sharedMutationsPlot} plot aligned sequences highlighting only mutations 
+#' @param clone     an AIRR formatted dataframe containing bcr (heavy and light chains) sequences from sequences belonging to a unique clone.
+#' @param sequence_id   name of the column containing unique sequence identifier.
+#' @param cell_id   name of the column containing unique cell identifier.
+#' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain. Only use if cell_id is not set to NULL
+#' @param locus     name of column containing locus values.
+#' @param split_by  name of the column containing groups information (if NULL all sequences are considered as part of the same group).
+#' @param plots_folder name for export folder [default: "SHM_plots"]
+#' @param prefix    prefix to use for saved files
+#' @param imgt_dir  path to imgt-gapped database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]
+#' @param organism  organism (any of "human", "mouse", "rhesus_monkey; for other see https://changeo.readthedocs.io/en/stable/examples/igblast.html)
+#' @param align     type of alignment to perform. one of "d_masked" (all V(D)J without Ns and D regions of CDR3), "d_included" (all V(D)J without Ns regions of CDR3), "cdr3" (only the CDR3 region)
+#' @param focus_on_mutation = FALSE,
+#' @param sequence_alignment name of the column containing the aligned sequence.
+#' @param germline_alignment name of the column containing the aligned germline.
+#' @param germline_alignment_d_mask name of the column containing the d-masked aligned germline.
+#' @param cdr1      name of the column containing the cdr1 sequence.
+#' @param cdr2      name of the column containing the cdr1 sequence.
+#' @param cdr3      name of the column containing the cdr1 sequence.
+#' @param color.by  color scheme for highlighted mutations in heatmap
+#' @param font_size font size for nucleotides labels inside heatmap
+#' @param save_plot whether to save the plot.
+#' @param return_plot whether to return the plot as a ggplot object
+#' 
+#' @return
+#' a ggplot2 plot with sequences ordered as in the input and mutated nucleotide as compared to germline or consensus CDR3 highlighted. 
+#' if no common germline is found in the object, will rerun dowser::createGermline() beforehand.
+#'
+#' @export
+
+sharedMutationsPlot <- function(clone,
+                                sequence_id = "sequence_id",
+                                cell_id = "cell_id",
+                                use_chain = "IGH",
+                                locus = "locus",
+                                split_by = NULL, 
+                                plots_folder = "SHM_plots",
+                                prefix = NULL,
+                                imgt_dir = "~/share/germlines/imgt/",
+                                organism = "human",
+                                align = c("d_masked", "d_included", "cdr3"),
+                                focus_on_mutation = FALSE,
+                                sequence_alignment = "sequence_alignment",
+                                germline_alignment = "germline_alignment",
+                                germline_alignment_d_mask = "germline_alignment_d_mask",
+                                cdr1 = "cdr1",
+                                cdr2 = "cdr2",
+                                cdr3 = "cdr3",
+                                color.by = c("Missing info" = "lightgrey",
+                                             "Shared between groups" = "#FCBBA1",
+                                             "Shared inside group" = "#A1D99B",
+                                             "Private" = "#9ECAE1"),
+                                font_size = 2.5,
+                                return_plot = FALSE,
+                                save_plot = TRUE){
+  
+  if (!requireNamespace("ggplot2", quietly = TRUE)) {
+    message("'ggplot2' not installed — skipping plot.")
+    return(invisible(NULL))
+  }
+  suppressMessages(library(ggplot2))
+  
+  if(!is.null(cell_id)){
+    if (!cell_id %in% colnames(clone)) {
+      stop(paste0("missing", cell_id, "collumn: set cell_id = NULL if not working with single cell data"))
+    }
+    #select chains to align (!only usefull in single cell mode) 
+    if (!any(use_chain %in% c("IGH", "IGL", "IGK", "TRB", "TRA", "TRD", "TRG"))) {
+      stop("use_chain should be one or a combinaison of IGH, IGL and IGK, TRB and TRD, TRA and TRG")
+    }
+    if (!locus %in% colnames(clone)) {
+      stop(paste0("missing", locus, "collumn"))
+    }
+    clone <- clone %>%
+      dplyr::filter(locus %in% use_chain)
+  }
+  
+  if(is.null(split_by)){
+    split_by = "groups"
+    clone <- clone %>%
+      mutate(groups = "all")
+  }
+  if (!split_by %in% colnames(clone)) {
+    stop(paste0("missing", split_by, "collumn"))
+  }
+  
+  if (save_plot) {
+    if (!stringr::str_ends(plots_folder, "/")) {
+      plots_folder <- paste0(plots_folder, "/")
+    }
+    if (isFALSE(dir.exists(plots_folder))) {
+      dir.create(plots_folder)
+    }
+  }
+  
+  #TODO if color.by not a named vector or not enough colors warning and default to original colors
+  
+  references = c("d_masked" = germline_alignment_d_mask,
+                 "cdr3" = cdr3, 
+                 "d_included" = germline_alignment
+  )
+  
+  align = match.arg(align)
+  if (!align %in% c("d_masked", "d_included", "cdr3")) {
+    warning("The only saving option are d_masked, cdr3 or all, defaulting to d_masked.")
+    align = "d_masked"
+  }
+  
+  reference_seq = references[align]
+  
+  if(align %in% c("d_masked", "d_included")){
+    #check for case with different germline alignments
+    if(length(unique(clone[reference_seq])) > 1){
+      warning("different ", reference,", will rerun dowser::createGermlines() to select a common germline")
+      imgt_reference <- dowser::readIMGT(paste0(imgt_dir, organism, "/vdj/"))
+      clone <- dowser::createGermlines(clone, 
+                                       references = imgt_reference, 
+                                       trim_lengths = TRUE,
+                                       force_trim = TRUE,
+                                       amino_acid = FALSE,
+                                       id = sequence_id,
+                                       clone = clone_id, 
+                                       na.rm = FALSE)
+    }
+  }
+  
+  seqs <- clone[[sequence_id]]
+  #TODO add step to perform tree analysis for automatic reordering of sequences 
+  
+  if(align %in% c("d_masked", "d_included")){
+    #create mutation table
+    mut_tbl <- clone %>%
+      dplyr::mutate(
+        #find mutations
+        muts = purrr::map2(
+          !!rlang::sym(sequence_alignment),
+          !!rlang::sym(reference_seq),
+          \(x, y) get_mutations(x, y, filter_query = TRUE, return = "tibble")
+        )
+      )
+  }
+  if(align == "cdr3"){
+    #create mutation table for cdr3 sequence only and compared to consensus:
+    cdr3_consensus = consensus_sequence(clone[[cdr3]])
+    mut_tbl <- clone %>%
+      dplyr::mutate(
+        #find mutations
+        cdr3_consensus = cdr3_consensus,
+        muts = purrr::map2(
+          !!rlang::sym(cdr3),
+          cdr3_consensus,
+          \(x, y) get_mutations(x, y, filter_query = TRUE, return = "tibble")
+        )
+      )
+  }
+  
+  mut_tbl <- mut_tbl %>%
+    dplyr::mutate(
+      #reorder sequences
+      sequence_id = factor(
+        !!rlang::sym(sequence_id),
+        levels = rev(seqs)
+      )
+    ) %>%
+    dplyr::select(sequence_id, !!rlang::sym(split_by), muts) %>%
+    tidyr::unnest(muts) %>%
+    dplyr::mutate(
+      mutation = paste0(position, mutant)
+    ) %>%
+    dplyr::group_by(mutation) %>%
+    dplyr::mutate(
+      n_seq = n(),
+      sharing_class = dplyr::case_when(
+        mutant %in% c(".", "-", "N") ~ "Missing info",
+        n_seq == 1 ~ "Private",
+        n_distinct(!!rlang::sym(split_by)) > 1 ~ "Shared between groups",
+        .default = "Shared inside group"
+      )
+    ) %>%
+    dplyr::ungroup()
+  
+  n_seq <- dplyr::n_distinct(mut_tbl$sequence_id)
+  
+  #create position map for plotting (either all residues or only mutated one (requires updating positions)) 
+  if(focus_on_mutation){
+    #remove positions with only missing info
+    mut_tbl <- mut_tbl %>%
+      dplyr::group_by(position, germline) %>%
+      dplyr::mutate(
+        true_mutation = dplyr::case_when(
+          any(!mutant %in% c(".", "-", "N")) ~ TRUE,
+          .default = FALSE
+        )
+      ) %>%
+      dplyr::ungroup() %>%
+      dplyr::filter(true_mutation) %>%
+      dplyr::select(-true_mutation)
+    
+    #update plot positions
+    position_map <- mut_tbl %>%
+      dplyr::distinct(position, germline) %>%
+      dplyr::arrange(position) %>%
+      dplyr::mutate(
+        plot_position = row_number()
+      )
+    
+    mut_tbl <- mut_tbl %>%
+      dplyr::left_join(position_map, by = c("position", "germline"))
+    
+    #create germline row
+    germline_row <- position_map %>%
+      dplyr::mutate(
+        sequence_id = "Germline",
+        sharing_class = NA,
+        y = n_seq + 1
+      )
+    
+  } else {
+    if(align %in% c("d_masked", "d_included")){
+      germline_chars <- strsplit(clone[[reference_seq]][1], "")[[1]]
+      germline_name <- "Germline"
+    }
+    if(align == "cdr3"){
+      germline_chars <- strsplit(cdr3_consensus, "")[[1]]
+      germline_name <- "CDR3 consensus"
+    }
+    
+    position_map <- tibble::tibble(
+      position = seq_along(germline_chars),
+      germline = germline_chars,
+      plot_position = seq_along(germline_chars)
+    )
+    
+    mut_tbl <- mut_tbl %>%
+      dplyr::left_join(
+        position_map,
+        by = c("position", "germline")
+      )
+    
+    #create germline row
+    germline_row <- position_map %>%
+      dplyr::mutate(
+        sequence_id = germline_name,
+        sharing_class = NA,
+        y = n_seq + 1
+      )
+  }
+  
+  if(align %in% c("d_masked", "d_included")){
+    #define the position of CDR1, CDR2 and CDR3 regions for later plotting
+    imgt_regions <- tibble::tibble(
+      region = c("CDR1","CDR2","CDR3"),
+      sequence = c(
+        clone[[cdr1]][1],
+        clone[[cdr2]][1],
+        clone[[cdr3]][1]
+      )
+    ) %>%
+      dplyr::mutate(
+        coords = purrr::map(
+          sequence,
+          ~ find_region_in_alignment(
+            clone[[sequence_alignment]][1],
+            .x
+          )
+        )
+      ) %>%
+      tidyr::unnest(coords)
+    
+    cdr_boxes <- imgt_regions %>%
+      dplyr::filter(str_detect(region, "CDR")) %>%
+      dplyr::rowwise() %>%
+      dplyr::mutate(
+        xmin = {
+          tmp <- position_map %>%
+            filter(position >= start, position <= end)
+          if(nrow(tmp) == 0) NA else min(tmp$plot_position) - 0.5
+        },
+        xmax = {
+          tmp <- position_map %>%
+            filter(position >= start, position <= end)
+          if(nrow(tmp) == 0) NA else max(tmp$plot_position) + 0.5
+        }
+      ) %>%
+      dplyr::ungroup() %>%
+      dplyr::filter(!is.na(xmin))
+  }
+   
+  #generate final plot  
+  if(focus_on_mutation){
+    if(align %in% c("d_masked", "d_included")){
+      x_axis_text = "position in aligned IMGT-gapped sequence (mutated nt only)"
+    }
+    if(align == "cdr3"){
+      x_axis_text = "position in CDR3 sequence (mutated nt only)"
+    }
+  } else {
+    if(align %in% c("d_masked", "d_included")){
+      x_axis_text = "position in aligned IMGT-gapped sequence"
+    }
+    if(align == "cdr3"){
+      x_axis_text = "position in CDR3 sequence"
+    }
+  }
+  
+  g <- ggplot2::ggplot() +
+    #CDRs boxes
+    (if(align %in% c("d_masked", "d_included"))
+      ggplot2::geom_rect(
+        data = cdr_boxes,
+        aes(
+          xmin = xmin,
+          xmax = xmax,
+          ymin = -Inf,
+          ymax = Inf
+        ),
+        inherit.aes = FALSE,
+        fill = "grey80",
+        alpha = 0.5
+      ) else NULL) +
+  #colored SHM boxes
+    ggplot2::geom_tile(
+      data = mut_tbl,
+      aes(
+        x = plot_position,
+        y = sequence_id,
+        fill = sharing_class
+      ),
+      color = "black",
+      width = 0.95,
+      height = 0.95
+    ) +
+    #mutated nucleotides
+    ggplot2::geom_text(
+      data = mut_tbl,
+      aes(
+        x = plot_position,
+        y = sequence_id,
+        label = mutant
+      ),
+      size = font_size
+    ) +
+    #original nucleotides
+    ggplot2::geom_text(
+      data = germline_row,
+      aes(
+        x = plot_position,
+        y = n_seq + 1.35,
+        label = germline
+      ),
+      #fontface = "bold",
+      size = font_size
+    ) +
+    #CDRs names
+    (if(align %in% c("d_masked", "d_included"))
+      ggplot2::geom_text(
+        data = cdr_boxes,
+        aes(
+          x = (xmin + xmax)/2,
+          y = n_seq + 2.35,
+          label = region
+        ),
+        #fontface = "bold",
+        size = 3
+      ) else NULL) +
+    ggplot2::scale_x_continuous(
+      breaks = position_map$plot_position,
+      labels = position_map$position,
+      expand = ggplot2::expansion(mult = c(0.01, 0.01))
+    ) +
+    ggplot2::scale_fill_manual(
+      values = color.by
+    ) +
+    ggplot2::labs(
+      x = x_axis_text,
+      y = NULL,
+      fill = NULL
+    ) +
+    ggplot2::coord_cartesian(
+      ylim = c(
+        0.75,
+        n_seq + 0.25
+      ),
+      clip = "off"
+    ) +
+    ggplot2::theme_bw(base_size = 10) +
+    ggplot2::theme(
+      panel.grid = element_blank(),
+      axis.text.x = element_text(
+        angle = 45,
+        hjust = 1,
+        vjust = 1,
+        size = 8
+      ),
+      axis.title.x = element_text(
+        size = 9
+      ),
+      axis.text.y = element_text(
+        size = 8
+      ),
+      plot.margin = margin(
+        t = 35,
+        r = 10,
+        b = 10,
+        l = 10
+      ),
+      legend.position = "bottom"
+    )
+  
+  if(save_plot){
+    if(is.null(prefix)){
+      filename = paste0(plots_folder, "All_sequences_", align, "_alignment")
+    } else {
+      filename = paste0(plots_folder, prefix, "_", align, "_alignment")
+    }
+    #fix heatmap size for saving
+    n_mutated_nt = length(germline_row$position)
+    width = 8.2 + n_mutated_nt*0.35
+    height = 4.5 + n_seq*0.35
+    
+    if(focus_on_mutation){
+      ggsave(g, filename = paste0(filename, "_mutated_nt.pdf"), 
+             units = "cm", width = width, height = height, limitsize = FALSE)
+    } else {
+      ggsave(g, filename = paste0(filename, "_all_nt.pdf"), 
+             units = "cm", width = width, height = height, limitsize = FALSE)
+    }
+  }
+  
+  if(return_plot){
+    return(g)
+  }  
+}
 
