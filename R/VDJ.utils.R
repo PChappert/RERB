@@ -1231,7 +1231,7 @@ resolveMultiContigs <- function(db,
 
   if(any(duplicated(db_to_filter[[sequence_id]]))){stop("Sequence IDs in provided dataframe must be unique!")}
 
-  if(use_clone & !all(chain %in% c("IGL", "IGK"))){warning("using prior clustering knowledge only designed for light chain filtration, won't be used for heavy chains")}
+  if(use_clone & !resolve_chain == "light"){warning("using prior clustering knowledge only designed for light chain filtration, won't be used for heavy chains")}
 
   ini_seq_nb_for_filtering <- nrow(db_to_filter)
 
@@ -1447,7 +1447,7 @@ resolveMultiContigs <- function(db,
                      !!rlang::sym(complete_vdj) == !!rlang::sym(paste0("SB_", complete_vdj)) &
                      !!rlang::sym(productive) == !!rlang::sym(paste0("SB_", productive)))
       )
-    if(use_clone & all(chain %in% c("IGL", "IGK"))){
+    if(use_clone & resolve_chain == "light"){
       merged <- merged %>%
         dplyr::mutate(
           shared_seq = !!rlang::sym(cell_id) %in% cells_with_shared_LC
@@ -1548,7 +1548,7 @@ resolveMultiContigs <- function(db,
     dplyr::bind_rows(db_not_to_filter) %>%
     dplyr::arrange(!!rlang::sym(cell_id), !!rlang::sym(locus))
 
-  if(use_clone){
+  if(use_clone & resolve_chain == "light"){
     resolved_db <- resolved_db %>%
       dplyr::arrange(!!rlang::sym(clone_id))
   }
@@ -1561,7 +1561,7 @@ resolveMultiContigs <- function(db,
   return(resolved_db)
 }
 
-#### Duplicate of Dowser::resolveLightChains ####
+#### Duplicate of Dowser::resolveLightChains [deprecated since 21/05/2026 following updates in dowser package]####
 #' Define subgroups within clones based on light chain rearrangements
 #'
 #' \code{resolveLightChains} resolve light chain V and J subgroups within a clone
@@ -2651,13 +2651,12 @@ runAssignGenes <- function(db,
 
   if(!output){
     output_folder = tempdir()
-  } else {
-    # check if output folder is properly formatted
-    if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
-    if(!dir.exists(output_folder)){
-      dir.create(output_folder)
-    }
   }
+  # check if output folder is properly formatted
+  if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
+  if(!dir.exists(output_folder)){
+    dir.create(output_folder)
+  } 
 
   if(sequence != "sequence"){ # make sure columns are renamed properly to adapt to igblast formatting; old column name is kept
     db$sequence = db[[sequence]]
@@ -2672,7 +2671,10 @@ runAssignGenes <- function(db,
   seq <- db$sequence
   names(seq) <- db$sequence_id
   dna = Biostrings::DNAStringSet(seq)
-  Biostrings::writeXStringSet(dna, paste0(output_folder, "All_seq.fasta"))
+  
+  fasta_file <- paste0(output_folder, "All_seq.fasta")
+  fasta_file <- gsub(" ", "\\\ ", fasta_file, fixed = TRUE) #to remove any blank in file_path
+  Biostrings::writeXStringSet(dna, fasta_file)
 
   loci <- list("Ig" = "ig", "TCR" = "tr")
   loci <- loci[[seq_type]]
@@ -2692,8 +2694,6 @@ runAssignGenes <- function(db,
   cat(log_message, sep = "\n")
 
   # run igblast:
-  fasta_file <- paste0(output_folder, "All_seq.fasta")
-  fasta_file <- gsub(" ", "\\\ ", fasta_file, fixed = TRUE) #to remove any blank in file_path
   #system(paste0("AssignGenes.py igblast -s ", fasta_file, " -b ", igblast_dir ," --organism human --loci ig --format blast"))
   messages_igblast <- system2("AssignGenes.py", args = paste0(igblast_version," -s ", fasta_file, " -b ", igblast_dir ," --organism ", tolower(organism)," --loci ", loci," --format blast"), stdout = TRUE, stderr = TRUE)
   cat(paste(messages_igblast, collapse = "\n"))
@@ -3003,6 +3003,287 @@ gapV <- function(seq,
     gapped_v_germ_length = v_germ_end + gapcount
   )
   return(imgt_gapped)
+}
+
+#### Function to run Changeo DefineClones.py or Scoper on VDJ sequences ####
+#' calls Immcantation (ChangeO) DefineClones.py scripts from within R or simply scoper
+#' based on https://changeo.readthedocs.io/en/stable/tools/DefineClones.html and https://scoper.readthedocs.io/en/stable/topics/hierarchicalClones/
+#' 
+#'
+#' \code{runDefineClones} old pipeline to run DefineClones.py or new pipeline running Scoper
+#'
+#' @param db            a data frame containing at least a sequence and a sequence_id column.
+#' @param cell_id       name of the column containing cell identifier. if set to NULL or not present in the provided dataframe, will run in bulk mode using the sequence_id as identifier.
+#' @param sequence_id   name of the column containing sequence identifier.
+#' @param locus         name of column containing locus values.
+#' @param cluster_heavy by default (TRUE) only heavy chains will be used for clustering, can be set to FALSE to cluster based on light chains only.
+#' @param junction      name of the column containing identified junction in nucleotide format.
+#' @param v_call        name of the column containing V-segment allele assignments. All entries in this column should be identical to the gene level.
+#' @param j_call        name of the column containing J-segment allele assignments. All entries in this column should be identical to the gene level.
+#' @param method          method to use for runDefineClones(), can be one between: changeo,identical, hierarchical or spectral
+#' @param spectral_method method to use for scoper::spectralClones(), can be one between: novj or vj
+#' @param threshold     The distance threshold for clonal grouping
+#' @param mode          Specifies whether to use the V(D)J allele or gene for initial grouping.
+#' @param model         Specifies which substitution model to use for calculating distance between sequences. The “ham” model is nucleotide Hamming distance and “aa” is amino acid Hamming distance. The “hh_s1f” and “hh_s5f” models are human specific single nucleotide and 5-mer content models, respectively, from Yaari et al, 2013. The “mk_rs1nf” and “mk_rs5nf” models are mouse specific single nucleotide and 5-mer content models, respectively, from Cui et al, 2016. The “m1n_compat” and “hs1f_compat” models are deprecated models provided backwards compatibility with the “m1n” and “hs1f” models in Change-O v0.3.3 and SHazaM v0.1.4. Both 5-mer models should be considered experimental.
+#' @param first         Specifies how to handle multiple V(D)J assignments for initial grouping. First = TRUE will use only the first gene listed, else all gene assignments will be used to construct a larger gene grouping composed of any sequences sharing an assignment or linked to another sequence by a common assignment (similar to single-linkage).
+#' @param norm          Specifies how to normalize distances. One of none (do not normalize), len (normalize by length), or mut (normalize by number of mutations between sequences).
+#' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "igblast_results/"].
+#' @param prefix        prefix to use for saved files
+#' @param distance_plot whether to save a distance plot (pdf format only)
+#' @param output_temp_files  whether to save intermediate files from DefineClones.py.
+#' @param verbose       whether to create cat() ouputs
+#' @param nproc         The number of simultaneous computational processes to execute (CPU cores to utilize).
+#' @param fields        Character vector of additional columns to use for grouping. Sequences with disjoint values in the specified fields will be considered as separate clones.
+#'
+#' @return   a named list of AIRR formatted data frame corresponding to the pass and fail results of Igblast reformatted using Makedb and all additional columns from the submitted data frame.
+#'
+#' @details
+#' 1. will first filter on heavy or light chain and required columns for clustering
+#' 2. run either DefineClones.py or choosen version of scoper on selected sequences
+#' 3. [optional] export distance plot
+#' 4. import clone_ids in initial dataframe 
+#'
+#' @export
+#'
+#' @import dplyr
+
+runDefineClones <- function(db,
+                            cell_id = "cell_id",
+                            sequence_id = "sequence_id",
+                            locus = "locus",
+                            cluster_heavy = TRUE,
+                            junction = "junction",
+                            v_call = "v_call",
+                            j_call = "j_call",
+                            method = c("changeo", "hierarchical", "identical", "spectral"), 
+                            spectral_method = c("novj", "vj"),
+                            threshold = 0.15,
+                            mode = c("gene", "allele"),
+                            model = c("nt","aa"),
+                            first = FALSE,
+                            norm = c("len", "none"),
+                            output_folder = "DefineClones_results",
+                            prefix = NULL,
+                            distance_plot = FALSE,
+                            output_temp_files = FALSE, 
+                            verbose = TRUE,
+                            nproc = 1,
+                            fields = NULL){
+  
+  mode <- match.arg(mode)
+  model <- match.arg(model)
+  norm <- match.arg(norm)
+  method <- match.arg(method)
+  spectral_method <- match.arg(spectral_method)
+  
+  if(any(!c(locus, v_call, j_call, junction) %in% colnames(db))){
+    stop("missing the following columns: ", c(locus, v_call, j_call, junction)[!c(locus, v_call, j_call, junction) %in% colnames(db)])
+  }
+  
+  if(is.null(cell_id)) {
+    db$cell_id_define_clone <- db[[sequence_id]]
+  } else {
+    if(!cell_id %in% colnames(db)){
+      warning("cell_id no found in provided dataframe, running in bulk mode")
+      db$cell_id_define_clone <- db[[sequence_id]]
+    } else {
+      db$cell_id_define_clone <- db[[cell_id]]
+    }
+  }
+  
+  if(mode == "allele" & !method == "changeo"){
+    warning("the mode argument can only be used when using DefineClones.py (method = changeo)")
+  }
+  
+  db <- db %>%
+    dplyr::select(-any_of(c("clone_id")))
+  
+  if(cluster_heavy){
+    filtered_db <- db %>%
+      dplyr::filter(!!rlang::sym(locus) %in% c("IGH", "TRB", "TRD")) %>%
+      dplyr::select(all_of(c("cell_id_define_clone", sequence_id, locus, v_call, j_call, junction)))
+  } else {
+    filtered_db <- db %>%
+      dplyr::filter(!!rlang::sym(locus) %in% c("IGL", "IGK", "TRA", "TRG")) %>%
+      dplyr::select(all_of(c("cell_id_define_clone", sequence_id, locus, v_call, j_call, junction)))
+  }
+  
+  if(nrow(filtered_db) == 0){
+    if(cluster_heavy){
+      stop("no heavy chain sequence provided (should be one of: IGH, TRB, TRD).")
+    } else { 
+      stop("no light chain sequence provided (should be on eof IGL, IGK, TRA, TRG).")
+      }
+  }
+  
+  if(any(duplicated(filtered_db[[cell_id]]))){
+    stop("some of the cell_ids have multiple sequences for the selected chain, use resolveMultiContigs() prior to running clonal partioning")
+  }
+  
+  if(method == "changeo"){
+    if(first){
+      act = "first"
+    } else {
+      act = "set"
+    }
+    if(model == "nt"){
+      model = "ham"
+    }
+    
+    if(!output_temp_files){
+      output_file_folder = tempdir()
+    } else {
+      output_file_folder = output_folder
+    }
+    
+    # check if output folder is properly formatted  
+    if(!stringr::str_ends(output_file_folder, "/")){output_file_folder = paste0(output_file_folder, "/")}
+    if(!dir.exists(output_file_folder)){
+      dir.create(output_file_folder)
+    }
+    
+    DefineClones_input_file <- paste0(output_file_folder, "All_seq.tsv")
+    DefineClones_input_file <- gsub(" ", "\\\ ", DefineClones_input_file, fixed = TRUE) #to remove any blank in file_path
+    DefineClones_output_file <- paste0(output_file_folder, "All_seq_clone-pass.tsv")
+    DefineClones_output_file <- gsub(" ", "\\\ ", DefineClones_output_file, fixed = TRUE) #to remove any blank in file_path
+    
+    readr::write_tsv(filtered_db, file = DefineClones_input_file)
+    
+    args <- paste0("-d ", DefineClones_input_file, " --mode ", mode," --act ", act, " --model ", model, " --norm ", norm," --dist ", threshold, " --sf ", junction, " --vf ", v_call, " --jf ", j_call)
+    if(!is.null(fields)){
+      args <- paste0(args, " --gf ", fields)
+    }
+    if(verbose){cat(paste0("using threshold: ", threshold, "\n",
+                           "DefineClones.py ", args, "\n"))}
+    messages_DefineClones <- system2("DefineClones.py", args = args, stderr = TRUE, stdout = TRUE)
+    if(verbose){cat(paste(messages_DefineClones, collapse = "\n"))}
+    
+    if(distance_plot){
+      if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
+      if(!dir.exists(output_folder)){
+        dir.create(output_folder)
+      }
+      dist_ham <- shazam::distToNearest(filtered_db, 
+                                        sequenceColumn= junction, 
+                                        vCallColumn= v_call, 
+                                        jCallColumn= j_call,
+                                        model= model, 
+                                        normalize= norm, 
+                                        nproc=nproc)
+      output <- shazam::findThreshold(dist_ham$dist_nearest, method="density")
+      if(cluster_heavy){
+        pdf(file = paste0(output_folder, prefix, "_heavy_chain_dist_to_nearest.pdf"))
+      } else {
+        pdf(file = paste0(output_folder, prefix, "_light_chain_dist_to_nearest.pdf"))
+      }
+      plot(output, title="Density Method")
+      dev.off()
+    }
+    
+    cloned_db <- db %>%
+      dplyr::left_join(
+        dplyr::select(readr::read_tsv(DefineClones_output_file, show_col_types = FALSE), all_of(c("cell_id_define_clone", "clone_id"))),
+        by = dplyr::join_by(cell_id_define_clone)
+      ) 
+    
+  }
+  
+  #as of 05/05/2026 (Scoper documentation):
+  #only_heavy - This is deprecated. Only heavy chains will be used in clustering. Use only the IGH (BCR) or TRB/TRD (TCR) sequences for grouping. Only applicable to single-cell data. Ignored if cell_id=NULL.
+  #split_light - This is deprecated. If you desire to split clones by light chains use dowser::resolveLightChains.
+  #cell_id_scoper/locus - should be set to NULL [default] if only one type of chain, which is what we will do here
+  
+  if(method %in% c("identical", "hierarchical", "spectral")){
+    if(verbose){cat(paste0("using threshold: ", threshold, "\n"))}
+    if(method == "identical"){
+      clonal_analysis <- scoper::identicalClones(filtered_db,
+                                                 method = model,
+                                                 cell_id = NULL,
+                                                 junction = junction,
+                                                 v_call = v_call,
+                                                 j_call = j_call,
+                                                 clone = "clone_id",
+                                                 fields = fields,
+                                                 first = first,
+                                                 cdr3 = FALSE,
+                                                 mod3 = FALSE,
+                                                 max_n = 0,
+                                                 nproc = nproc,
+                                                 verbose = FALSE,
+                                                 log = NULL,
+                                                 summarize_clones = TRUE)
+    }
+    if(method == "hierarchical"){
+      clonal_analysis <- scoper::hierarchicalClones(filtered_db,
+                                                    threshold = threshold,
+                                                    method = model,
+                                                    normalize = norm,
+                                                    linkage = "single",
+                                                    cell_id = NULL,
+                                                    junction = junction,
+                                                    v_call = v_call,
+                                                    j_call = j_call,
+                                                    clone = "clone_id",
+                                                    fields = fields,
+                                                    first = first,
+                                                    cdr3 = FALSE,
+                                                    mod3 = FALSE,
+                                                    max_n = 0,
+                                                    nproc = nproc,
+                                                    verbose = FALSE,
+                                                    log = NULL,
+                                                    summarize_clones = TRUE)
+    }
+    if(method == "spectral"){
+      clonal_analysis <- scoper::spectralClones(filtered_db,
+                                                method = spectral_method,
+                                                germline = "germline_alignment",
+                                                sequence = "sequence_alignment",
+                                                junction = junction,
+                                                v_call = v_call,
+                                                j_call = j_call,
+                                                clone = "clone_id",
+                                                fields = fields,
+                                                cell_id = NULL,
+                                                targeting_model = NULL,
+                                                len_limit = NULL,
+                                                first = first,
+                                                cdr3 = FALSE,
+                                                mod3 = FALSE,
+                                                max_n = 0,
+                                                threshold = threshold,
+                                                base_sim = 0.95,
+                                                iter_max = 1000,
+                                                nstart = 1000,
+                                                nproc = 1,
+                                                verbose = FALSE,
+                                                log = NULL,
+                                                summarize_clones = TRUE)
+    }
+    if(distance_plot){
+      if(!stringr::str_ends(output_folder, "/")){output_folder = paste0(output_folder, "/")}
+      if(!dir.exists(output_folder)){
+        dir.create(output_folder)
+      }
+      if(cluster_heavy){
+        pdf(file = paste0(output_folder, prefix, "_heavy_chain_dist_to_nearest.pdf"))
+      } else {
+        pdf(file = paste0(output_folder, prefix, "_light_chain_dist_to_nearest.pdf"))
+      }
+      scoper::plot(clonal_analysis, binwidth=0.02)
+      dev.off()
+    }
+    cloned_db <- db %>%
+      dplyr::left_join(
+        dplyr::select(scoper::as.data.frame(clonal_analysis), all_of(c("cell_id_define_clone", "clone_id"))),
+        by = dplyr::join_by(cell_id_define_clone)
+      )
+  }
+  
+  cloned_db <- cloned_db %>%
+    dplyr::select(-cell_id_define_clone)
+  
+  return(cloned_db)
 }
 
 #### Function to run Blastn on VDJC sequences to infer constant region ####
@@ -4010,17 +4291,20 @@ scImportVDJ <- function(vdj_files,
 #' \code{scFindClones} performs clonal clustering of single cell data
 #'
 #' @param db              an AIRR formatted dataframe containing BCR (heavy and light chain) or TCR sequences. For BCR, should contain only one heavy chain (IGH) per cell_id, if not will run resolveMultiHC() first. For TCR, expects filtered datasets (1 heavy and 1 light chain per cell).
-#' @param method          method to use for scoper::hierarchicalClones(), can be one between: identical, hierarchical or spectral
+#' @param method          method to use for runDefineClones(), can be one between: changeo,identical, hierarchical or spectral
 #' @param spectral_method method to use for scoper::spectralClones(), can be one between: novj or vj
-#' @param threshold       method to use for scoper::hierarchicalClones() or scoper::spectralClones(),
-#'                        if multiple thresholds are provided, they will be used successively and results stored in the h_clone_"threshold" column. Final clone_id column will reflect the last threshold used.
+#' @param threshold       method to use for runDefineClones(),
+#'                        if multiple thresholds are provided, they will be used successively and results stored in the h/l_clone_"threshold" column. Final clone_id column will reflect the last threshold used.
 #' @param clean_LC        whether to resolve cases of multiple light chains
 #' @param tech            which tech was used, passed to resolveMultiContigs, only tech = "BD" will results in additional QC being performed.
+#' @param split.by        name of the column used for grouping at the resolveMultiContigs step,
+#' @param cluster_heavy   by default (TRUE) only heavy chains will be used for clustering, can be set to FALSE to cluster based on light chains only.
 #' @param split_by_light  whether to clean cases of multiple light chains (resolveMultiLC()) and split clone by ligth chain (dowser::resolveLightChains()), the clone_id collumn will be updated and results will also be stored in the l_clone_id_"last_used_threshold" column;
 #' @param seq_type        type of VDJ sequence ("Ig" or "TCR" to match igblastb requirements)
 #' @param organism      organism (any of "human", "mouse", "rhesus_monkey; for other see https://changeo.readthedocs.io/en/stable/examples/igblast.html)
 #' @param update_germline whether to run dowser::createGermlines() to determine consensus clone sequence and create germline for clone after splitting by light chain;
-#' @param SHM             whether to calculate mutational load;
+#' @param split_germline_by name of the column used for grouping at the dowser::createGermlines() step, to avoid issue in common germline selection in public clones.
+#' @param SHM             whether to calculate mutational load; one of count, freq, both or no
 #' @param output          whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. If set to FALSE, only the corrected database is returned.
 #' @param output_folder   name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_Clones"]
 #' @param igblast         whether to run standalone IgBlast, can be set to c("filtered_light" or "all") if not one of these three values, will be skipped with a warning. [default = "filtered_light" for both 10X and BD: highly recommended for both to avoid issues at the createGermline() or observedMutation() steps due to different references databases used (10X) or missing imgt gaps in the sequence_alignment collumn (Both))]
@@ -4030,10 +4314,12 @@ scImportVDJ <- function(vdj_files,
 #' @param imgt_j_nt       path to imgt_human_ig_j.fasta (passed to reconstructFullVDJ())
 #' @param analysis_name   name to use for outputs prefixes [default = "All_sequences"]
 #' @param cell_id         name of the column containing cell identifier.
-#' @param cell_id_scoper  name of the column containing cell identifier to use scoper in single_cell mode. If only heavy chain data, use NULL to avoid a bug in scoper.
+#' @param distance_plot   whether to export a distance plot for post clustering
+#' @param cell_id_scoper  [Deprecated] name of the column containing cell identifier to use scoper in single_cell mode. If only heavy chain data, use NULL to avoid a bug in scoper.
 #' @param locus           name of column containing locus values.
 #' @param heavy           value of heavy chains in locus column. All other values will be
-#' @param na.heavy.rm     whether to remove light chain sequences for cells with no heavy chain from the final database [default = TRUE, !!TODO: work on re-importing these sequences in the final recap table if na.heavy.rm = FALSE]
+#' @param na.heavy.rm     whether to remove light chain sequences for cells with no heavy chain from the final database 
+#' @param na.light.rm     whether to remove heavy chain sequences for cells with no light chain from the final database 
 #' @param nproc           number of processor to use for parallel computing (passed on to all Immcantation functions).
 #' @param verbose         whether to show messages and cat() ouputs on console, can be "all" or "partial" (messages only)[TODO], all other values will be equivalent to "none"
 #' @param consensus_count     name of the column containing the number of reads for this contig (usually called consensus_count)
@@ -4050,10 +4336,9 @@ scImportVDJ <- function(vdj_files,
 #' @param full_seq_aa     whether to reconstruct full VDJ sequence (nt and AA +/- CH1 domain)
 #' @param CH1_AA          named list of CH1 domain for IGH, IGL and IGK c chains (AA); passed to reconstructFullVDJ())
 #' @param assay           name of column containing assay values.
-#' @param shared.tech     list of grouped technologies to identify shared clones between scRNA-seq and Sanger sequencing (export in recap teable (seperate sheet) + additional shared_clone column)
+#' @param shared.tech     (deprecated) list of grouped technologies to identify shared clones between scRNA-seq and Sanger sequencing (export in recap teable (seperate sheet) + additional shared_clone column)
 #' @param fields          Character vector of additional columns to use for grouping in scoper::hierarchicalClones() or dowser::resolveLightChains(). Sequences with disjoint values in the specified fields will be considered as separate clones.
 #' @param only_heavy      Whether all submitted chains are heavy chains. Automatically set some options accordingly.
-#' @param split.by        name of the column used for grouping at the resolveLigth chain step.
 #' @param complete_vdj    name of the column containing complete_vdj info.
 #' @param junc_len        name of the column containing junction length info.
 #' @param sequence_alignment name of the column containing sequence alignment.
@@ -4063,8 +4348,8 @@ scImportVDJ <- function(vdj_files,
 #' @return    an AIRR formatted dataframe containing selected heavy and light chains (when available) for all cells as well as clonal grouping for all cells (clone_id).
 #' If igblast and update_c_call are set to "light" or "all", will run igblast and runBlastnC on requested contigs.
 #' If split_by_light is set to TRUE, will also perform clonal partition correction based on observed light chain or heavy chain proximity to cell with known light chain.
-#' If update_germline and SHM are set to TRUE, will further update the germline alignment columns based on other contigs in the same clonal group, add a germline_d_mask column,
-#' and then analyse the number and frequency of mutation in VH and VL genes, if split_by_light is set to TRUE or only the VH gene if not.
+#' If update_germline is set to TRUE, will further update the germline alignment columns based on other contigs in the same clonal group, add a germline_d_mask column,
+#' and then analyse the number and frequency of mutation in VH and VL genes if SHM is not set to "no", if split_by_light is set to TRUE or only the VH gene if not.
 #' Creates a bcr_info or tcr_info columns with three possible values: "full" (if both heavy and light contigs are found for a given cell_id), "heavy_only" or "light_only".
 #' Creates an expanded_clone (>1 cell_id) and a shared_clone (between scRNAseq and Sanger), see shared.tech argument.
 #' Also outputs a graph for minimum distance between and maximal distance inside heavy clones for each tested threshold, all intermediate results for each step in the analysis and a final recap table which include all chosen parameters for the analysis as sheet 2.
@@ -4096,8 +4381,6 @@ scFindClones <- function(db,
                          analysis_name = "All_sequences",
                          seq_type = c("Ig", "TCR"),
                          organism = c("human", "mouse", "rabbit", "rat", "rhesus_monkey"),
-                         only_heavy = FALSE,
-                         na.heavy.rm = FALSE,
                          igblast = c("none", "filtered_light", "all"),
                          update_c_call = c("all", "filtered light", "none"),
                          clean_LC = TRUE,
@@ -4105,12 +4388,23 @@ scFindClones <- function(db,
                          update_germline = TRUE,
                          trim_lengths = TRUE,
                          force_trim = TRUE,
-                         SHM = TRUE,
+                         SHM = c("both", "count", "freq", "no"),
                          CDR3_properties = TRUE,
                          full_seq_aa = FALSE,
                          #passed to Scoper:
-                         method = c("changeo", "hierarchical", "identical", "spectral"), spectral_method = c("novj", "vj"),
-                         threshold = c(0.12, 0.15),
+                         method = c("changeo", "hierarchical", "identical", "spectral"), 
+                         spectral_method = c("novj", "vj"),
+                         threshold = 0.15,
+                         cluster_heavy = TRUE,
+                         only_heavy = FALSE,
+                         only_light = FALSE,
+                         na.heavy.rm = FALSE,
+                         na.light.rm = FALSE,
+                         mode = c("gene", "allele"),
+                         model = c("nt","aa"),
+                         first = FALSE,
+                         norm = c("len", "none"),
+                         distance_plot = TRUE,
                          cell_id_scoper = "cell_id",
                          #passed to resolveMultiContigs():
                          tech = NULL,
@@ -4133,9 +4427,11 @@ scFindClones <- function(db,
                                        IGLC3 = "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVTVAWKADSSPVKAGVETTTPSKQSNNKYAASSYLSLTPEQWKSHKSYSCQVTHEGSTVEKTVAPTECS",
                                        IGLC6 = "GQPKAAPSVTLFPPSSEELQANKATLVCLISDFYPGAVKVAWKADGSPVNTGVETTTPSKQSNNKYAASSYLSLTPEQWKSHRSYSCQVTHEGSTVEKTVAPAECS",
                                        IGLC7 = "GQPKAAPSVTLFPPSSEELQANKATLVCLVSDFNPGAVTVAWKADGSPVKVGVETTKPSKQSNNKYAASSYLSLTPEQWKSHRSYSCRVTHEGSTVEKTVAPAECS"),
-                         #used for final recap excel sheet
-                         shared.tech = list(scRNAseq = c("10X", "BD"),
-                                            scSanger = c("scPCR", "scCulture")),
+                         #used for final recap excel sheet (deprecated)
+                         #shared.tech = list(scRNAseq = c("10X", "BD"),
+                         #                  scSanger = c("scPCR", "scCulture")),
+                         #passed to createGermline():
+                         split_germline_by = NULL,
                          recap.highlight = NULL,
                          top_columns = NULL,
                          #global:
@@ -4168,7 +4464,12 @@ scFindClones <- function(db,
   seq_type <- match.arg(seq_type)
   organism <- match.arg(organism)
   igblast <- match.arg(igblast)
+  mode <- match.arg(mode)
+  model <- match.arg(model)
+  norm <- match.arg(norm)
   method <- match.arg(method)
+  spectral_method <- match.arg(spectral_method)
+  SHM <- match.arg(SHM)
   
   if(seq_type == "Ig"){
     heavy <- "IGH"
@@ -4197,9 +4498,12 @@ scFindClones <- function(db,
   if(is.null(db) | !sequence %in% colnames(db) | !sequence_id %in% colnames(db)){
     stop(paste0("no proper VDJ file provided"))
   }
+  
+  if(only_heavy & only_light){
+    stop("not possible to have both only_heavy=TRUE and only_light=TRUE")
+  }
 
-  if(only_heavy){
-    cell_id_scoper = NULL
+  if(only_heavy | only_light){
     clean_LC = FALSE
     split_by_light = FALSE
   }
@@ -4243,9 +4547,9 @@ scFindClones <- function(db,
   }
 
   update_c_call <- match.arg(update_c_call)
-  if(!update_c_call %in% c("filtered light", "all")){warning("It is highly recommended to update light chains c_call using Blastn to avoid artificial selection of one c_call by igblast when multiple calls have similar scores (set update_c_call = light or all)")}
+  #if(!update_c_call %in% c("filtered light", "all")){warning("It is highly recommended to update light chains c_call using Blastn to avoid artificial selection of one c_call by igblast when multiple calls have similar scores (set update_c_call = light or all)")}
 
-  if(SHM & !update_germline){
+  if(!SHM == "no" & !update_germline){
     if(!"germline_alignment_d_mask" %in% colnames(db)){
       message("attempting to run SHM analysis without updating germline after groupîng and without providing a proper germline_alignment_d_mask column, setting update_germline to TRUE")
       update_germline = TRUE
@@ -4275,16 +4579,8 @@ scFindClones <- function(db,
     cat("full_seq_aa: ", full_seq_aa, "\n")
   }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = paste0("scFind", fct_type,"Clones"), open_mode = "wt")
   
-  if("clone_id" %in% colnames(db)){
-    time_and_log({
-      cat("clone_id collumn already present in the object, renamed preexisting_clone_id to avoid issue in defineClonesScoper().\n\n")
-    }, verbose = verbose, time = TRUE, log_file = log_file, log_title = paste0("Renaming clone_id column"), open_mode = "a")
-    
-    db <- dplyr::rename(db, "preexisting_clone_id" = clone_id)
-  }
-  
   ##initiate step counter and filename:
-  n <- 1 + sum(clean_LC, (igblast %in% c("light", "all")), (update_c_call %in% c("light", "all")), split_by_light, update_germline, SHM, CDR3_properties, full_seq_aa)
+  n <- 1 + sum(clean_LC, (igblast %in% c("light", "all")), (update_c_call %in% c("light", "all")), split_by_light, update_germline, !SHM == "no", CDR3_properties, full_seq_aa)
   # create filename
   filename <- paste0(output_folder, analysis_name)
   step <- 0
@@ -4335,41 +4631,85 @@ scFindClones <- function(db,
     }
     
     h_db <- dplyr::filter(VDJ_db, (!!rlang::sym(locus) %in% heavy))
-    l_db <- dplyr::filter(VDJ_db, !(!!rlang::sym(locus) %in% heavy))
+    l_db <- dplyr::filter(VDJ_db, (!!rlang::sym(locus) %in% light))
+    other_chains_db <- dplyr::filter(VDJ_db, !(!!rlang::sym(locus) %in% chains))
   } else {
     h_db <- dplyr::filter(db, (!!rlang::sym(locus) %in% heavy))
-    l_db <- dplyr::filter(db, !(!!rlang::sym(locus) %in% heavy))
+    l_db <- dplyr::filter(db, (!!rlang::sym(locus) %in% light))
+    other_chains_db <- dplyr::filter(db, !(!!rlang::sym(locus) %in% chains))
   }
-
-  # check if remaining heavy chain multiplets:
-  if(any(duplicated(h_db[[cell_id]]))){
-    if(verbose){cat("remaining cell_id with multiple HC: running resolveMultiHC()")}
+  
+  nb_total_cells_wo_chain <- length(unique(other_chains_db[[cell_id]]))
+  if(nb_total_cells_wo_chain > 0){
+    cells_wo_chain_log_message <- paste0(nb_total_cells_wo_chain, " cell_ids without any ", paste(heavy, collapse = "/"), " or ", paste(light, collapse = "/"), " contigs, won't be processed but will be kept in final table. \n")
+    if(verbose){cat(cells_wo_chain_log_message)}
     time_and_log({
-      h_db <- resolveMultiContigs(h_db, 
-                                  split.by = split.by, 
-                                  seq_type = seq_type,
-                                  resolve_chain = "heavy",
-                                  assay = "assay", 
-                                  resolve_multi_CDR3 = TRUE, 
-                                  use_clone = FALSE,
-                                  analysis_name = analysis_name,
-                                  output = output, 
-                                  output_folder = paste0(output_folder, "/VDJ_QC"),
-                                  second_columns = c(sequence_id, locus, umi_count, consensus_count, sequence, v_call, d_call, j_call, c_call, junction, junction_aa, productive, complete_vdj),
-                                  cell_id = cell_id, 
-                                  sequence_id = sequence_id, 
-                                  locus = locus, 
-                                  consensus_count = consensus_count, 
-                                  umi_count = umi_count, 
-                                  v_call = v_call, 
-                                  j_call = j_call, 
-                                  c_call = c_call, 
-                                  junction_aa = junction_aa,
-                                  productive = productive, 
-                                  complete_vdj = complete_vdj)
-    }, verbose = verbose, log_file = log_file, log_title = "running resolveMultiHC()", open_mode = "a")
+      cat(cells_wo_chain_log_message)
+    }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "Cells without heavy or light chain", open_mode = "a")
   }
-
+  
+  # check if remaining multiplets prior to clustering:
+  if(cluster_heavy){
+    if(any(duplicated(h_db[[cell_id]]))){
+      if(verbose){cat("remaining cell_id with multiple HC: running resolveMultiContigs()")}
+      time_and_log({
+        h_db <- resolveMultiContigs(h_db, 
+                                    split.by = split.by, 
+                                    seq_type = seq_type,
+                                    resolve_chain = "heavy",
+                                    assay = "assay", 
+                                    resolve_multi_CDR3 = TRUE, 
+                                    use_clone = FALSE,
+                                    analysis_name = analysis_name,
+                                    output = output, 
+                                    output_folder = paste0(output_folder, "/VDJ_QC"),
+                                    second_columns = c(sequence_id, locus, umi_count, consensus_count, sequence, v_call, d_call, j_call, c_call, junction, junction_aa, productive, complete_vdj),
+                                    cell_id = cell_id, 
+                                    sequence_id = sequence_id, 
+                                    locus = locus, 
+                                    consensus_count = consensus_count, 
+                                    umi_count = umi_count, 
+                                    v_call = v_call, 
+                                    j_call = j_call, 
+                                    c_call = c_call, 
+                                    junction_aa = junction_aa,
+                                    productive = productive, 
+                                    complete_vdj = complete_vdj)
+      }, verbose = verbose, log_file = log_file, log_title = "running resolveMultiContigs() on HC", open_mode = "a")
+    }
+  }
+  
+  if(!cluster_heavy){
+    #do the same for light chain
+    if(any(duplicated(l_db[[cell_id]]))){
+      if(verbose){cat("remaining cell_id with multiple LC: running resolveMultiContigs()")}
+      time_and_log({
+        l_db <- resolveMultiContigs(l_db, 
+                                    split.by = split.by, 
+                                    seq_type = seq_type,
+                                    resolve_chain = "light",
+                                    assay = "assay", 
+                                    resolve_multi_CDR3 = TRUE, 
+                                    use_clone = FALSE,
+                                    analysis_name = analysis_name,
+                                    output = output, 
+                                    output_folder = paste0(output_folder, "/VDJ_QC"),
+                                    second_columns = c(sequence_id, locus, umi_count, consensus_count, sequence, v_call, d_call, j_call, c_call, junction, junction_aa, productive, complete_vdj),
+                                    cell_id = cell_id, 
+                                    sequence_id = sequence_id, 
+                                    locus = locus, 
+                                    consensus_count = consensus_count, 
+                                    umi_count = umi_count, 
+                                    v_call = v_call, 
+                                    j_call = j_call, 
+                                    c_call = c_call, 
+                                    junction_aa = junction_aa,
+                                    productive = productive, 
+                                    complete_vdj = complete_vdj)
+      }, verbose = verbose, log_file = log_file, log_title = "running resolveMultiContigs() on LC", open_mode = "a")
+    }
+  }
+  
   # check if remaining NAs in CDR3s:
   if(any(is.na(db[[junction]]))){
     failed_junction <- db[FALSE,]
@@ -4402,41 +4742,33 @@ scFindClones <- function(db,
 
   VDJ_db <- dplyr::bind_rows(h_db, l_db)
   nb_total_cells <- length(unique(VDJ_db[[cell_id]]))
-
-  rm(db, h_db, l_db)
   
-  other_chains_db <- VDJ_db %>%
-    dplyr::filter(!locus %in% chains)
-  VDJ_db <- VDJ_db %>%
-    dplyr::filter(locus %in% chains)
+  rm(db, h_db, l_db)
 
   # Create the bcr_info or tcr_info column
   VDJ_db <- VDJ_db %>%
     dplyr::group_by(!!rlang::sym(cell_id)) %>%
     dplyr::mutate(
       !!rlang::sym(paste0(tolower(fct_type),"_info")) := dplyr::case_when(
-        any(!!rlang::sym(locus) %in% heavy) & any(!(!!rlang::sym(locus) %in% heavy)) ~ "full",
+        any(!!rlang::sym(locus) %in% heavy) & any(!!rlang::sym(locus) %in% light) ~ "full",
         all(!!rlang::sym(locus) %in% heavy) ~ "heavy_only",
-        all(!(!!rlang::sym(locus) %in% heavy)) ~ "light_only",
+        all(!!rlang::sym(locus) %in% light) ~ "light_only",
         TRUE ~ NA_character_
       )
     ) %>%
     dplyr::ungroup()
   
-  if(!only_heavy){
+  if(split_by_light){
     if(nrow(dplyr::filter(VDJ_db, !!rlang::sym(paste0(tolower(fct_type),"_info")) == "full")) == 0){
-      if(split_by_light){
-        split_by_light <- FALSE
-        message("no cell with both HC and LC, skipping the split_by_light step")
-      }
-      only_heavy <- TRUE
+      message("no cell with both HC and LC, skipping the split_by_light step")
+      split_by_light <- FALSE
     }
   }
 
-  # Check / Remove cells without heavy chain.
-  # Technically they can't be used in clustering analysis but they won't interfere in the following steps and will end up with a NA value for clone_id.
+  # Final Check prior to clustering: Remove cells without heavy or light chains.
+  # Technically they can't be used in clustering analysis but they won't interfere in the following steps and will just end up with a NA value for clone_id.
   LC_only <- dplyr::filter(VDJ_db, !!rlang::sym(paste0(tolower(fct_type),"_info")) == "light_only")
-  if(na.heavy.rm & nrow(LC_only)>0){
+  if(na.heavy.rm){
     if(nrow(LC_only)>0){
       VDJ_db <- dplyr::filter(VDJ_db, !!rlang::sym(paste0(tolower(fct_type),"_info")) != "light_only")
       filename_LC_only <- paste0(output_folder, analysis_name, "_VDJ_LC_only")
@@ -4445,9 +4777,10 @@ scFindClones <- function(db,
       if(verbose){cat(LC_only_log)}
       time_and_log({
         cat(LC_only_log) 
-      }, verbose = verbose, log_file = log_file, log_title = "Removing cells missing HC", open_mode = "a")
+      }, verbose = verbose, time = FALSE, log_file = log_file, log_title = "Removing cells missing HC", open_mode = "a")
     }
-  } else {
+  } 
+  if(!na.heavy.rm & cluster_heavy){
     if(nrow(LC_only)>0){
       LC_only_log <- cat(paste0(length(unique(LC_only[[cell_id]])), " cells out of ", nb_total_cells," are missing a heavy chain, will end up with clone_id = NA. \n"))
       if(verbose){cat(LC_only_log)}
@@ -4456,207 +4789,132 @@ scFindClones <- function(db,
       }, verbose = verbose, time = FALSE, log_file = log_file, log_title = "Checking cells missing HC", open_mode = "a")
     }
   }
-  
-  ## 1. perform clonal partitioning: [note: hierarchical = <15s for a database of 3000 heavy chains with n=4 processors (MacBookPro M1)]
-  
-  if(method == "changeo"){ # similar to scoper::hierarchicalClones() in theory but using the old python implementation of changeo hierarchical clustering
-    step <- step + 1
-    message(
-      "------------\n",
-      "Part ", step,  " of ", n,": Starting clonal partitioning using DefineClones.py from Changeo\n",
-      "------------\n"
-    )
-    VDJ_db <- VDJ_db %>%
-      dplyr::select(-any_of(c("clone_id")))
-    
-    h_db <- VDJ_db %>%
-      dplyr::filter(!!rlang::sym(locus) %in% heavy)
-    l_db <- VDJ_db %>%
-      dplyr::filter(!(!!rlang::sym(locus) %in% heavy))
-
-    out_temp_folder <- paste0(output_folder, "temp/")
-    if(!dir.exists(out_temp_folder)){
-      dir.create(out_temp_folder)
+  HC_only <- dplyr::filter(VDJ_db, !!rlang::sym(paste0(tolower(fct_type),"_info")) == "heavy_only")
+  if(na.light.rm){
+    if(nrow(HC_only)>0){
+      VDJ_db <- dplyr::filter(VDJ_db, !!rlang::sym(paste0(tolower(fct_type),"_info")) != "heavy_only")
+      filename_HC_only <- paste0(output_folder, analysis_name, "_VDJ_HC_only")
+      readr::write_tsv(HC_only_cloned_VDJ_db, file = paste0(filename_HC_only, ".tsv.gz"))
+      HC_only_log <- paste0(paste0(length(unique(HC_only[[cell_id]])), " cells out of ", nb_total_cells," are missing a light chain and will be removed (see: ",filename_HC_only, ".tsv). \n"))
+      if(verbose){cat(HC_only_log)}
+      time_and_log({
+        cat(LC_only_log) 
+      }, verbose = verbose, time = FALSE, log_file = log_file, log_title = "Removing cells missing HC", open_mode = "a")
     }
-    DefineClones_input_file <- paste0(out_temp_folder, "All_seq.tsv")
-    DefineClones_input_file <- gsub(" ", "\\\ ", DefineClones_input_file, fixed = TRUE) #to remove any blank in file_path
-    DefineClones_output_file <- paste0(out_temp_folder, "All_seq_clone-pass.tsv")
-    DefineClones_output_file <- gsub(" ", "\\\ ", DefineClones_output_file, fixed = TRUE) #to remove any blank in file_path
+  }
+  if(!na.light.rm & !cluster_heavy){
+    if(!cluster_heavy & (nrow(HC_only)>0)){
+      HC_only_log <- cat(paste0(length(unique(HC_only[[cell_id]])), " cells out of ", nb_total_cells," are missing a light chain, will end up with clone_id = NA. \n"))
+      if(verbose){cat(HC_only_log)}
+      time_and_log({
+        cat(HC_only_log) 
+      }, verbose = verbose, time = FALSE, log_file = log_file, log_title = "Checking cells missing HC", open_mode = "a")
+    }
+  }
+  
+  ## 1. perform clonal partitioning:
+  #for now ChangeO remains faster for big datasets, although it should provide the same output as hierarchicalClones(). IdenticalClones is reserved for TCR clustering and 
+  
+  step <- step + 1
+  if(method == "changeo"){
+    clonal_analysis_message <- paste0("Part ", step,  " of ", n,": Starting clonal partitioning using DefineClones.py from Changeo\n")
+    log_title_clonal_analysis <- "DefineClones"
+  } else {
+    clonal_analysis_message <- paste0("Part ", step,  " of ", n,": Starting clonal partitioning using ", method,"Clones() from SCoper\n")
+    log_title_clonal_analysis <- paste0(method, "Clones")
+  }
+  if(cluster_heavy){
+    cluster_chain = "h"
+  } else {
+    cluster_chain = "l"
+  }
+  
+  message(
+    "------------\n",
+    clonal_analysis_message,
+    "------------\n"
+  )
+  
+  if("clone_id" %in% colnames(VDJ_db)){
+    time_and_log({
+      cat("clone_id collumn already present in the object, renamed preexisting_clone_id to avoid issue in runDefineClones().\n\n")
+      if("preexisting_clone_id" %in% colnames(VDJ_db)){
+        cat("preexisting_clone_id collumn already present in the object, will be replaced.\n\n")
+      } 
+    }, verbose = verbose, time = FALSE, log_file = log_file, log_title = paste0("Renaming clone_id column"), open_mode = "a")
     
-    readr::write_tsv(h_db, file = DefineClones_input_file)
-    
-    if(!all(h_db$assay %in% c("10X", "BD"))){
-      #using guess_max = Inf here to avoid parsing issues with columns from the rare imported Sanger datasets, much slower though...
-      guess_max = Inf
+    VDJ_db <- VDJ_db %>% 
+      dplyr::mutate(
+        preexisting_clone_id = clone_id
+        ) %>%
+      dplyr::select(-clone_id)
+  }
+  
+  for(i in seq_along(threshold)){
+    used_threshold <- threshold[i]
+    if(verbose){cat("using threshold: ", used_threshold, ". ")}
+    if(i==1){
+      distance_plot = distance_plot
     } else {
-      guess_max = 1000
-    }
+      distance_plot =FALSE #we only plot the distance plot once
+      }
     
-    for(i in seq_along(threshold)){
-      used_threshold <- threshold[i]
-      if(verbose){cat("using threshold: ", used_threshold, ". ")}
+    time_and_log({
+      VDJ_db <- runDefineClones(VDJ_db,
+                                cell_id = cell_id,
+                                locus = locus,
+                                cluster_heavy = cluster_heavy,
+                                junction = junction,
+                                v_call = v_call,
+                                j_call = j_call,
+                                method = method, 
+                                spectral_method = spectral_method,
+                                threshold = used_threshold,
+                                mode = mode,
+                                model = model,
+                                first = first,
+                                norm = norm,
+                                output_folder = output_folder,
+                                prefix = analysis_name,
+                                distance_plot = distance_plot,
+                                output_temp_files = FALSE, 
+                                verbose = TRUE,
+                                nproc = nproc,
+                                fields = fields)
       
-      time_and_log({
-        cat(paste0("using threshold: ", used_threshold, "\n"))
-        messages_DefineClones <- system2("DefineClones.py", args = paste0("-d ", DefineClones_input_file, " --act set --model ham --norm len --dist ", used_threshold), stderr = TRUE, stdout = TRUE)
-        cat(paste(messages_DefineClones, collapse = "\n"))
-        cloned_h_db <- readr::read_tsv(DefineClones_output_file, show_col_types = FALSE, guess_max = guess_max) 
-        cloned_h_db[[paste0("h_clone_id_", used_threshold)]] <- cloned_h_db[["clone_id"]]
-        
-        h_db <- h_db %>%
-          dplyr::select(-any_of(c("clone_id"))) %>%
-          dplyr::left_join(
-            dplyr::select(cloned_h_db, all_of(c(cell_id, "clone_id", paste0("h_clone_id_", used_threshold)))), by = join_by(!!rlang::sym(cell_id))
-          )
-        l_db <- l_db %>%
-          dplyr::select(-any_of(c("clone_id"))) %>%
-          dplyr::left_join(
-            dplyr::select(cloned_h_db, all_of(c(cell_id, "clone_id", paste0("h_clone_id_", used_threshold)))), by = join_by(!!rlang::sym(cell_id))
-          )
-      }, verbose = verbose, log_file = log_file, log_title = "DefineClones", open_mode = "a")
-    }
-    
-    cloned_VDJ_db <- h_db %>%
-      dplyr::bind_rows(l_db)
-
-    unlink(out_temp_folder, recursive = TRUE)
-  }
-
-  if(method == "hierarchical"){ #preferred method for clustering of BCR data, multiple threshold can be provided
-    step <- step + 1
-    message(
-      "------------\n",
-      "Part ", step," of ", n,": Starting clonal partitioning using the ", method, " method from Scoper package\n",
-      "------------\n"
-    )
-    
-    for(i in seq_along(threshold)){
-      used_threshold <- threshold[i]
-      if(verbose){cat("using threshold: ", used_threshold, ". ")}
-      if("clone_id" %in% colnames(VDJ_db)){
-        VDJ_db$clone_id <- NULL
-      }
-      time_and_log({
-        cat(paste0("using threshold: ", used_threshold))
-        clonal_analysis <- scoper::hierarchicalClones(VDJ_db,
-                                                      threshold = used_threshold,
-                                                      method = "nt",
-                                                      normalize = "len",
-                                                      linkage = "single",
-                                                      cell_id = cell_id_scoper,
-                                                      locus = locus,
-                                                      only_heavy = TRUE,
-                                                      split_light = FALSE,
-                                                      junction = junction,
-                                                      v_call = v_call,
-                                                      j_call = j_call,
-                                                      clone = "clone_id",
-                                                      fields = fields,
-                                                      first = FALSE,
-                                                      cdr3 = FALSE,
-                                                      mod3 = FALSE,
-                                                      max_n = 0,
-                                                      nproc = nproc,
-                                                      verbose = FALSE,
-                                                      log = NULL,
-                                                      summarize_clones = TRUE)
-        if(output){
-          pdf(file = paste0(output_folder, analysis_name, "_IGH_clustering_", used_threshold, ".pdf"))
-          scoper::plot(clonal_analysis, binwidth=0.02)
-          dev.off()
+      if(paste0(cluster_chain, "_clone_id_", used_threshold) %in% colnames(VDJ_db)){
+        cat(paste0(cluster_chain, "_clone_id_", used_threshold), " column already present in the object, renamed preexisting_h_clone_id_", used_threshold, " to avoid issue in defineClonesScoper().\n\n")
+        if(paste0(cluster_chain, "_clone_id_", used_threshold) %in% colnames(VDJ_db)){
+          cat("preexisting_clone_id collumn already present in the object, will be replaced.\n\n")
         }
-        VDJ_db <- scoper::as.data.frame(clonal_analysis)
-        VDJ_db[[paste0("h_clone_id_", used_threshold)]] <- VDJ_db[["clone_id"]]
-      }, verbose = verbose, log_file = log_file, log_title = "hierarchicalClones", open_mode = "a")
-    }
-    cloned_VDJ_db <- VDJ_db
-  }
-  
-  if(method == "identical"){# for TCR mostly
-    step <- step + 1
-    message(
-      "------------\n",
-      "Part ", step," of ", n,": Starting clonal partitioning using the ", method, " method from Scoper package\n",
-      "------------\n"
-    )
-    used_threshold <- 0
-    time_and_log({
-      cloned_VDJ_db <- scoper::identicalClones(VDJ_db,
-                                               method = "nt",
-                                               cell_id = cell_id_scoper,
-                                               locus = locus,
-                                               only_heavy = TRUE,
-                                               split_light = FALSE,
-                                               junction = junction,
-                                               v_call = v_call,
-                                               j_call = j_call,
-                                               clone = "clone_id",
-                                               fields = fields,
-                                               first = FALSE,
-                                               cdr3 = FALSE,
-                                               mod3 = FALSE,
-                                               max_n = 0,
-                                               nproc = nproc,
-                                               verbose = FALSE,
-                                               log = NULL,
-                                               summarize_clones = FALSE)
-    cloned_VDJ_db[[paste0("h_clone_id")]] <- cloned_VDJ_db[["clone_id"]]
-    }, verbose = verbose, log_file = log_file, log_title = "identicalClones", open_mode = "a")
-  }
-  if(method == "spectral"){# !!untested yet; memory intensive for big datasets, will only use the first provided threshold...
-    message(
-      "------------\n",
-      "Part ", step," of ", n,": Starting clonal partitioning using the ", method, " method from Scoper package\n",
-      "------------\n"
-    )
-    used_threshold <- threshold[1]
-    time_and_log({
-      clonal_analysis <- scoper::spectralClones(VDJ_db,
-                                                method = spectral_method,
-                                                germline = "germline_alignment",
-                                                sequence = "sequence_alignment",
-                                                junction = junction,
-                                                v_call = v_call,
-                                                j_call = j_call,
-                                                clone = "clone_id",
-                                                fields = fields,
-                                                cell_id = cell_id_scoper,
-                                                locus = locus,
-                                                only_heavy = TRUE,
-                                                split_light = TRUE,
-                                                targeting_model = NULL,
-                                                len_limit = NULL,
-                                                first = FALSE,
-                                                cdr3 = FALSE,
-                                                mod3 = FALSE,
-                                                max_n = 0,
-                                                threshold = used_threshold,
-                                                base_sim = 0.95,
-                                                iter_max = 1000,
-                                                nstart = 1000,
-                                                nproc = 1,
-                                                verbose = FALSE,
-                                                log = NULL,
-                                                summarize_clones = TRUE)
-      if(output){
-        pdf(file = paste0(output_folder, analysis_name, "_IGH_clustering_", used_threshold, ".pdf"))
-        scoper::plot(clonal_analysis, binwidth=0.02)
-        dev.off()
+        VDJ_db <- VDJ_db %>% 
+          dplyr::mutate(
+            !!rlang::sym(paste0("preexisting_",cluster_chain,"_clone_id_", used_threshold)) := !!rlang::sym(paste0(cluster_chain, "_clone_id_", used_threshold))
+            ) %>%
+          dplyr::select(-!!rlang::sym(paste0(cluster_chain, "_clone_id_", used_threshold)))
       }
-      cloned_VDJ_db <- scoper::as.data.frame(clonal_analysis)
-      cloned_VDJ_db[[paste0("h_clone_id_", used_threshold)]] <- cloned_VDJ_db[["clone_id"]]
-    }, verbose = verbose, log_file = log_file, log_title = "identicalClones", open_mode = "a")
+      
+      VDJ_db <- VDJ_db %>% 
+        dplyr::mutate(
+          !!rlang::sym(paste0(cluster_chain, "_clone_id_", used_threshold)) := clone_id
+        )
+      
+      if(!i == length(threshold)){
+        VDJ_db <- VDJ_db %>% 
+          dplyr::select(-clone_id)
+      }
+      
+    }, verbose = verbose, log_file = log_file, log_title = paste0(log_title_clonal_analysis, " - threshold = ", used_threshold), open_mode = "a")
   }
-
-  cloned_VDJ_db <- dplyr::relocate(cloned_VDJ_db, clone_id, .after = !!rlang::sym(cell_id))
-
+  cloned_VDJ_db <- VDJ_db
+  
   filename <- paste0(filename, "_VDJ_clone-pass")
   if(!clean_LC){
     readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
   }
   rm(VDJ_db)
 
-  ## 2. resolve cases of light chains multiplets and split clonal groups based on light chains:
+  ## 2. resolve cases of light chains multiplets :
   if(clean_LC){
     # technically, dowser::resolveLightChains can deal with multiple light chains but choice of dominant light chain doesn't take into account umi_counts...
     # we use her a similar approach to preprocess the best light chain(s) for a given cell_id and then run the preprocess db through dowser::resolveLightChains for final clustering and dealing with cases of missing light chains.
@@ -4666,37 +4924,44 @@ scFindClones <- function(db,
       "Part ", step," of ", n,": Selecting best light chain for each cell\n",
       "------------\n"
     )
-    time_and_log({
-      cloned_VDJ_db <- resolveMultiContigs(cloned_VDJ_db, 
-                                           split.by = split.by, 
-                                           seq_type = seq_type,
-                                           resolve_chain = "light",
-                                           assay = assay, 
-                                           resolve_multi_CDR3 = TRUE, 
-                                           use_clone = TRUE,
-                                           analysis_name = analysis_name,
-                                           output = output, 
-                                           output_folder = output_folder,
-                                           second_columns = c(sequence_id, locus, umi_count, consensus_count, sequence, v_call, d_call, j_call, c_call, junction, junction_aa, productive, complete_vdj),
-                                           cell_id = cell_id, 
-                                           sequence_id = sequence_id, 
-                                           locus = locus, 
-                                           consensus_count = consensus_count, 
-                                           umi_count = umi_count, 
-                                           v_call = v_call, 
-                                           j_call = j_call, 
-                                           c_call = c_call, 
-                                           junction = junction, 
-                                           junction_aa = junction_aa,
-                                           productive = productive, 
-                                           complete_vdj = complete_vdj, 
-                                           clone_id = "clone_id", 
-                                           nproc = nproc)
-    }, verbose = verbose, log_file = log_file, log_title = "resolving LC multiplets", open_mode = "a")
-    
-    filename <- paste0(filename, "_LCresolved")
-    if(!(igblast %in% c("light", "all")) & !(update_c_call %in% c("light", "all"))){
-      readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
+    if(any(duplicated(dplyr::filter(cloned_VDJ_db, locus %in% light)[[cell_id]]))){
+      time_and_log({
+        cloned_VDJ_db <- resolveMultiContigs(cloned_VDJ_db, 
+                                             split.by = split.by, 
+                                             seq_type = seq_type,
+                                             resolve_chain = "light",
+                                             assay = assay, 
+                                             resolve_multi_CDR3 = TRUE, 
+                                             use_clone = TRUE,
+                                             analysis_name = analysis_name,
+                                             output = output, 
+                                             output_folder = output_folder,
+                                             second_columns = c(sequence_id, locus, umi_count, consensus_count, sequence, v_call, d_call, j_call, c_call, junction, junction_aa, productive, complete_vdj),
+                                             cell_id = cell_id, 
+                                             sequence_id = sequence_id, 
+                                             locus = locus, 
+                                             consensus_count = consensus_count, 
+                                             umi_count = umi_count, 
+                                             v_call = v_call, 
+                                             j_call = j_call, 
+                                             c_call = c_call, 
+                                             junction = junction, 
+                                             junction_aa = junction_aa,
+                                             productive = productive, 
+                                             complete_vdj = complete_vdj, 
+                                             clone_id = "clone_id", 
+                                             nproc = nproc)
+      }, verbose = verbose, log_file = log_file, log_title = "resolving LC multiplets", open_mode = "a")
+      
+      filename <- paste0(filename, "_LCresolved")
+      if(!(igblast %in% c("light", "all")) & !(update_c_call %in% c("light", "all"))){
+        readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
+      }
+    } else {
+      message("no detected case of light chain multiplets, skipping this step.\n")
+      if(!(igblast %in% c("light", "all")) & !(update_c_call %in% c("light", "all"))){
+        readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
+      }
     }
   }
 
@@ -4770,8 +5035,8 @@ scFindClones <- function(db,
       "------------\n"
     )
     
-    h_db <- dplyr::filter(cloned_VDJ_db, (!!rlang::sym(locus) %in% heavy))
-    l_db <- dplyr::filter(cloned_VDJ_db, !(!!rlang::sym(locus) %in% heavy))
+    l_db <- dplyr::filter(cloned_VDJ_db, (!!rlang::sym(locus) %in% light))
+    other_db <- dplyr::filter(cloned_VDJ_db, !(!!rlang::sym(locus) %in% light))
 
     time_and_log({
       l_db <- runBlastnC(l_db,
@@ -4784,7 +5049,7 @@ scFindClones <- function(db,
 
     l_db <- dplyr::relocate(l_db, !!rlang::sym(c_call), .after = !!rlang::sym(j_call))
 
-    cloned_VDJ_db <- dplyr::bind_rows(h_db, l_db)
+    cloned_VDJ_db <- dplyr::bind_rows(other_db, l_db)
     
   }
   if(update_c_call == "all"){
@@ -4821,37 +5086,22 @@ scFindClones <- function(db,
     light_only_db <- cloned_VDJ_db %>%
       dplyr::filter(!!rlang::sym(paste0(tolower(fct_type),"_info")) == "light_only")
 
-    #heavy_cloned_VDJ_db <- dowser::resolveLightChains(heavy_cloned_VDJ_db,
-    #                                                  nproc = nproc,
-    #                                                  minseq = 1,
-    #                                                  locus = locus,
-    #                                                  heavy = heavy,
-    #                                                  id = sequence_id,
-    #                                                  seq = "sequence_alignment",
-    #                                                  clone = "clone_id",
-    #                                                  cell = cell_id,
-    #                                                  v_call = v_call,
-    #                                                  j_call = j_call,
-    #                                                  junc_len = junc_len,
-    #                                                  nolight = "missing",
-    #                                                  pad_ends = TRUE)
-
     if(seq_type == "Ig"){
       time_and_log({
-        heavy_cloned_VDJ_db <- resolveLightChains2(heavy_cloned_VDJ_db,
-                                                   nproc = nproc,
-                                                   minseq = 1,
-                                                   locus = locus,
-                                                   heavy = "IGH",
-                                                   id = sequence_id,
-                                                   seq = "sequence_alignment",
-                                                   clone = "clone_id",
-                                                   cell = cell_id,
-                                                   v_call = v_call,
-                                                   j_call = j_call,
-                                                   junc_len = junc_len,
-                                                   nolight = "missing",
-                                                   pad_ends = TRUE)
+        heavy_cloned_VDJ_db <- dowser::resolveLightChains(heavy_cloned_VDJ_db,
+                                                          nproc = nproc,
+                                                          minseq = 1,
+                                                          locus = locus,
+                                                          heavy = "IGH",
+                                                          id = sequence_id,
+                                                          seq = "sequence_alignment",
+                                                          clone = "clone_id",
+                                                          cell = cell_id,
+                                                          v_call = v_call,
+                                                          j_call = j_call,
+                                                          junc_len = junc_len,
+                                                          nolight = "missing",
+                                                          pad_ends = TRUE)
       }, verbose = verbose, log_file = log_file, log_title = "Spliting clonal groups according to selected light chains", open_mode = "a")
     }
     if(seq_type == "TCR"){
@@ -4867,7 +5117,8 @@ scFindClones <- function(db,
           dplyr::ungroup() %>%
           dplyr::group_by(heavy_chain) %>% 
           dplyr::group_modify(
-            ~ resolveLightChains2(.x,
+            #(as of 21052026) - moved back to resolveLightChains from dowser (resolveLightChains2 is now deprecated)
+            ~ dowser::resolveLightChains(.x,
                                   nproc = nproc,
                                   minseq = 1,
                                   locus = locus,
@@ -4921,33 +5172,70 @@ scFindClones <- function(db,
       cat(paste0("Loading user provided reference database: ", reference_dir, "\n"))
       reference <- dowser::readIMGT(reference_dir)
       
-      nb_submitted_seq <- nrow(cloned_VDJ_db)
+      # we have noticed that Scoper can group sequence with different (albeit close) V and J alleles, resulting in sometime abherent selection of germline inside a public clone.
+      # split_germline_by allows one to split by donor/sample to minimize "public clones" effects
+      if(!is.null(split_germline_by)){
+        if(!split_germline_by %in% colnames(cloned_VDJ_db)){
+          warning(split_germline_by, " not found in the provided dataframe, defaukting to NULL")
+          split_germline_by <- NULL
+        }
+      }
       
-      heavy_cloned_VDJ_db <- cloned_VDJ_db %>%
-        dplyr::filter(!is.na(clone_id))
-      light_only_db <- cloned_VDJ_db %>%
-        dplyr::filter(is.na(clone_id))
+      nb_submitted_seq <- nrow(cloned_VDJ_db)
       
       cat("Updating germline alignments for cells with clone_id\n")
       # [note] using here force_trim = TRUE to save some sequences that would otherwise fail germline reconstruction. Likely indicate misalignment of the data or PCR hybrid...
-      heavy_cloned_VDJ_db <- dowser::createGermlines(heavy_cloned_VDJ_db,
-                                                     references = reference,
-                                                     locus = locus,
-                                                     trim_lengths = trim_lengths,
-                                                     force_trim = force_trim,
-                                                     nproc = nproc,
-                                                     v_call = v_call,
-                                                     d_call = d_call,
-                                                     j_call = j_call,
-                                                     amino_acid = FALSE,
-                                                     id = sequence_id,
-                                                     clone = "clone_id",
-                                                     na.rm = FALSE,
-                                                     fields = fields)
       
-      if(nrow(light_only_db)>0){
-        cat("Updating germline alignments for cells with only LC (no clone_id)")
-        light_only_db <- dowser::createGermlines(light_only_db,
+      #updateGermlines <- function(data, key) {
+      #  dowser::createGermlines(data, 
+      #                          references = reference,
+      #                          locus = locus,
+      #                          trim_lengths = trim_lengths,
+      #                          force_trim = force_trim,
+      #                          nproc = nproc,
+      #                          v_call = v_call,
+      #                          d_call = d_call,
+      #                          j_call = j_call,
+      #                          amino_acid = FALSE,
+      #                          id = sequence_id,
+      #                          clone = "clone_id",
+      #                          na.rm = FALSE,
+      #                          fields = fields)
+      #}
+      
+      na_cloned_VDJ_db <- cloned_VDJ_db %>%
+        dplyr::filter(is.na(clone_id))
+      
+      cloned_VDJ_db <- cloned_VDJ_db %>%
+        dplyr::filter(!is.na(clone_id))
+      
+      cloned_VDJ_db <- cloned_VDJ_db %>%
+        {
+          if (is.null(split_germline_by)) .
+          else group_by(., across(all_of(split_germline_by)))
+        } %>%
+        dplyr::group_modify(
+          ~ dowser::createGermlines(.x, 
+                                    references = reference,
+                                    locus = locus,
+                                    trim_lengths = trim_lengths,
+                                    force_trim = force_trim,
+                                    nproc = nproc,
+                                    v_call = v_call,
+                                    d_call = d_call,
+                                    j_call = j_call,
+                                    amino_acid = FALSE,
+                                    id = sequence_id,
+                                    clone = "clone_id",
+                                    na.rm = FALSE,
+                                    fields = fields)
+        ) %>%
+        #group_modify(updateGermlines) %>%
+        ungroup()
+    
+      if(nrow(na_cloned_VDJ_db)>0){
+        cat("\nUpdating germline alignments for cells with only LC (no clone_id)\n")
+        na_cloned_VDJ_db <- dowser::createGermlines(na_cloned_VDJ_db,
                                                  references = reference,
                                                  locus = locus,
                                                  trim_lengths = trim_lengths,
@@ -4961,9 +5249,10 @@ scFindClones <- function(db,
                                                  clone = "cell_id",
                                                  na.rm = FALSE,
                                                  fields = fields)
+        cloned_VDJ_db <- cloned_VDJ_db %>%
+          dplyr::bind_rows(na_cloned_VDJ_db)
       }
-      cloned_VDJ_db <- heavy_cloned_VDJ_db %>%
-        dplyr::bind_rows(light_only_db)
+      
       # remove cells which failed gerline reconstruction:
       germ_failed_cloned_VDJ_db <- dplyr::filter(cloned_VDJ_db, is.na(germline_alignment_d_mask))
       nb_failed_germ <- nrow(germ_failed_cloned_VDJ_db)
@@ -4978,37 +5267,46 @@ scFindClones <- function(db,
         germ_failed_log <- paste0("All ", nb_submitted_seq," sequences passed germline reconstruction. Congrats!!\n")
         cat(germ_failed_log)
       }
+      
+      #if(verbose){cat( "\n", germ_failed_log)}
+      cloned_VDJ_db <- dplyr::filter(cloned_VDJ_db, !is.na(germline_alignment_d_mask))
+      filename <- paste0(filename, "_germ-pass")
+      readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
+      
     }, verbose = verbose, log_file = log_file, log_title = "Updating germline alignments based on clonal groups", open_mode = "a")
-    #if(verbose){cat( "\n", germ_failed_log)}
     
-    cloned_VDJ_db <- dplyr::filter(cloned_VDJ_db, !is.na(germline_alignment_d_mask))
-    filename <- paste0(filename, "_germ-pass")
-    readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
   } else {reference_origin <- NA}
   
   ## 7. calculate somatic mutations:
-  if(SHM){
+  if(!SHM == "no"){
     step = step + 1
     message(
       "------------\n",
       "Part ", step, " of ", n,": running somatic mutation analysis on V genes\n",
       "------------\n"
     )
-    
-    suppressMessages(library(shazam)) # can't make it work without loading the entire package as shazam calls multiple objects from the package
-    if(verbose){cat("Calculating mutation counts. ")}
-    time_and_log({
-      cloned_VDJ_db <- shazam::observedMutations(cloned_VDJ_db, sequenceColumn= sequence_alignment , germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=FALSE, nproc=nproc)
-      cloned_VDJ_db <- shazam::observedMutations(cloned_VDJ_db, sequenceColumn= sequence_alignment, germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=FALSE, combine=TRUE, nproc=nproc)
-    }, verbose = verbose, log_file = log_file, log_title = "Calculating mutation counts", open_mode = "a")
-    if(verbose){cat("Calculating mutation frequencies. ")}
-    time_and_log({
-      cloned_VDJ_db <- shazam::observedMutations(cloned_VDJ_db, sequenceColumn= sequence_alignment, germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=TRUE, nproc=nproc)
-      cloned_VDJ_db <- shazam::observedMutations(cloned_VDJ_db, sequenceColumn= sequence_alignment, germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=TRUE, combine=TRUE, nproc=nproc)
-    }, verbose = verbose, log_file = log_file, log_title = "Calculating mutation frequencies", open_mode = "a")
-    
-    filename <- paste0(filename, "_shm-pass")
-    readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
+    if("germline_alignment_d_mask" %in% colnames(cloned_VDJ_db)){
+      suppressMessages(library(shazam)) # can't make it work without loading the entire package as shazam calls multiple objects from the package
+      
+      if(SHM %in% c("both", "count")){
+        if(verbose){cat("Calculating mutation counts. ")}
+        time_and_log({
+          cloned_VDJ_db <- shazam::observedMutations(cloned_VDJ_db, sequenceColumn= sequence_alignment , germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=FALSE, nproc=nproc)
+          cloned_VDJ_db <- shazam::observedMutations(cloned_VDJ_db, sequenceColumn= sequence_alignment, germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=FALSE, combine=TRUE, nproc=nproc)
+        }, verbose = verbose, log_file = log_file, log_title = "Calculating mutation counts", open_mode = "a")
+      }
+      if(SHM %in% c("both", "freq")){
+        if(verbose){cat("Calculating mutation frequencies. ")}
+        time_and_log({
+          cloned_VDJ_db <- shazam::observedMutations(cloned_VDJ_db, sequenceColumn= sequence_alignment, germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=TRUE, nproc=nproc)
+          cloned_VDJ_db <- shazam::observedMutations(cloned_VDJ_db, sequenceColumn= sequence_alignment, germlineColumn="germline_alignment_d_mask", regionDefinition=IMGT_V, frequency=TRUE, combine=TRUE, nproc=nproc)
+        }, verbose = verbose, log_file = log_file, log_title = "Calculating mutation frequencies", open_mode = "a")
+      }
+      filename <- paste0(filename, "_shm-pass")
+      readr::write_tsv(cloned_VDJ_db, file = paste0(filename, ".tsv.gz"))
+    } else {
+      warning("missing germline_alignment_d_mask column, run createGermlines(), update_germline = TRUE argument, prior to somatic mutation analysis")
+    }
   }
   
   ## 8. CDR3 amino acids properties:
@@ -5090,17 +5388,29 @@ scFindClones <- function(db,
     "Exporting recap excel workbook :\n",
     "--------------------------------\n"
   )
-  
-  n_final_heavy <- as.numeric(table(cloned_VDJ_db[[locus]] %in% heavy)[["TRUE"]])
   n_final_cells <- length(unique(cloned_VDJ_db[[cell_id]]))
-
-  if(!only_heavy){
-    n_final_light <- as.numeric(table(cloned_VDJ_db[[locus]] %in% heavy)[["FALSE"]])
+  if(!(only_heavy|only_light)){
+    n_final_heavy <- as.numeric(table(cloned_VDJ_db[[locus]] %in% heavy)[["TRUE"]])
+    n_final_light <- as.numeric(table(cloned_VDJ_db[[locus]] %in% light)[["TRUE"]])
     h_db <- cloned_VDJ_db %>%
       dplyr::filter(locus %in% heavy)
     n_final_cells_with_full_BCR <- as.numeric(table(h_db[[paste0(tolower(fct_type),"_info")]] == "full")[["TRUE"]])
     pct_full <- round(n_final_cells_with_full_BCR/n_final_cells*100)
   }
+  
+  if(only_heavy){
+    n_final_heavy <- n_final_cells
+    n_final_light <- 0
+    n_final_cells_with_full_BCR <- 0
+    pct_full <- 0
+  }
+  if(only_light){
+    n_final_heavy <- 0
+    n_final_light <- n_final_cells
+    n_final_cells_with_full_BCR <- 0
+    pct_full <- 0
+  }
+  
   if(is.null(analysis_name)){analysis_name <- "none provided"}
   if(is.null(output_folder)){output_folder <- "working directory"}
   if(is.null(reference_origin)){reference_origin <- "none provided"}
@@ -5152,45 +5462,55 @@ scFindClones <- function(db,
     analysis_parameters <- c(analysis_parameters, "cells with contig failing full VDJ reconstruction" = nb_failed_vdj_cells)
   }
 
-  if(!only_heavy){
+  if(!(only_heavy|only_light)){
     final_log_message <- paste0(final_log_message, "final table: ", n_final_heavy, " IGH contigs and ", n_final_light, " IGL/IGK contigs (", n_final_cells, " unique cells). ", pct_full,"% of cells with full BCR. \n")
-  } else {
-    final_log_message <- paste0(final_log_message, "final table: ", n_final_heavy, " IGH contigs (", n_final_cells, " unique cells). \n")
+  } 
+  if(only_heavy){
+    final_log_message <- paste0(final_log_message, "final table: ", n_final_heavy, " IGH contigs. \n")
+  }
+  if(only_light){
+    final_log_message <- paste0(final_log_message, "final table: ", n_final_light, " IGL/IGK contigs. \n")
   }
   if(verbose){cat(final_log_message)}
   time_and_log({
     cat(final_log_message)
   }, verbose = FALSE, time = FALSE, log_file = log_file, log_title = "Final recap", open_mode = "a")
   
-  if(!only_heavy){
+  if(!(only_heavy|only_light)){
     analysis_parameters <- c(analysis_parameters,
                              "final IGH contigs" = n_final_heavy,
                              "final IGL/K contigs" = n_final_light,
                              "final unique cells" = n_final_cells,
                              "% with full VDJ" = pct_full)
-  } else {
+  } 
+  if(only_heavy){
     analysis_parameters <- c(analysis_parameters,
                              "final IGH contigs" = n_final_heavy,
                              "final unique cells" = n_final_cells)
   }
+  if(only_light){
+    analysis_parameters <- c(analysis_parameters,
+                             "final IGL/K contigs" = n_final_light,
+                             "final unique cells" = n_final_cells)
+  }
   if (requireNamespace("openxlsx", quietly = TRUE)) {
     OUT <- openxlsx::createWorkbook()
-    openxlsx::addWorksheet(OUT, "Cloned VDJ")
-    openxlsx::writeData(OUT, sheet= "Cloned VDJ", x=cloned_VDJ_db, colNames = TRUE, rowNames = FALSE)
-    openxlsx::addWorksheet(OUT, "Expanded Cloned VDJ")
-    openxlsx::writeData(OUT, sheet= "Expanded Cloned VDJ", x=dplyr::filter(cloned_VDJ_db, expanded_clone), colNames = TRUE, rowNames = FALSE)
-    if(assay %in% colnames(cloned_VDJ_db)){
-      cloned_VDJ_db <- cloned_VDJ_db %>%
-        dplyr::group_by(clone_id) %>%
-        dplyr::mutate(
-          shared_clone = any(assay %in% shared.tech[["scRNAseq"]]) & any(assay %in% shared.tech[["scSanger"]])
-        ) %>%
-        dplyr::ungroup()
-      if(any(cloned_VDJ_db$shared_clone)){
-        openxlsx::addWorksheet(OUT, "Shared Cloned VDJ")
-        openxlsx::writeData(OUT, sheet= "Shared Cloned VDJ", x=dplyr::filter(cloned_VDJ_db, shared_clone), colNames = TRUE, rowNames = FALSE)
-      }
-    }
+    excel_VDJ_table(OUT, sheet= "Cloned VDJ", cloned_VDJ_db, color_by = NULL)
+    excel_VDJ_table(OUT, sheet= "Expanded Cloned VDJ", dplyr::filter(cloned_VDJ_db, expanded_clone & !is.na(clone_id)), color_by = "clone_id") 
+    
+    #Deprecated (as of 07052026) - not used any more#
+    #if(assay %in% colnames(cloned_VDJ_db)){
+    #  cloned_VDJ_db <- cloned_VDJ_db %>%
+    #    dplyr::group_by(clone_id) %>%
+    #   dplyr::mutate(
+    #      shared_clone = any(assay %in% shared.tech[["scRNAseq"]]) & any(assay %in% shared.tech[["scSanger"]])
+    #    ) %>%
+    #    dplyr::ungroup()
+    #  if(any(cloned_VDJ_db$shared_clone)){
+    #    openxlsx::addWorksheet(OUT, "Shared Cloned VDJ")
+    #    openxlsx::writeData(OUT, sheet= "Shared Cloned VDJ", x=dplyr::filter(cloned_VDJ_db, shared_clone), colNames = TRUE, rowNames = FALSE)
+    #  }
+    #}
     
     if(!is.null(recap.highlight)){
       missing_highlights <- setdiff(recap.highlight, colnames(cloned_VDJ_db))
@@ -5202,8 +5522,7 @@ scFindClones <- function(db,
         for(highlight in recap_highlights){
           levels <- levels(as.factor(cloned_VDJ_db[[highlight]]))
           for(level in levels){
-            openxlsx::addWorksheet(OUT, level)
-            openxlsx::writeData(OUT, sheet= level, x=dplyr::filter(cloned_VDJ_db, !!rlang::sym(highlight) == level), colNames = TRUE, rowNames = FALSE)
+            excel_VDJ_table(OUT, sheet = level, dplyr::filter(cloned_VDJ_db, !!rlang::sym(highlight) == level), color_by = "clone_id")
           }
         }
       }
@@ -5286,7 +5605,7 @@ scFindTCRClones <- function(db,
                             update_c_call = c("none"), 
                             method = c("changeo", "identical"),
                             threshold = 0,
-                            SHM = FALSE,
+                            SHM = "no",
                             update_germline = FALSE,
                             CDR3_properties = FALSE,
                             full_seq_aa = FALSE,
@@ -5506,3 +5825,133 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
  sc <- SeuratObject::AddMetaData(sc, sc_vdj_db)
  return(sc)
 }
+
+
+#### Function to extract mutations in a sequence ####
+#' Extract mutations and return either a vector of a tibble
+#'
+#' \code{get_mutations} Extract mutations
+#' @param sequence_alignment  an aligned V(D)J sequence.
+#' @param germline_alignment  the aligned germline V(D)J sequence
+#' @param ignore_chars  which characters to exclude
+#' @param filter_query whether to exclude ignore_chars characters from the query 
+#' @param return  either a vector or a tibble
+#' 
+#' @return either a vector of a tibble with identified filtered mutations
+#' 
+#' @export
+#' 
+
+get_mutations <- function(aligned_seq,
+                          aligned_germline,
+                          ignore_chars = c(".", "N", "-", "n"),
+                          filter_query = TRUE,
+                          return = c("vector", "tibble")
+) {
+  
+  q <- strsplit(aligned_seq, "")[[1]]
+  g <- strsplit(aligned_germline, "")[[1]]
+  
+  return = match.arg(return)
+  
+  if(return == "vector"){
+    # sanity check
+    if(length(q) != length(g)) {
+      return(NA_character_)
+    }
+    
+    # informative positions only
+    if(filter_query){
+      valid <- !(q %in% ignore_chars |
+                   g %in% ignore_chars)
+    } else {
+      valid <- !(g %in% ignore_chars)
+    }
+    
+    # mutation positions
+    mutated <- (q != g) & valid
+    
+    idx <- which(mutated)
+    
+    # return mutation vector
+    return(paste0(g[idx], idx, q[idx]))
+  }
+  
+  if(return == "tibble"){
+    t <- tibble::tibble(
+      position = seq_along(q),
+      germline = g,
+      mutant = q
+    ) 
+    
+    if(filter_query){
+      t <- t %>%
+        dplyr::filter(
+          mutant != germline,
+          !mutant %in% ignore_chars,
+          !germline %in% ignore_chars
+        )
+    } else {
+      t <- t %>%
+        dplyr::filter(
+          mutant != germline,
+          !germline %in% ignore_chars
+        )
+    }
+    return(t)
+  }
+}
+
+#### Function to extract positions of region of interest in a sequence ####
+#' Extract ROI position
+#'
+#' \code{find_region_in_alignment} Extract ROI position
+#' @param seq  a V(D)J sequence.
+#' @param region_seq  region of interest to find in sequence
+#' 
+#' @return a tibble with region start and end
+#' 
+#' @export
+#' 
+
+find_region_in_alignment <- function(seq, region_seq) {
+  
+  start_alignment <- regexpr(region_seq, seq)[1]
+  end_alignment <- start_alignment + nchar(region_seq) - 1
+  
+  tibble(
+    start = start_alignment,
+    end = end_alignment
+  )
+}
+
+#### Function to generate a consensus sequence ####
+#' Generate consensus
+#'
+#' \code{consensus_sequence} Extract mutations
+#' @param seqs  a vector of sequence of identical length.
+#' 
+#' @return a consensus sequence
+#' 
+#' @export
+#' 
+
+consensus_sequence <- function(seqs) {
+  chars <- strsplit(seqs, "")
+  L <- unique(lengths(chars))
+  if(length(L) != 1){
+    stop("Sequences must have same length")
+  }
+  mat <- do.call(rbind, chars)
+  apply(mat, 2, function(x) {
+    x <- x[!x %in% c(".", "-", "N")]
+    if(length(x) == 0)
+      return("N")
+    names(sort(table(x), decreasing = TRUE))[1]
+  }) %>%
+    paste0(collapse = "")
+}
+
+
+
+
