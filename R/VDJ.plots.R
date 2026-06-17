@@ -361,33 +361,57 @@ vdjQCplot <- function(db,
 #' @param label_column column used for fill color
 #' @param vline     value for added vline
 #'
-#' @return    a simple histogram
+#' @return  a simple histogram
 #'
 #' @details
 #' returns a simple histogram
 #'
 #' @export
 
-plotHistogram <- function(df, density = TRUE, feature, label_column, vline) {
+plotHistogram <- function(df, density = TRUE, feature, bins = 30, label_column, vline) {
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("Optional: 'ggplot2' not installed — skipping plot.")
     return(invisible(NULL))
   }
   suppressMessages(library(ggplot2))
+  plt <- ggplot(
+    df,
+    aes(
+      x = .data[[feature]],
+      fill = .data[[label_column]]
+    )
+  ) +
+    geom_histogram(
+      aes(y = after_stat(density)),
+      bins = bins,
+      alpha = 0.7,
+      position = "identity",
+      color = "black",
+      na.rm = TRUE
+    )
+  
   if (isTRUE(density)) {
-    plt <- ggplot(df, aes(x = eval(parse(text = feature)), fill = eval(parse(text = label_column)))) +
-      geom_histogram(alpha = 0.7, position = "identity", aes(y = ..density..), color = "black") +
-      geom_density(alpha = 0.7) +
-      geom_vline(xintercept = vline, color = "black", linetype = "dashed", size = 1) +
-      labs(x = feature, y = "Density")
-    plt + guides(fill = guide_legend(title = label_column))
-  } else {
-    plt <- ggplot(df, aes(x = eval(parse(text = feature)), fill = eval(parse(text = label_column)))) +
-      geom_histogram(alpha = 0.7, position = "identity", aes(y = ..density..), color = "black") +
-      geom_vline(xintercept = vline, color = "black", linetype = "dashed", size = 1) +
-      labs(x = feature, y = "Density")
-    plt + guides(fill = guide_legend(title = label_column))
+    plt <- plt +
+      geom_density(
+        alpha = 0.7,
+        na.rm = TRUE
+      ) 
   }
+  
+  plt <- plt +
+      geom_vline(
+        xintercept = vline,
+        color = "black",
+        linetype = "dashed",
+        linewidth = 1
+      ) +
+      labs(
+        x = feature,
+        y = "Density"
+      ) +
+      guides(fill = guide_legend(title = label_column))
+  
+  return(plt)
 }
 
 #### Function to plot Donut Plots  ####
@@ -2917,10 +2941,6 @@ sharedMutationsPlot <- function(clone,
   
   #TODO if color.by not a named vector or not enough colors warning and default to original colors
   
-  references = c("d_masked" = germline_alignment_d_mask,
-                 "cdr3" = cdr3, 
-                 "d_included" = germline_alignment
-  )
   
   align = match.arg(align)
   if (!align %in% c("d_masked", "d_included", "cdr3")) {
@@ -2928,9 +2948,13 @@ sharedMutationsPlot <- function(clone,
     align = "d_masked"
   }
   
-  reference_seq = references[align]
-  
+  #check and correct for multiple germline alignment sequences in the clone (can occur for convergent/public clones)
   if(align %in% c("d_masked", "d_included")){
+    if(align == "d_masked"){
+      reference_seq = germline_alignment_d_mask
+    } else {
+      reference_seq = germline_alignment
+    }
     #check for case with different germline alignments
     if(length(unique(clone[reference_seq])) > 1){
       warning("different ", reference,", will rerun dowser::createGermlines() to select a common germline")
@@ -2946,7 +2970,7 @@ sharedMutationsPlot <- function(clone,
     }
   }
   
-  
+  #create lineage tree and reorder sequence_id based on tree tips and duplicated sequences
   if(order_by_tree){
     #generate tree on collapse clone db
     collapsed_clone <- alakazam::collapseDuplicates(clone, id = sequence_id, seq = sequence_alignment, add_count = FALSE)
@@ -2977,8 +3001,8 @@ sharedMutationsPlot <- function(clone,
   
   seqs <- clone[[sequence_id]]
   
+  #create mutation table
   if(align %in% c("d_masked", "d_included")){
-    #create mutation table
     mut_tbl <- clone %>%
       dplyr::mutate(
         #find mutations
