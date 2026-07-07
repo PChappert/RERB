@@ -1498,7 +1498,7 @@ SingleHexmapClonotypes <- function(db,
 
   for (i in seq_len(nrow(centroid_layout))) {
     n <- centroid_layout$n[i]
-    clone <- centroid_layout$clone_id[i]
+    clone <- centroid_layout[[clone_id]][i]
     subset <- Plot_db %>%
       dplyr::filter(!!rlang::sym(clone_id) == clone)
     if (!is.null(order.by)) {
