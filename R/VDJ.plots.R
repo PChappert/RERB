@@ -1022,90 +1022,113 @@ SingleDonutPlotClonotypes <- function(db,
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
 #' @param ordered   whether to order clones based on size and highlighing parameter
-#' @param highlight name of the column use to color each clone [default: "c_call].
-#' @param highlight_col color scheme to use for coloring clones
+#' @param color.by  name of the column use to color each clone [default: "c_call].
+#' @param palette   color scheme to use for coloring clones
 #' @param prefix    prefix to use for saved files
 #' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
 #' @param locus     name of column containing locus values.
 #' @param cell_id   name of the column containing cell identifier.
 #' @param clone_id  name of the column containing cell identifier.
-#' @param groups_to_plot which groups to plot
-#' @param col.line  color for lines in donut plot
 #' @param plots_folder name for export folder [default: "Donut_plots"]
 #' @param productive  name of column containing productive calls.
 #' @param productive_only whether to exclude non productive sequences [default: TRUE]
-#' @param radius    shape radius, passed to packcircles
-#' @param padding   padding, passed to packcircles
-#' @param shape     shape to use [default: hex]
-#' @param seed      random seed for plotting
 #' @param save_plot whether to save the plots [default: TRUE]
 #' @param save_as   format to save the plot ("pdf", or "png") [default: pdf]
 #' @param height    height of saved plot
 #' @param width     width of saved plot
 #' @param return_plot whether to return the plots [default: FALSE]
 #' @param return_coords whether to return the plots coordinates [default: FALSE]
+#' @param ...       additionaly arguments to pass to SingleHexmapClonotypes
 #'
-#' @return a hexmap plot
-#'
-#' @import dplyr
+#' @return a serie of hexmap plots
 #'
 #' @export
 
 HexmapClonotypes <- function(db,
                              split.by = NULL,
-                             ordered = TRUE,
-                             highlight = "c_call",
-                             highlight_col = list("c_call" = c(
+                             order.by = NULL,
+                             color.by = NULL,
+                             palette = list("c_call" = c(
                                "IGHM" = "green", "IGHD" = "lightgreen", "IGHA1" = "orange", "IGHA2" = "red",
                                "IGHG1" = "blue", "IGHG2" = "lightblue", "IGHG3" = "lightblue", "IGHG4" = "lightblue",
                                "IGHE" = "brown"
                              )),
                              prefix = NULL,
                              plots_folder = "Hexbin_plots",
-                             use_chain = "IGH",
-                             locus = "locus",
                              cell_id = "cell_id",
                              clone_id = "clone_id",
+                             use_chain = "IGH",
+                             locus = "locus",
                              productive = "productive",
                              productive_only = TRUE,
-                             radius = 1,
-                             padding = 0.2,
-                             shape = c("hex", "circle"),
-                             seed = 42,
                              save_plot = TRUE,
                              save_as = c("pdf", "png"),
                              height = 6,
                              width = 6,
                              return_plot = FALSE,
-                             return_coords = FALSE) {
+                             return_coords = FALSE,
+                             ...) {
 
   save_as <- match.arg(save_as)
 
-  if (!any(use_chain %in% c("IGH", "IGL", "IGK"))) {
-    stop("use_chain should be one of IGH, IGL or IGK")
-  }
-  Plot_db <- db %>%
-    dplyr::filter(!!rlang::sym(locus) %in% use_chain)
+  stopifnot(all(c(cell_id, clone_id) %in% colnames(db)))
   
-  if(nrow(Plot_db) == 0){
-    stop("no cell with an ", paste(use_chain, collapse = " or "), " contig; consider updating the use_chain argument [default = IGH]")
+  #filter on particular sequences
+  if(!is.null(use_chain)){
+    stopifnot(locus %in% colnames(db))
+    if (!any(use_chain %in% c("IGH", "IGL", "IGK"))) {
+      stop("use_chain should be one of IGH, IGL or IGK")
+    }
+    Plot_db <- db %>%
+      dplyr::filter(!!rlang::sym(locus) %in% use_chain)
+    
+    if(nrow(Plot_db) == 0){
+      stop("no cell with an ", paste(use_chain, collapse = " or "), " contig; consider updating the use_chain argument [default = IGH]")
+    }
+  } else {
+    Plot_db <- db
   }
   
+  if(productive_only){
+    stopifnot(productive %in% colnames(Plot_db))
+    Plot_db <- Plot_db %>%
+      dplyr::filter(!!rlang::sym(productive))
+  }
+  
+  #filter missing clone_id
   if(any(is.na(Plot_db[[clone_id]]))){
     warning("some cell_ids are not associated with a clone_id (clone_id == NA), will be removed")
     Plot_db <- Plot_db %>%
       dplyr::filter(!is.na(!!rlang::sym(clone_id)))
   }
-  if (!highlight %in% colnames(Plot_db)) {
-    stop(highlight, " column not found in the provided dataframe")
+  
+  if(!is.null(color.by)){
+    stopifnot(color.by %in% colnames(Plot_db))
+  } else {
+    color.by <- order.by
   }
-  if(productive_only){
-    Plot_db <- Plot_db %>%
-      dplyr::filter(!!rlang::sym(productive))
-  }
-
-  if (!clone_id %in% colnames(db)) {
-    stop(paste0("missing", clone_id, "collumn"))
+  
+  if (color.by %in% names(palette)) {
+    palette <- palette[[color.by]]
+    Plot_db[[color.by]] <- ifelse(Plot_db[[color.by]] %in% names(palette), Plot_db[[color.by]], NA)
+  } else {
+    # palette <- NULL
+    if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+      message("'RColorBrewer' not installed — please provide you own color palette using the 'palette' argument")
+      return(invisible(NULL))
+    }
+    levels <- levels(droplevels(as.factor(Plot_db[[color.by]])))
+    if (!requireNamespace("grDevices", quietly = TRUE)) {
+      if(length(levels) <= 12) {
+        palette <- RColorBrewer::brewer.pal(n = length(levels), name = "Paired")
+      } else {
+        message("'grDevices' not installed — please provide you own color palette using the 'palette' argument to accomodate ",length(levels)," levels")
+        return(invisible(NULL))
+      }
+    } else {
+      palette <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 12, name = "Paired"))(length(levels))
+    }
+    names(palette) <- levels
   }
 
   if (!stringr::str_ends(plots_folder, "/")) {
@@ -1122,51 +1145,26 @@ HexmapClonotypes <- function(db,
     }
   }
 
-  if (highlight %in% names(highlight_col)) {
-    palette <- highlight_col[[highlight]]
-    Plot_db[[highlight]] <- ifelse(Plot_db[[highlight]] %in% names(palette), Plot_db[[highlight]], NA)
-  } else {
-    # palette <- NULL
-    if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
-      message("'RColorBrewer' not installed — please provide you own color palette using the 'highlight_col' argument")
-      return(invisible(NULL))
-    }
-    levels <- levels(droplevels(as.factor(Plot_db[[highlight]])))
-    if (!requireNamespace("grDevices", quietly = TRUE)) {
-      if(length(levels) <= 12) {
-        palette <- RColorBrewer::brewer.pal(n = length(levels), name = "Paired")
-      } else {
-        message("'grDevices' not installed — please provide you own color palette using the 'highlight_col' argument to accomodate ",length(levels)," levels")
-        return(invisible(NULL))
-      }
-    } else {
-      palette <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 12, name = "Paired"))(length(levels))
-    }
-    names(palette) <- levels
-    #Plot_db$origin <- Plot_db[[highlight]]
-  }
-
   if (is.null(split.by)) {
     if (!is.null(prefix)) {
       title <- paste0(prefix, "_all_sequences\n (n=", nrow(Plot_db), ")")
-      filename <- paste0(plots_folder, prefix, "/", prefix, "_all_sequences_by_", highlight, ".pdf")
+      filename <- paste0(plots_folder, prefix, "/", prefix, "_all_sequences_by_", color.by, ".pdf")
     } else {
       title <- paste("All_sequences\n (n=", nrow(Plot_db), ")")
-      filename <- paste0(plots_folder, "All_sequences_by_", highlight, ".pdf")
+      filename <- paste0(plots_folder, "All_sequences_by_", color.by, ".pdf")
     }
     p <- SingleHexmapClonotypes(Plot_db,
-      ordered = ordered,
-      radius = radius,
-      padding = padding,
-      fill_col = highlight,
-      cell_id = cell_id,
-      clone_id = clone_id,
-      title = title,
-      shape = shape,
-      palette = palette,
-      seed = seed,
-      return_coords = FALSE
-    )
+                                order.by = order.by,
+                                color.by = color.by,
+                                palette = palette,
+                                cell_id = cell_id,
+                                clone_id = clone_id,
+                                locus = NULL,
+                                use_chain = NULL,
+                                productive_only = FALSE,
+                                title = title,
+                                return_coords = FALSE,
+                                ...)
 
     if (save_plot) {
       if (save_as == "pdf") {
@@ -1206,25 +1204,25 @@ HexmapClonotypes <- function(db,
       data <- groups$data[[i]]
       if (!is.null(prefix)) {
         title <- paste0(prefix, "_", group_name, "\n (n=", nrow(data), ")")
-        filename <- paste0(plots_folder, prefix, "/", prefix, "_", group_name, "_by_", highlight, ".pdf")
+        filename <- paste0(plots_folder, prefix, "/", prefix, "_", group_name, "_by_", color.by, ".pdf")
       } else {
         title <- paste(group_name, "\n (n=", nrow(data), ")")
-        filename <- paste0(plots_folder, group_name, "_by_", highlight, ".pdf")
+        filename <- paste0(plots_folder, group_name, "_by_", color.by, ".pdf")
       }
       # Plot data
       p <- SingleHexmapClonotypes(data,
-        ordered = ordered,
-        radius = radius,
-        padding = padding,
-        fill_col = highlight,
-        cell_id = cell_id,
-        clone_id = clone_id,
-        title = title,
-        shape = shape,
-        palette = palette,
-        seed = seed,
-        return_coords = FALSE
-      )
+                                  order.by = order.by,
+                                  color.by = color.by,
+                                  palette = palette,
+                                  cell_id = cell_id,
+                                  clone_id = clone_id,
+                                  locus = NULL,
+                                  use_chain = NULL,
+                                  productive_only = FALSE,
+                                  title = title,
+                                  return_coords = FALSE,
+                                  ...)
+      
       if (save_plot) {
         if (save_as == "pdf") {
           pdf(file = filename, height = height, width = width)
@@ -1251,54 +1249,55 @@ HexmapClonotypes <- function(db,
 #' Plots individual hexmap plots and save as pdf
 #'
 #' \code{SingleHexmapClonotypes} Plots individual hexmap plots and save as pdf
-#' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
-#' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
-#' @param ordered   whether to order clones based on size and highlighing parameter
-#' @param highlight name of the column use to color each clone [default: "c_call].
-#' @param highlight_col color scheme to use for coloring clones
-#' @param prefix    prefix to use for saved files
+#' @param db         an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
+#' @param order_type whether to order clones radially ("pie" chart style) or as concentric circle ("circle")
+#' @param order.by  name of the column use to order each clone.
+#' @param max_size_order maximum size of clones to reorder [default: max size of clones if set to NULL]
+#' @param color.by  name of the column use to color each clone [default: order.by].
+#' @param palette   a named color palette to use for plotting (should be the same size as the number of levels in color.by)
+#' @param highlight_sizes whether to overlay circles on the graph showing limits between provided size [default: c(1, 5)], set to NULL to prevent adding these circles.
+#' @param highlight_labels names for highlighed sizes region [default: 1, 2-5, >5]
+#' @param title     title for plot [default: "All sequences"]
 #' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
 #' @param locus     name of column containing locus values.
 #' @param cell_id   name of the column containing cell identifier.
 #' @param clone_id  name of the column containing cell identifier.
-#' @param groups_to_plot which groups to plot
-#' @param col.line  color for lines in donut plot
-#' @param plots_folder name for export folder [default: "Donut_plots"]
 #' @param productive  name of column containing productive calls.
 #' @param productive_only whether to exclude non productive sequences [default: TRUE]
-#' @param radius    shape radius, passed to packcircles
+#' @param radius    radius size, passed to packcircles
 #' @param padding   padding, passed to packcircles
 #' @param shape     shape to use [default: hex]
 #' @param seed      random seed for plotting
-#' @param save_plot whether to save the plots [default: TRUE]
-#' @param save_as   format to save the plot ("pdf", or "png") [default: pdf]
-#' @param height    height of saved plot
-#' @param width     width of saved plot
-#' @param return_plot whether to return the plots [default: FALSE]
 #' @param return_coords whether to return the plots coordinates [default: FALSE]
 #'
 #' @return a hexmap plot
 #'
-#' @import dplyr
-#' @import tibble
-#' @import purrr
-#'
 #' @keywords internal
 #' 
 
-SingleHexmapClonotypes <- function(data,
-                                   ordered = TRUE,
-                                   radius = 1,
-                                   padding = 0.2,
-                                   fill_col = "origin",
+SingleHexmapClonotypes <- function(db,
+                                   order_type = c("pie", "circle"),
+                                   order.by = NULL,
+                                   color.by = NULL,
+                                   palette = NULL,
+                                   #max_colors = 10,
+                                   highlight_sizes = c(1, 5),
+                                   highlight_labels = NULL,
+                                   max_size_order = NULL,
                                    cell_id = "cell_id",
                                    clone_id = "clone_id",
+                                   use_chain = "IGH",
+                                   locus = "locus",
+                                   productive = "productive",
+                                   productive_only = TRUE,
                                    title = "All_sequences",
+                                   radius = 1,
+                                   padding = 0.2,
                                    shape = c("hex", "circle"),
-                                   palette = NULL,
                                    seed = 42,
-                                   max_colors = 10,
-                                   return_coords = FALSE) {
+                                   return_coords = FALSE
+                                   ) {
+  
   if (!requireNamespace("ggplot2", quietly = TRUE)) {
     message("Optional: 'ggplot2' not installed — skipping plot.")
     return(invisible(NULL))
@@ -1328,33 +1327,70 @@ SingleHexmapClonotypes <- function(data,
 
   shape <- match.arg(shape)
 
-  stopifnot(all(c(cell_id, clone_id, fill_col) %in% colnames(data)))
+  stopifnot(all(c(cell_id, clone_id) %in% colnames(db)))
   set.seed(seed)
 
-  if (any(duplicated(data[[cell_id]]))) {
-    stop("duplicated ", cell_id, "s, fiilter before running HexmapClonotypes()")
+  if (any(duplicated(db[[cell_id]]))) {
+    stop("duplicated ", cell_id, "s, filter before running HexmapClonotypes()")
   }
 
-  #if (ordered) {
-  #  data <- data %>%
-  #    dplyr::arrange(fill_col)
-  #}
+  #filter on particular sequences
+  if(!is.null(use_chain)){
+    if (!any(use_chain %in% c("IGH", "IGL", "IGK"))) {
+      stop("use_chain should be one of IGH, IGL or IGK")
+    }
+    Plot_db <- db %>%
+      dplyr::filter(!!rlang::sym(locus) %in% use_chain)
+    
+    if(nrow(Plot_db) == 0){
+      stop("no cell with an ", paste(use_chain, collapse = " or "), " contig; consider updating the use_chain argument [default = IGH]")
+    }
+  } else {
+    Plot_db <- db
+  }
+  
+  if(productive_only){
+    stopifnot(productive %in% colnames(Plot_db))
+    Plot_db <- Plot_db %>%
+      dplyr::filter(!!rlang::sym(productive))
+  }
+  
+  #filter missing clone_id
+  if(any(is.na(Plot_db[[clone_id]]))){
+    warning("some cell_ids are not associated with a clone_id (clone_id == NA), will be removed")
+    Plot_db <- Plot_db %>%
+      dplyr::filter(!is.na(!!rlang::sym(clone_id)))
+  }
+  
+  #order Plot_db based on provided order.by 
+  #can be different from color.by but if color.byl = NULL then default to order.by
+  order_type <- match.arg(order_type)
+  
+  if (!is.null(order.by)) {
+    stopifnot(order.by %in% colnames(Plot_db))
+    Plot_db <- Plot_db %>%
+      dplyr::arrange(order.by)
+  }
+  if (is.null(color.by)) {
+    color.by <- order.by
+  }
+  stopifnot(color.by %in% colnames(Plot_db))
 
   # Step 1: Compute dominant origin per clone and add it to all sequence rows
-  dominant_origin_lookup <- data %>%
-    dplyr::count(!!rlang::sym(clone_id), !!rlang::sym(fill_col)) %>%
+  dominant_origin_lookup <- Plot_db %>%
+    dplyr::count(!!rlang::sym(clone_id), !!rlang::sym(color.by)) %>%
     dplyr::group_by(!!rlang::sym(clone_id)) %>%
     dplyr::slice_max(n, with_ties = FALSE) %>%
     dplyr::ungroup() %>%
-    dplyr::rename(dominant_origin = !!rlang::sym(fill_col)) %>%
+    dplyr::rename(dominant_origin = !!rlang::sym(color.by)) %>%
     dplyr::select(!!rlang::sym(clone_id), dominant_origin)
 
   # Add dominant origin to all rows
-  data <- data %>%
+  Plot_db <- Plot_db %>%
     left_join(dominant_origin_lookup, by = clone_id)
 
   # Now count total number of sequences per clone
-  clone_sizes <- data %>%
+  clone_sizes <- Plot_db %>%
     dplyr::count(!!rlang::sym(clone_id), name = "n") %>%
     dplyr::left_join(dominant_origin_lookup, by = clone_id) %>%
     dplyr::arrange(desc(n), desc(dominant_origin))
@@ -1387,25 +1423,75 @@ SingleHexmapClonotypes <- function(data,
 
     list(coords = coords, R = R)
   }
+  
+  # Step 2: Lay out clone CENTROIDS (x_c, y_c) for every clone.
+  #
+  # Baseline: pack ALL clones together by size via
+  # packcircles::circleProgressiveLayout() -- larger clones end up closer
+  # to the center. This is exactly what order_type = "circle" does
+  #
+  # If order_type = "pie", for all clone of size up to max_size_order, 
+  # we will reorder all clone of size 0 < i < max_size_order based on angle 
+  # reusing the computed positions that are technically interchangeable for 
+  # clone of identical size as the per-clone hex grid calculation is performed 
+  # AFTER centroid_layout calculation and reordering
 
-  packed_clones <- lapply(clone_sizes$n, pack_within_clone)
-  clone_sizes$R <- sapply(packed_clones, function(x) x$R)
+  packed_all <- lapply(clone_sizes$n, pack_within_clone)
+  clone_sizes$R <- sapply(packed_all, function(x) x$R)
 
   # Arrange clone centroids in circular layout (largest in center)
-  theta <- seq(0, 2 * pi, length.out = nrow(clone_sizes) + 1)[-1]
-  radial_dist <- scales::rescale(rev(clone_sizes$R), to = c(0, 1))
+  #theta <- seq(0, 2 * pi, length.out = nrow(clone_sizes) + 1)[-1]
+  #radial_dist <- scales::rescale(rev(clone_sizes$R), to = c(0, 1))
+  
   centroid_layout <- packcircles::circleProgressiveLayout(clone_sizes$R, sizetype = "radius") %>%
-    as_tibble() %>%
-    rename(x_c = x, y_c = y)
+    tibble::as_tibble() %>%
+    dplyr::rename(x_c = x, y_c = y)
 
-  centroid_layout$clone_id <- clone_sizes$clone_id
+  centroid_layout[[clone_id]] <- clone_sizes[[clone_id]]
   centroid_layout$R <- clone_sizes$R
   centroid_layout$n <- clone_sizes$n
-
-
+  centroid_layout$angle <- (atan2(centroid_layout$x_c, centroid_layout$y_c) * 180 / pi) %% 360
+  
+  if (order_type == "pie") {
+    if (is.null(max_size_order)) {
+      max_size_order <- max(centroid_layout$n)
+    }
+    for(i in 1:max_size_order){
+      clones_to_reorder <- centroid_layout %>% 
+        dplyr::filter(n == i)
+      
+      if (nrow(clones_to_reorder) > 0) {
+        #doublets$angle <- acos(doublets$x_c / sqrt(doublets$x_c^2 + doublets$y_c^2))
+        ordered_clones <-  clones_to_reorder %>% dplyr::arrange(angle)
+        
+        clone_ids <- clones_to_reorder[[clone_id]]
+        
+        #artificially order singleton clone_id based on order.by infos
+        clones_meta <- Plot_db[Plot_db[[clone_id]] %in% clone_ids, , drop = FALSE] %>%
+          dplyr::distinct(!!rlang::sym(clone_id), .keep_all = TRUE) %>%
+          dplyr::select(!!rlang::sym(clone_id), !!rlang::sym(order.by)) %>%
+          dplyr::arrange(!!rlang::sym(order.by), !!rlang::sym(clone_id))
+        
+        ordered_clones[[clone_id]] <- clones_meta[[clone_id]]
+        
+        centroid_layout <- centroid_layout %>%
+          dplyr::filter(n != i) %>%
+          dplyr::bind_rows(ordered_clones)
+      }
+    }
+  }
+  
+  # Step 3: Build the per-clone hex grid AFTER centroid_layout is finalized, and in
+  # centroid_layout's own row order. This keeps clone i's hex grid matched
+  # to the correct centroid regardless of which branch above produced the
+  # layout (important once row order can differ from clone_sizes, as it
+  # does in the pie_order_singletons branch).
+  
+  packed_clones <- lapply(centroid_layout$n, pack_within_clone)
+  
   # Add positions to each sequence
-  data <- data %>%
-    dplyr::left_join(centroid_layout, by = "clone_id") %>%
+  Plot_db <- Plot_db %>%
+    dplyr::left_join(centroid_layout, by = clone_id) %>%
     dplyr::arrange(desc(n))
 
   coords_list <- vector("list", nrow(centroid_layout))
@@ -1413,25 +1499,25 @@ SingleHexmapClonotypes <- function(data,
   for (i in seq_len(nrow(centroid_layout))) {
     n <- centroid_layout$n[i]
     clone <- centroid_layout$clone_id[i]
-    subset <- data %>%
+    subset <- Plot_db %>%
       dplyr::filter(!!rlang::sym(clone_id) == clone)
-    if (ordered) {
+    if (!is.null(order.by)) {
       subset <- subset %>%
-        dplyr::arrange(!!rlang::sym(fill_col))
+        dplyr::arrange(!!rlang::sym(order.by))
     }
     coords <- packed_clones[[i]]$coords
     coords[[cell_id]] <- subset[[cell_id]]
     coords$x <- coords$dx + centroid_layout$x_c[i]
     coords$y <- coords$dy + centroid_layout$y_c[i]
-    #coords[[fill_col]] <- subset[[fill_col]]
-    coords[[fill_col]] <- rep(subset[[fill_col]], length.out = nrow(coords))
+    #coords[[color.by]] <- subset[[color.by]]
+    coords[[color.by]] <- rep(subset[[color.by]], length.out = nrow(coords))
     
     coords_list[[i]] <- coords
   }
 
   plot_data <- bind_rows(coords_list)
 
-  # Step 5: Build hexagon coordinates manually
+  # Step 4: Build hexagon coordinates manually
   generate_hex_coords <- function(x_center, y_center, r, id, fill_val) {
     angle <- seq(0, 2 * pi, length.out = 7)
     dplyr::tibble(
@@ -1444,7 +1530,7 @@ SingleHexmapClonotypes <- function(data,
 
   if (shape == "hex") {
     hex_df <- purrr::pmap_dfr(
-      list(plot_data$x, plot_data$y, plot_data$r, plot_data[[cell_id]], plot_data[[fill_col]]),
+      list(plot_data$x, plot_data$y, plot_data$r, plot_data[[cell_id]], plot_data[[color.by]]),
       function(x, y, r, id, fill_val) {
         angle <- seq(0, 2 * pi, length.out = 7)
         dplyr::tibble(
@@ -1457,28 +1543,27 @@ SingleHexmapClonotypes <- function(data,
     )
   } else {
     hex_df <- plot_data %>%
-      dplyr::mutate(x0 = x, y0 = y, group = cell_id, fill = .data[[fill_col]])
+      dplyr::mutate(x0 = x, y0 = y, group = cell_id, fill = .data[[color.by]])
   }
 
-  # Step 6: Assign colors
+  # Step 5: Assign colors
   hex_df$fill <- factor(hex_df$fill)
+  fill_levels <- levels(hex_df$fill)
+  
   if (is.null(palette)) {
-    fill_levels <- levels(hex_df$fill)
-    colors <- scales::hue_pal()(min(length(fill_levels), max_colors))
+    colors <- scales::hue_pal()(length(fill_levels))
     names(colors) <- fill_levels
   } else {
     colors <- palette
   }
 
-  # Step 7: Plot
+  # Step 6: Plot
   p <- ggplot2::ggplot(hex_df, ggplot2::aes(x = x, y = y, group = group, fill = fill)) +
     {
       if (shape == "hex") {
         ggplot2::geom_polygon(color = NA, alpha = 0.9)
       } else {
-        ggforce::geom_circle(aes(x0 = x0, y0 = y0, r = r),
-          color = NA, alpha = 0.9
-        )
+        ggforce::geom_circle(aes(x0 = x0, y0 = y0, r = r), color = NA, alpha = 0.9)
       }
     } +
     ggplot2::coord_equal() +
@@ -1486,10 +1571,117 @@ SingleHexmapClonotypes <- function(data,
       values = colors
       ) +
     ggplot2::theme_void() +
-    ggplot2::labs(title = title, fill = fill_col)
+    ggplot2::labs(title = title, fill = color.by)
 
+  # Step 7 (optional): 
+  # draw a small set of SHARED concentric "target" rings across the whole plot, 
+  # one per clone-size bin, rather than an outline around every individual clone.
+  #
+  # Bins are ordered from largest clone size (innermost ring) to smallest
+  # / singletons (outermost ring). For each bin, we find how far any
+  # clone belonging to that bin *or a larger-size bin* reaches from the
+  # origin, and draw the ring there. This guarantees properly nested,
+  # non-crossing circles: the outermost ring (singletons, size 1) encloses
+  # the entire plot; the innermost ring encloses just the biggest clones.
+  
+  if (!is.null(highlight_sizes)) {
+    breaks_vec <- c(0, sort(unique(highlight_sizes)), Inf)
+    
+    if (is.null(highlight_labels)) {
+      highlight_labels <- vapply(seq_len(length(breaks_vec) - 1), function(i) {
+        lo <- breaks_vec[i] + 1
+        hi <- breaks_vec[i + 1]
+        if (is.infinite(hi)) {
+          paste0(">", breaks_vec[i])
+        } else if (lo == hi) {
+          as.character(lo)
+        } else {
+          paste0(lo, "-", hi)
+        }
+      }, character(1))
+    }
+    
+    # highlight_labels is ascending by size (e.g. "1", "2-5", "6-10", ">10")
+    centroid_layout$size_bin <- cut(
+      centroid_layout$n,
+      breaks = breaks_vec,
+      labels = highlight_labels,
+      right = TRUE
+    )
+    centroid_layout$dist_reach <- sqrt(centroid_layout$x_c^2 + centroid_layout$y_c^2) + centroid_layout$R
+    
+    # process bins from LARGEST clone size to smallest (size 1 last),
+    # since larger clones sit closer to the origin
+    bin_levels_desc <- rev(highlight_labels)
+    
+    ring_radius <- numeric(length(bin_levels_desc))
+    cum_max <- 0
+    for (i in seq_along(bin_levels_desc)) {
+      lvl <- bin_levels_desc[i]
+      reach_this_bin <- centroid_layout$dist_reach[centroid_layout$size_bin == lvl]
+      if (length(reach_this_bin) > 0) {
+        cum_max <- max(cum_max, max(reach_this_bin))
+      }
+      ring_radius[i] <- cum_max - 1
+    }
+    
+    ring_df <- dplyr::tibble(
+      size_bin = factor(bin_levels_desc, levels = bin_levels_desc),
+      r = ring_radius
+    )
+    
+    # Rings on the main plot: plain black dotted circles, no color legend
+    # generated from this layer (the legend is built separately below).
+    p <- p +
+      ggforce::geom_circle(
+        data = ring_df,
+        ggplot2::aes(x0 = 0, y0 = 0, r = r),
+        inherit.aes = FALSE, 
+        color = "black", 
+        linetype = "dotted",
+        fill = NA, 
+        linewidth = 0.5
+      )
+    
+    # --- Standalone bullseye legend: evenly spaced concentric circles
+    # (not to scale with the main plot), each band labeled with its
+    # size-bin, from largest clone size (center) to size 1 (outer edge). ---
+    n_bins <- nrow(ring_df)
+    legend_r <- seq_len(n_bins)             # evenly spaced: 1, 2, 3, ...
+    label_r  <- legend_r - 0.5              # place label mid-band
+    label_r[1] <- 0                         # innermost label at the center
+    
+    legend_circles_df <- dplyr::tibble(r = legend_r)
+    legend_labels_df <- dplyr::tibble(
+      r = label_r,
+      label = as.character(ring_df$size_bin)
+    )
+    
+    size_legend <- ggplot2::ggplot() +
+      ggforce::geom_circle(
+        data = legend_circles_df,
+        ggplot2::aes(x0 = 0, y0 = 0, r = r),
+        color = "black", linetype = "dotted", fill = NA, linewidth = 0.5
+      ) +
+      ggplot2::geom_text(
+        data = legend_labels_df,
+        ggplot2::aes(x = 0, y = r, label = label),
+        size = 3
+      ) +
+      ggplot2::coord_equal(clip = "off") +
+      ggplot2::theme_void() +
+      ggplot2::labs(title = "Clone size")
+    
+    if (requireNamespace("patchwork", quietly = TRUE)) {
+      p <- p + size_legend + patchwork::plot_layout(widths = c(4, 1))
+    } else {
+      message("Optional: 'patchwork' not installed — returning list(plot = ..., size_legend = ...) instead of a combined figure.")
+      p <- list(plot = p, size_legend = size_legend)
+    }
+  }
+  
   if (return_coords) {
-    return(list(plot = p, coords = plot_data))
+    return(list(plot = p, coords = plot_data, centroids = centroid_layout))
   } else {
     return(p)
   }
