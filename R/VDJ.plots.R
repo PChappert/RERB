@@ -1266,7 +1266,8 @@ HexmapClonotypes <- function(db,
 #' @param productive_only whether to exclude non productive sequences [default: TRUE]
 #' @param radius    radius size, passed to packcircles
 #' @param padding   padding, passed to packcircles
-#' @param shape     shape to use [default: hex]
+#' @param cell_shape shape to use for cells inside clones [default: hex]
+#' @param clone_shape shape to use for clones [default: circle]
 #' @param seed      random seed for plotting
 #' @param return_coords whether to return the plots coordinates [default: FALSE]
 #'
@@ -1293,7 +1294,8 @@ SingleHexmapClonotypes <- function(db,
                                    title = "All_sequences",
                                    radius = 1,
                                    padding = 0.2,
-                                   shape = c("hex", "circle"),
+                                   cell_shape = c("hex", "circle"),
+                                   clone_shape = c("hex", "circle", "square"),
                                    seed = 42,
                                    return_coords = FALSE
                                    ) {
@@ -1325,7 +1327,8 @@ SingleHexmapClonotypes <- function(db,
     return(invisible(NULL))
   }
 
-  shape <- match.arg(shape)
+  cell_shape <- match.arg(cell_shape)
+  clone_shape <- match.arg(clone_shape)
 
   stopifnot(all(c(cell_id, clone_id) %in% colnames(db)))
   set.seed(seed)
@@ -1396,8 +1399,8 @@ SingleHexmapClonotypes <- function(db,
     dplyr::arrange(desc(n), desc(dominant_origin))
 
   # Pack within each clone
-  pack_within_clone <- function(n) {
-    # Compute number of rows/cols to fit `n` tightly
+  pack_within_cloneSquare <- function(n) {
+   # Compute number of rows/cols to fit `n` tightly
     cols <- ceiling(sqrt(n))
     rows <- ceiling(n / cols)
 
@@ -1417,11 +1420,95 @@ SingleHexmapClonotypes <- function(db,
     # Center layout around (0, 0)
     coords$dx <- coords$dx - mean(coords$dx)
     coords$dy <- coords$dy - mean(coords$dy)
+    
+    # reorder from right to left
+    coords <- coords %>% dplyr::arrange(desc(dx))
 
     # Estimate bounding radius for spacing clones apart
     R <- max(sqrt(coords$dx^2 + coords$dy^2)) + radius + padding
 
     list(coords = coords, R = R)
+  }
+  
+  pack_within_cloneHexagon <- function(n) {
+    # Hex spacing: flat-topped hexes, using axial (q, r) coordinates
+    dx <- radius * 3 / 2      # horizontal distance between centers (per q step)
+    dy <- sqrt(3) * radius    # vertical distance between centers (per r step)
+    
+    # The 6 unit steps between neighboring hexes in axial coordinates
+    directions <- list(c(1, 0), c(1, -1), c(0, -1), c(-1, 0), c(-1, 1), c(0, 1))
+    
+    # Generate hex positions ring by ring outward from the center (1 center
+    # hex, then rings of 6, 12, 18, ... hexes) -- this fills a roughly
+    # circular/hexagonal blob instead of a rectangular row x col grid.
+    axial <- list(c(0, 0))
+    k <- 1
+    while (length(axial) < n) {
+      hex <- k * directions[[5]]  # jump to the start of ring k
+      for (i in 1:6) {
+        for (j in seq_len(k)) {
+          axial[[length(axial) + 1]] <- hex
+          hex <- hex + directions[[i]]
+        }
+      }
+      k <- k + 1
+    }
+    axial <- axial[seq_len(n)]  # trim to exactly n hexes (may cut a ring short)
+    
+    q <- vapply(axial, `[`, numeric(1), 1)
+    r <- vapply(axial, `[`, numeric(1), 2)
+    
+    coords <- data.frame(
+      dx = dx * q,
+      dy = dy * (r + q / 2),
+      r = radius
+    )
+    
+    # Center layout around (0, 0)
+    coords$dx <- coords$dx - mean(coords$dx)
+    coords$dy <- coords$dy - mean(coords$dy)
+    
+    # reorder from right to left instead of inside/out
+    coords <- coords %>% dplyr::arrange(desc(dx))
+    
+    # Estimate bounding radius for spacing clones apart
+    R <- max(sqrt(coords$dx^2 + coords$dy^2)) + radius + padding
+    
+    list(coords = coords, R = R)
+  }
+  
+  pack_within_cloneCircle <- function(n) {
+    # Pack n equal-sized circles (one per sequence) as tightly as possible;
+    # circleProgressiveLayout's greedy packing naturally produces a round
+    # blob for equal-sized circles, rather than a rectangular grid.
+    packed <- packcircles::circleProgressiveLayout(rep(radius, n), sizetype = "radius")
+    
+    coords <- data.frame(
+      dx = packed$x,
+      dy = packed$y,
+      r  = radius
+    )
+    
+    # Center layout around (0, 0)
+    coords$dx <- coords$dx - mean(coords$dx)
+    coords$dy <- coords$dy - mean(coords$dy)
+    
+    # reorder from right to left instead of circular
+    coords <- coords %>% dplyr::arrange(desc(dx))
+    
+    # Estimate bounding radius for spacing clones apart
+    R <- max(sqrt(coords$dx^2 + coords$dy^2)) + radius + padding
+    
+    list(coords = coords, R = R)
+  }
+  
+  pack_within_clone <- function(clone_shape, n) {
+    switch(clone_shape,
+           square = pack_within_cloneSquare(n),
+           hex = pack_within_cloneHexagon(n),
+           circle = pack_within_cloneCircle(n),
+           stop("Unknown layout")
+    )
   }
   
   # Step 2: Lay out clone CENTROIDS (x_c, y_c) for every clone.
@@ -1439,9 +1526,10 @@ SingleHexmapClonotypes <- function(db,
   # clone of identical size as the per-clone hex grid calculation is performed 
   # AFTER centroid_layout calculation and reordering
 
-  packed_all <- lapply(clone_sizes$n, pack_within_clone)
+  #packed_all <- lapply(clone_sizes$n, pack_within_clone)
+  packed_all <- lapply(clone_sizes$n, function(x) pack_within_clone(clone_shape, x))
   clone_sizes$R <- sapply(packed_all, function(x) x$R)
-
+  
   centroid_layout <- packcircles::circleProgressiveLayout(clone_sizes$R, sizetype = "radius") %>%
     tibble::as_tibble() %>%
     dplyr::rename(x_c = x, y_c = y)
@@ -1480,13 +1568,14 @@ SingleHexmapClonotypes <- function(db,
     }
   }
   
-  # Step 3: Build the per-clone hex grid AFTER centroid_layout is finalized, and in
+  # Step 3: ReBuild the per-clone hex grid AFTER centroid_layout is finalized, and in
   # centroid_layout's own row order. This keeps clone i's hex grid matched
   # to the correct centroid regardless of which branch above produced the
   # layout (important once row order can differ from clone_sizes, as it
   # does in the pie_order_singletons branch).
   
-  packed_clones <- lapply(centroid_layout$n, pack_within_clone)
+  #packed_clones <- lapply(centroid_layout$n, pack_within_clone)
+  packed_clones <- lapply(centroid_layout$n, function(x) pack_within_clone(clone_shape, x))
   
   # Add positions to each sequence
   Plot_db <- Plot_db %>%
@@ -1527,7 +1616,7 @@ SingleHexmapClonotypes <- function(db,
     )
   }
 
-  if (shape == "hex") {
+  if (cell_shape == "hex") {
     hex_df <- purrr::pmap_dfr(
       list(plot_data$x, plot_data$y, plot_data$r, plot_data[[cell_id]], plot_data[[color.by]]),
       function(x, y, r, id, fill_val) {
@@ -1559,7 +1648,7 @@ SingleHexmapClonotypes <- function(db,
   # Step 6: Plot
   p <- ggplot2::ggplot(hex_df, ggplot2::aes(x = x, y = y, group = group, fill = fill)) +
     {
-      if (shape == "hex") {
+      if (cell_shape == "hex") {
         ggplot2::geom_polygon(color = NA, alpha = 0.9)
       } else {
         ggforce::geom_circle(aes(x0 = x0, y0 = y0, r = r), color = NA, alpha = 0.9)
