@@ -1021,15 +1021,15 @@ SingleDonutPlotClonotypes <- function(db,
 #' \code{HexmapClonotypes} Plots multiple donut plots and save as pdf
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
 #' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
-#' @param ordered   whether to order clones based on size and highlighing parameter
-#' @param color.by  name of the column use to color each clone [default: "c_call].
+#' @param order.by  name of the column use to order each clone
+#' @param color.by  name of the column use to color each clone [default: order.by].
 #' @param palette   color scheme to use for coloring clones
 #' @param prefix    prefix to use for saved files
-#' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
-#' @param locus     name of column containing locus values.
+#' @param plots_folder name for export folder [default: "Donut_plots"]
 #' @param cell_id   name of the column containing cell identifier.
 #' @param clone_id  name of the column containing cell identifier.
-#' @param plots_folder name for export folder [default: "Donut_plots"]
+#' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
+#' @param locus     name of column containing locus values.
 #' @param productive  name of column containing productive calls.
 #' @param productive_only whether to exclude non productive sequences [default: TRUE]
 #' @param save_plot whether to save the plots [default: TRUE]
@@ -1256,7 +1256,7 @@ HexmapClonotypes <- function(db,
 #' @param color.by  name of the column use to color each clone [default: order.by].
 #' @param palette   a named color palette to use for plotting (should be the same size as the number of levels in color.by)
 #' @param highlight_sizes whether to overlay circles on the graph showing limits between provided size [default: c(1, 5)], set to NULL to prevent adding these circles.
-#' @param highlight_labels names for highlighed sizes region [default: 1, 2-5, >5]
+#' @param size_labels names for highlighed sizes region [default: 1, 2-5, >5]
 #' @param title     title for plot [default: "All sequences"]
 #' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
 #' @param locus     name of column containing locus values.
@@ -1282,7 +1282,7 @@ SingleHexmapClonotypes <- function(db,
                                    palette = NULL,
                                    #max_colors = 10,
                                    highlight_sizes = c(1, 5),
-                                   highlight_labels = NULL,
+                                   size_labels = NULL,
                                    max_size_order = NULL,
                                    cell_id = "cell_id",
                                    clone_id = "clone_id",
@@ -1428,10 +1428,13 @@ SingleHexmapClonotypes <- function(db,
   #
   # Baseline: pack ALL clones together by size via
   # packcircles::circleProgressiveLayout() -- larger clones end up closer
-  # to the center. This is exactly what order_type = "circle" does
-  #
+  # to the center. 
+  # If order_type = "circle" clones of similar sizes are progressively lay out
+  # from the outside to the inside based on order.by, corresponding to the default 
+  # output from circleProgressiveLayout().
   # If order_type = "pie", for all clone of size up to max_size_order, 
-  # we will reorder all clone of size 0 < i < max_size_order based on angle 
+  # we will use the centroid outputs from circleProgressiveLayout() but
+  # reorder all clone of size 0 < i < max_size_order based on angle 
   # reusing the computed positions that are technically interchangeable for 
   # clone of identical size as the per-clone hex grid calculation is performed 
   # AFTER centroid_layout calculation and reordering
@@ -1439,10 +1442,6 @@ SingleHexmapClonotypes <- function(db,
   packed_all <- lapply(clone_sizes$n, pack_within_clone)
   clone_sizes$R <- sapply(packed_all, function(x) x$R)
 
-  # Arrange clone centroids in circular layout (largest in center)
-  #theta <- seq(0, 2 * pi, length.out = nrow(clone_sizes) + 1)[-1]
-  #radial_dist <- scales::rescale(rev(clone_sizes$R), to = c(0, 1))
-  
   centroid_layout <- packcircles::circleProgressiveLayout(clone_sizes$R, sizetype = "radius") %>%
     tibble::as_tibble() %>%
     dplyr::rename(x_c = x, y_c = y)
@@ -1587,8 +1586,8 @@ SingleHexmapClonotypes <- function(db,
   if (!is.null(highlight_sizes)) {
     breaks_vec <- c(0, sort(unique(highlight_sizes)), Inf)
     
-    if (is.null(highlight_labels)) {
-      highlight_labels <- vapply(seq_len(length(breaks_vec) - 1), function(i) {
+    if (is.null(size_labels)) {
+      size_labels <- vapply(seq_len(length(breaks_vec) - 1), function(i) {
         lo <- breaks_vec[i] + 1
         hi <- breaks_vec[i + 1]
         if (is.infinite(hi)) {
@@ -1601,18 +1600,18 @@ SingleHexmapClonotypes <- function(db,
       }, character(1))
     }
     
-    # highlight_labels is ascending by size (e.g. "1", "2-5", "6-10", ">10")
+    # size_labels is ascending by size (e.g. "1", "2-5", "6-10", ">10")
     centroid_layout$size_bin <- cut(
       centroid_layout$n,
       breaks = breaks_vec,
-      labels = highlight_labels,
+      labels = size_labels,
       right = TRUE
     )
     centroid_layout$dist_reach <- sqrt(centroid_layout$x_c^2 + centroid_layout$y_c^2) + centroid_layout$R
     
     # process bins from LARGEST clone size to smallest (size 1 last),
     # since larger clones sit closer to the origin
-    bin_levels_desc <- rev(highlight_labels)
+    bin_levels_desc <- rev(size_labels)
     
     ring_radius <- numeric(length(bin_levels_desc))
     cum_max <- 0
