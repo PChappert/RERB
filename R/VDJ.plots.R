@@ -1284,6 +1284,7 @@ SingleHexmapClonotypes <- function(db,
                                    #max_colors = 10,
                                    highlight_sizes = c(1, 5),
                                    size_labels = NULL,
+                                   size_line_type = "dashed",
                                    max_size_order = NULL,
                                    cell_id = "cell_id",
                                    clone_id = "clone_id",
@@ -1726,7 +1727,7 @@ SingleHexmapClonotypes <- function(db,
         ggplot2::aes(x0 = 0, y0 = 0, r = r),
         inherit.aes = FALSE, 
         color = "black", 
-        linetype = "dotted",
+        linetype = size_line_type,
         fill = NA, 
         linewidth = 0.5
       )
@@ -1749,7 +1750,7 @@ SingleHexmapClonotypes <- function(db,
       ggforce::geom_circle(
         data = legend_circles_df,
         ggplot2::aes(x0 = 0, y0 = 0, r = r),
-        color = "black", linetype = "dotted", fill = NA, linewidth = 0.5
+        color = "black", linetype = size_line_type, fill = NA, linewidth = 0.5
       ) +
       ggplot2::geom_text(
         data = legend_labels_df,
