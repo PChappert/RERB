@@ -316,7 +316,7 @@ time_and_log <- function(expr,
 }
 
 
-#### Function to quickly print an annotated table to the plot window usingb grid ####
+#### Function to quickly print an annotated table to the plot window using grid ####
 #' adds formatted title and subtitle to keep track of what is being printed
 #'
 #' \code{plot_recap_gtable}
@@ -518,7 +518,7 @@ excel_recap_table <- function(wb,
 #### Function to quickly export an annotated table() call to excel ####
 #' adds a new sheet with formatted VDJ data to an existing opened excel workbook
 #'
-#' \code{excel_VDJ_table}
+#' \code{excel_recap_VDJ}
 #'
 #' @param wb which workbook to write into
 #' @param sheet name of the sheet to write too. Will overwrite any data in it.
@@ -535,7 +535,7 @@ excel_recap_table <- function(wb,
 #' 
 #' @export
 #' 
-excel_VDJ_table <- function(wb,
+excel_recap_VDJ <- function(wb,
                             sheet,
                             df,
                             select_columns = NULL,
@@ -663,4 +663,9 @@ excel_VDJ_table <- function(wb,
       stack = TRUE
     )
   }
+}
+
+excel_VDJ_table <- function(...){
+  warning("excel_VDJ_table is deprecated, use excel_recap_VDJ instead")
+  excel_recap_VDJ(...)
 }
