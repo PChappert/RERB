@@ -1257,6 +1257,7 @@ HexmapClonotypes <- function(db,
 #' @param palette   a named color palette to use for plotting (should be the same size as the number of levels in color.by)
 #' @param highlight_sizes whether to overlay circles on the graph showing limits between provided size [default: c(1, 5)], set to NULL to prevent adding these circles.
 #' @param size_labels names for highlighed sizes region [default: 1, 2-5, >5]
+#' @param size_line_type passed to ggplot2, any of ggplot2 lyne type [default: dashed] 
 #' @param title     title for plot [default: "All sequences"]
 #' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
 #' @param locus     name of column containing locus values.
