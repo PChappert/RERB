@@ -136,6 +136,9 @@ summarizeBCRClones <- function(db,
 #' @param cell_id name of column containing cell_id values.
 #' @param full_HC_aa name of column containing full AA sequence for the heavy chain.
 #' @param full_LC_aa name of column containing full AA sequence for the light chain.
+#' @param HC_count number of time the HC chain should be repeated [default = 1]
+#' @param LC_count number of time the LC chain should be repeated [default = 1]
+#' @param antigen_count number of time the antigen chain should be repeated [default = 1], useful for dimer antigens
 #' @param useStructureTemplate which chain to use the structure template on ("all", for all chains; "none", for no chains; or any combination of "antigen", "HC" and "LC")
 #' @return
 #' one .json file containing all the requests ready for upload onto the AlphaFold3 server. HC, LC and Ag are submitted as three independant chains.
@@ -151,6 +154,9 @@ exportAF3json <- function(db,
                           cell_id = "cell_id",
                           full_HC_aa = "h_full_sequence_aa",
                           full_LC_aa = "l_full_sequence_aa",
+                          HC_count = 1,
+                          LC_count = 1,
+                          antigen_count = 1,
                           useStructureTemplate = c("all", "antigen", "HC", "LC", "none"),
                           return_db = FALSE){
   
@@ -185,6 +191,16 @@ exportAF3json <- function(db,
     }
   }
   
+  if(any(is.na(db[[cell_id]]))){
+    warning("Some rows are missing a cell_id and will be removed")
+  }
+  if(any(is.na(db[[full_HC_aa]]))){
+    warning("The following cell_ids are missing the full heavy chain AA sequence and will be removed: ", paste(db[[cell_id]][is.na(db[[full_HC_aa]])], collapse = "; "))
+  }
+  if(any(is.na(db[[full_LC_aa]]))){
+    warning("The following cell_ids are missing the full light chain AA sequence and will be removed: ", paste(db[[cell_id]][is.na(db[[full_LC_aa]])], collapse = "; "))
+  }
+  
   db <- db %>%
     dplyr::filter(!is.na(!!rlang::sym(cell_id)) & !is.na(!!rlang::sym(full_HC_aa)) & !is.na(!!rlang::sym(full_LC_aa)))
   
@@ -195,17 +211,17 @@ exportAF3json <- function(db,
       sequences = list(
         list(proteinChain = list(
           sequence = antigen_aa,
-          count = 1,
+          count = antigen_count,
           useStructureTemplate = useStructureTemplate_on["antigen"]
         )),
         list(proteinChain = list(
           sequence = db[[full_HC_aa]][i],
-          count = 1,
+          count = HC_count,
           useStructureTemplate = useStructureTemplate_on["HC"]
         )),
         list(proteinChain = list(
           sequence = db[[full_LC_aa]][i],
-          count = 1,
+          count = LC_count,
           useStructureTemplate = useStructureTemplate_on["LC"]
         ))
       ),
