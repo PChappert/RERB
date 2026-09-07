@@ -4496,7 +4496,9 @@ scFindClones <- function(db,
   }
 
   if(is.null(db) | !sequence %in% colnames(db) | !sequence_id %in% colnames(db)){
-    stop(paste0("no proper VDJ file provided"))
+    if(is.null(db)){stop(paste0("no proper VDJ file provided, db is empty"))}
+    if(!sequence %in% colnames(db)){stop(paste0("no proper VDJ file provided, missing sequence column"))}
+    if(!sequence_id %in% colnames(db)){stop(paste0("no proper VDJ file provided, missing sequence_id column"))}
   }
   
   if(only_heavy & only_light){
