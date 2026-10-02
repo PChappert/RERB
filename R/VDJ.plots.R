@@ -1020,7 +1020,7 @@ SingleDonutPlotClonotypes <- function(db,
 #'
 #' \code{HexmapClonotypes} Plots multiple donut plots and save as pdf
 #' @param db        an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
-#' @param split.by  name of column to use to group sequence when calculating clone size and frequencies.
+#' @param split.by  name of column(s) to use to group sequence when calculating clone size and frequencies.
 #' @param order.by  name of the column use to order each clone
 #' @param color.by  name of the column use to color each clone [default: order.by].
 #' @param palette   color scheme to use for coloring clones

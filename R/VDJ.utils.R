@@ -5374,7 +5374,7 @@ scFindClones <- function(db,
   # add expanded clone info:
   cloned_VDJ_db <- cloned_VDJ_db %>%
     dplyr::group_by(clone_id) %>%
-    dplyr::mutate(expanded_clone = n_distinct(!!rlang::sym(cell_id)) > 1) %>%
+    dplyr::mutate(expanded_clone = (n_distinct(!!rlang::sym(cell_id)) > 1 & !any(is.na(clone_id)))) %>%
     dplyr::ungroup()
   
   # reorder some columns:
@@ -5666,7 +5666,7 @@ scFindTCRClones <- function(db,
 
 addAIRRmetadata <- function(sc, vdj_db = NULL,
                             seq_type = c("Ig", "TCR"),
-                            import = c("bcr_info", "tcr_info", "clone_id", "expanded_clone", "sequence_id", "consensus_count", "umi_count", "locus",
+                            import = c("bcr_info", "tcr_info", "clone_id", "sequence_id", "consensus_count", "umi_count", "locus",
                                        "productive", "v_call", "d_call", "j_call", "c_call", "junction", "junction_aa", "junction_length",
                                        "mu_count", "mu_count_cdr_r", "mu_count_cdr_s", "mu_count_fwr_r", "mu_count_fwr_s",
                                        "is.VDJ_doublet", "is.VDJ_doublet.confidence", "is.nonB_VDJ_doublet", "is.nonB_VDJ_doublet.confidence"),
@@ -5674,7 +5674,7 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
                             cell_id = "cell_id",
                             clone_id = "clone_id",
                             split.by = NULL,
-                            commun_columns = c("bcr_info", "tcr_info", "clone_id", "expanded_clone", "is.VDJ_doublet", "is.VDJ_doublet.confidence", "is.nonB_VDJ_doublet", "is.nonB_VDJ_doublet.confidence"),
+                            commun_columns = c("bcr_info", "tcr_info", "clone_id", "is.VDJ_doublet", "is.VDJ_doublet.confidence", "is.nonB_VDJ_doublet", "is.nonB_VDJ_doublet.confidence"),
                             chains = list(TCR = list(tcra = "TCRA", tcrb = "TCRB", tcrg = "TCRG", tcrd = "TCRD"),
                                          BCR = list(igheavy = "IGH", iglight = c("IGL", "IGK")))){
 
@@ -5796,10 +5796,13 @@ addAIRRmetadata <- function(sc, vdj_db = NULL,
    dplyr::group_by(!!rlang::sym(clone_id)) %>%
    dplyr::mutate(
      clone_size = n(),  # Count occurrences of clone_id
-     clone_freq = n()/group_size # Frequency among group
-   ) %>%
+     clone_freq = n()/group_size, # Frequency among group
+     expanded_clone = dplyr::case_when(
+       n() >= 2 ~ "expanded",
+       .default = "not expanded")
+     ) %>%
    dplyr::rename_with(
-     ~ paste0(tolower(type), "_", .), all_of(c(clone_id, "clone_size", "clone_freq"))
+     ~ paste0(tolower(type), "_", .), all_of(c(clone_id, "clone_size", "clone_freq", "expanded_clone"))
    ) %>%
    dplyr::ungroup() %>%
    dplyr::select(!group_size) %>%
