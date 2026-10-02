@@ -291,19 +291,18 @@ extractAF3contacts <- function(db,
   } else if (is.character(type_of_run) && length(type_of_run) == 1 && type_of_run %in% names(db)) {
     db <- db %>% dplyr::mutate(type_of_run = .data[[type_of_run]])
   } else {
-    stop("`type_of_run` must be either 'local', 'server', or a column name in `db`.")
+    stop("`type_of_run` must be either 'local', 'alphafoldserver', or a column name in `db` in which values should be one of 'local' or 'alphafoldserver'.")
   }
   
+  args_list <- list(
+    main_folder = db$main_folder,
+    run_folder  = db$run_folder,
+    type_of_run = db$type_of_run
+  )
   predicted_contacts.list <- purrr::pmap(
-    c(
-      list(
-        main_folder = db$main_folder,
-        run_folder = db$run_folder,
-        type_of_run = db$type_of_run
-      ),
-      list(...)
-    ),
-    extractSingleAF3contacts
+    args_list, 
+    extractSingleAF3contacts, 
+    ...
   )
   names(predicted_contacts.list) <- db[[run_id]]
   
@@ -473,11 +472,11 @@ extractSingleAF3contacts <- function(main_folder,
   Ag_aa_seq <- unlist(strsplit(chains_aa[["Ag"]], split = ""))
   Ag_numbered_aa_seq <- paste0(Ag_aa_seq, (seq_along(Ag_aa_seq)+Ag_start_num-1))
   
-  HCvsAg_contacts <- contact_mat[grepl(names(chains[chains == "Ag"]), colnames(contact_mat)), grepl(names(chains[chains == "HC"]), rownames(contact_mat))]
+  HCvsAg_contacts <- contact_mat[grepl(names(chains[chains == "Ag"])[1], colnames(contact_mat)), grepl(names(chains[chains == "HC"]), rownames(contact_mat))]
   predicted_HC_contacts <- apply(HCvsAg_contacts, 1, max)
   names(predicted_HC_contacts) <- Ag_numbered_aa_seq
   
-  LCvsAg_contacts <- contact_mat[grepl(names(chains[chains == "Ag"]), colnames(contact_mat)), grepl(names(chains[chains == "LC"]), rownames(contact_mat))]
+  LCvsAg_contacts <- contact_mat[grepl(names(chains[chains == "Ag"])[1], colnames(contact_mat)), grepl(names(chains[chains == "LC"]), rownames(contact_mat))]
   predicted_LC_contacts <- apply(LCvsAg_contacts, 1, max)
   names(predicted_LC_contacts) <- Ag_numbered_aa_seq
   
