@@ -126,7 +126,7 @@ summarizeBCRClones <- function(db,
 #### Function to export a json with requests for Alphafold3 modeling of Antigen/Ig interactions ####
 #' export a Alphafold3 server formatted .json file
 #'
-#' \code{exportAF3json}
+#' \code{export_json}
 #' @param db a dataframe in the summarizeBCRClones() format with column for heavy and light chains full sequence at the aa level (use fullVDJreconstruction())
 #' @param antigen_name name of the antigen to model binding to (only used if no request_name is provided)
 #' @param antigen_aa sequence of the antigen to model binding to
@@ -139,26 +139,32 @@ summarizeBCRClones <- function(db,
 #' @param HC_count number of time the HC chain should be repeated [default = 1]
 #' @param LC_count number of time the LC chain should be repeated [default = 1]
 #' @param antigen_count number of time the antigen chain should be repeated [default = 1], useful for dimer antigens
+#' @param seeds which seeds to use, either numeric vector (i.e. c(1, 10, 100), which all three seeds used for all predictions) or a collumn in db containing required seeds. if set to NULL will automatically generate random seeds (as many as nb_seeds)
+#' @param nb_seeds how many random seeds to use
+#' @param model = one of "alphafold" or "openDDE"
 #' @param useStructureTemplate which chain to use the structure template on ("all", for all chains; "none", for no chains; or any combination of "antigen", "HC" and "LC")
 #' @return
 #' one .json file containing all the requests ready for upload onto the AlphaFold3 server. HC, LC and Ag are submitted as three independant chains.
 #'
 #' @export
 
-exportAF3json <- function(db,
-                          antigen_name,
-                          antigen_aa,
-                          request_name = NULL,
-                          json_name = "job_request",
-                          out_folder = "AF3_json_files/",
-                          cell_id = "cell_id",
-                          full_HC_aa = "h_full_sequence_aa",
-                          full_LC_aa = "l_full_sequence_aa",
-                          HC_count = 1,
-                          LC_count = 1,
-                          antigen_count = 1,
-                          useStructureTemplate = c("all", "antigen", "HC", "LC", "none"),
-                          return_db = FALSE){
+exportInference_json <- function(db,
+                        antigen_name,
+                        antigen_aa,
+                        request_name = NULL,
+                        json_name = "job_request",
+                        out_folder = "AF3_json_files/",
+                        cell_id = "cell_id",
+                        full_HC_aa = "h_full_sequence_aa",
+                        full_LC_aa = "l_full_sequence_aa",
+                        HC_count = 1,
+                        LC_count = 1,
+                        antigen_count = 1,
+                        seeds = NULL,
+                        nb_seeds = 1,
+                        model = c("alphafold", "openDDE"),
+                        useStructureTemplate = c("all", "antigen", "HC", "LC", "none"),
+                        return_db = FALSE){
   
   useStructureTemplate_on <- match.arg(useStructureTemplate, several.ok = TRUE)
   if("all" %in% useStructureTemplate_on){
@@ -203,36 +209,84 @@ exportAF3json <- function(db,
   
   db <- db %>%
     dplyr::filter(!is.na(!!rlang::sym(cell_id)) & !is.na(!!rlang::sym(full_HC_aa)) & !is.na(!!rlang::sym(full_LC_aa)))
+    
+  if(is.null(seeds)){
+    db <- db %>%
+      dplyr::mutate(
+        seed = lapply(1:nrow(.), function(x) sample(1:1e6, nb_seeds)) # random seed
+      )
+  } else if(seeds %in% colnames(db)){
+    db <- db %>%
+      dplyr::mutate(
+        seed = lapply(!!rlang::sym(seeds), as.list)
+      )
+  } else if(is.numeric(seeds)){
+    db <- db %>%
+      dplyr::mutate(
+        seed = list(seeds)
+      )
+  }
   
-  json.files <- lapply(1:nrow(db), function(i) {
-    list(
-      name = db$request_name[i],
-      modelSeeds = list(sample(1:1e6, 1)),   # random seed
-      sequences = list(
-        list(proteinChain = list(
-          sequence = antigen_aa,
-          count = antigen_count,
-          useStructureTemplate = useStructureTemplate_on["antigen"]
-        )),
-        list(proteinChain = list(
-          sequence = db[[full_HC_aa]][i],
-          count = HC_count,
-          useStructureTemplate = useStructureTemplate_on["HC"]
-        )),
-        list(proteinChain = list(
-          sequence = db[[full_LC_aa]][i],
-          count = LC_count,
-          useStructureTemplate = useStructureTemplate_on["LC"]
-        ))
-      ),
-      dialect = "alphafoldserver",
-      version = 1
-    )
-  })
+  model <- match.arg(model)
   
-  json_output <- jsonlite::toJSON(json.files, pretty = TRUE, auto_unbox = TRUE)
+  if(model == "alphafold"){
+    json.files <- lapply(1:nrow(db), function(i) {
+      list(
+        name = db$request_name[i],
+        modelSeeds = list(as.integer(unlist(db$seed[[i]]))),   
+        sequences = list(
+          list(proteinChain = list(
+            sequence = antigen_aa,
+            count = antigen_count,
+            useStructureTemplate = useStructureTemplate_on["antigen"]
+          )),
+          list(proteinChain = list(
+            sequence = db[[full_HC_aa]][i],
+            count = HC_count,
+            useStructureTemplate = useStructureTemplate_on["HC"]
+          )),
+          list(proteinChain = list(
+            sequence = db[[full_LC_aa]][i],
+            count = LC_count,
+            useStructureTemplate = useStructureTemplate_on["LC"]
+          ))
+        ),
+        dialect = "alphafoldserver",
+        version = 1
+      )
+    })
+  } else if(model == "openDDE"){
+    json.files <- lapply(1:nrow(db), function(i) {
+      list(
+        name = db$request_name[i],
+        modelSeeds = list(as.integer(unlist(db$seed[[i]]))),  
+        sequences = list(
+          list(proteinChain = list(
+            sequence = antigen_aa,
+            count = antigen_count,
+            useStructureTemplate = useStructureTemplate_on["antigen"]
+          )),
+          list(proteinChain = list(
+            sequence = db[[full_HC_aa]][i],
+            count = HC_count,
+            useStructureTemplate = useStructureTemplate_on["HC"]
+          )),
+          list(proteinChain = list(
+            sequence = db[[full_LC_aa]][i],
+            count = LC_count,
+            useStructureTemplate = useStructureTemplate_on["LC"]
+          ))
+        )
+      )
+    })
+  }
   
-  write(json_output, paste0(out_folder, "/", json_name, ".json"))
+  jsonlite::write_json(
+    json.files, 
+    paste0(out_folder, "/", json_name, ".json"), 
+    auto_unbox = TRUE, 
+    pretty = TRUE
+  )
   
   if(return_db){
     db <- db %>%
@@ -241,18 +295,29 @@ exportAF3json <- function(db,
         !!rlang::sym("AF3_", antigen_name,"_run_id") := tolower(request_name)
       ) %>%
       dplyr::select(-request_name)
+    return(db)
   }
 }
 
-#### Function to extract a list of Ag-mAb results from AlphaFold3 ####
+exportAF3json <- function(...){
+  exportInference_json(model = "alphafold", ...)
+}
+exportOpenDDEjson <- function(...){
+  exportInference_json(model = "openDDE", ...)
+}
+
+#### Function to extract a list of Ag-mAb results from AlphaFold3/OpenDDE ####
 #' extract a matrix of interaction of a list of mAbs (HC+LC) onto a given antigen
 #'
-#' \code{extractAF3contacts} extract AlphaFold3 predicted interactions from multiple HC/LC/Ag models
-#' @param db a dataframe with the following column: "run_id" and "main_folder" and "run_folder"
-#' @param main_folder name of the column containing the path to the AlphaFold3 result folder (not including the AF3 folder itself)
-#' @param run_folder name of the column containing the name of the AlphaFold3 folder, by default same as run_id.
-#' @param QC-cutoff which cutoff to use to filter models based on local ipTM scores (if set to NULL, no filtering is done)
-#' @param ... extra parameters to pass on to extractSingleAF3contacts, notably prefix [default = "fold_"]; chains [default = c(A = "Ag", B = "HC", C = "LC")]; Ag_start_num [default = 1] and AF3_model [default = 0]
+#' \code{extractContacts} extract AlphaFold3/OpenDDE predicted interactions from multiple HC/LC/Ag models
+#' @param db a dataframe with the following column: "run_id" and "main_folder"; additional "run_folder" and "type_of_run" can be added
+#' @param main_folder name of the column containing the path to the AlphaFold3/OpenDDE result folder (not including the run folder itself)
+#' @param run_folder name of the column containing the name of the AlphaFold3/OpenDDE folder.
+#' @param mab_id name of the column containing the name of the tested monoclonal antibody, if null will default to run_folder
+#' @param type_of_run which implementation of AlphaFold3/OpenDDE was used: one of "alphafoldlocal", "alphafoldserver" or "OpenDDE". Naming and organisation of folders and files changes between each. can be e valid column in the provided db with this values inside it.  
+#' @param QC_cutoff which cutoff to use to filter models based on local ipTM scores (if set to NULL, no filtering is done)
+#' @param which which info to return (default = all (QC_scores + contacts)
+#' @param ... extra parameters to pass on to extractSingleContacts, notably prefix [default = "fold_"]; chains [default = c(A = "Ag", B = "HC", C = "LC")]; Ag_start_num [default = 1]; seed and AF3_model [default = 0]
 #' @return
 #' If which = "all", a list containing a data frame with QC_scores for each run_id and three matrices of AF3 predicted contacts(HC, LC and all)
 #' If which = "contacts", only a list of contact matrices is returned.
@@ -260,38 +325,39 @@ exportAF3json <- function(db,
 #' 
 #' @export
 
-extractAF3contacts <- function(db,
-                               which = c("all", "contacts", "QC_scores"),
-                               run_id = "run_id",
-                               main_folder = "main_folder",
-                               run_folder = "run_id",
-                               type_of_run = "alphafoldserver",
-                               QC_cutoff = 0.6,
-                               verbose = TRUE,
-                               ...){
+extractContacts <- function(db,
+                            main_folder = "main_folder",
+                            run_folder = "run_folder",
+                            mab_id = NULL,
+                            type_of_run = "alphafoldserver",
+                            QC_cutoff = 0.6,
+                            which = c("all", "contacts", "QC_scores"),
+                            verbose = TRUE,
+                            ...){
   
   which <- match.arg(which)
   
-  missing_collumns <- setdiff(unique(c(run_id, run_folder, main_folder)), colnames(db))
+  missing_collumns <- setdiff(unique(c(mab_id, run_folder, main_folder)), colnames(db))
   if(length(missing_collumns)>0){
     stop("the following columns could not be found in the provided dataframe: ", paste(missing_collumns, collapse = "; "))
   }
+  if(is.null(mab_id)){mab_id <- run_folder}
+  
   db <- db %>% 
     dplyr::mutate(
       main_folder = .data[[main_folder]],
       run_folder = .data[[run_folder]],
-      run_id = .data[[run_id]]
+      mab_id = .data[[mab_id]]
       )
   
   # validate type_of_run
-  valid_types <- c("local", "alphafoldserver")
+  valid_types <- c("alphafoldlocal", "alphafoldserver", "OpenDDE")
   if (is.character(type_of_run) && length(type_of_run) == 1 && type_of_run %in% valid_types) {
     db$type_of_run <- type_of_run
-    
   } else if (is.character(type_of_run) && length(type_of_run) == 1 && type_of_run %in% names(db)) {
     db <- db %>% dplyr::mutate(type_of_run = .data[[type_of_run]])
   } else {
-    stop("`type_of_run` must be either 'local', 'alphafoldserver', or a column name in `db` in which values should be one of 'local' or 'alphafoldserver'.")
+    stop("`type_of_run` must be either 'alphafoldlocal', 'alphafoldserver', 'OpenDDE', or a column name in `db` in which values should be one of 'alphafoldlocal' or 'alphafoldserver' or 'OpenDDE'.")
   }
   
   args_list <- list(
@@ -301,10 +367,10 @@ extractAF3contacts <- function(db,
   )
   predicted_contacts.list <- purrr::pmap(
     args_list, 
-    extractSingleAF3contacts, 
+    extractSingleContacts, 
     ...
   )
-  names(predicted_contacts.list) <- db[[run_id]]
+  names(predicted_contacts.list) <- db[[mab_id]]
   
   #deals with missing file cases (NULL is returned)
   predicted_contacts.list <- predicted_contacts.list %>%
@@ -322,7 +388,7 @@ extractAF3contacts <- function(db,
   QC_scores <- as.data.frame(do.call(rbind, lapply(predicted_contacts.list, FUN = function(prediction){
     return(prediction[["QC_scores"]])
   })))
-  QC_scores <- rownames_to_column(QC_scores, var = "run_id") 
+  QC_scores <- rownames_to_column(QC_scores, var = "mab_id") 
     
   predicted_HC_contacts <- t(do.call(cbind, lapply(predicted_contacts.list, FUN = function(prediction){
     return(prediction[["predicted_HC_contacts"]])
@@ -336,8 +402,8 @@ extractAF3contacts <- function(db,
   
   #filter results
   if(!is.null(QC_cutoff)){
-    run_to_keep <- dplyr::filter(QC_scores, hc_local_ipTMs >= QC_cutoff & lc_local_ipTMs >= QC_cutoff)$run_id
-    run_to_discard <- dplyr::filter(QC_scores, hc_local_ipTMs < QC_cutoff | lc_local_ipTMs < QC_cutoff)$run_id
+    run_to_keep <- dplyr::filter(QC_scores, hc_local_ipTMs >= QC_cutoff & lc_local_ipTMs >= QC_cutoff)$mab_id
+    run_to_discard <- dplyr::filter(QC_scores, hc_local_ipTMs < QC_cutoff | lc_local_ipTMs < QC_cutoff)$mab_id
     if(length(run_to_discard)>0 & verbose){
       warning(paste0("the following predictions were of poor quality: ", paste(run_to_discard, collapse = "; ")))
     }
@@ -346,9 +412,9 @@ extractAF3contacts <- function(db,
     predicted_all_contacts <- predicted_all_contacts[rownames(predicted_all_contacts) %in% run_to_keep, ]
   }
   
-  if(run_id != run_folder){
+  if(mab_id != run_folder){
     QC_scores <- QC_scores %>% 
-      dplyr::left_join(dplyr::select(db, all_of(c("run_id", "run_folder"))), by = join_by(run_id))
+      dplyr::left_join(dplyr::select(db, all_of(c("mab_id", "run_folder"))), by = join_by(mab_id))
   }
   
   #return results
@@ -372,30 +438,41 @@ extractAF3contacts <- function(db,
   }
 }
 
+extractAF3contacts <- function(...){
+  warning("extractAF3contacts is deprecated, use extractContacts instead")
+  extractContacts(...)
+}
+
 #### Function to extract a single Ag-mAb result from AlphaFold3 ####
 #' extract interactions from one mAb onto a given antigen
 #'
 #' \code{extractSingleAF3contacts} extract AlphaFold3 predicted interactions from a single HC/LC/Ag model
 #' @param main_folder path to the AlphaFold3 result folder (not including the AF3 folder itself)
 #' @param run_folder name of the AlphaFold3 folder
-#' @param prefix whether to add a prefix or not to the run folder name (by default AlphaFold server adds a "fold_" prefix to all files but only to the folder itself if results are individually downloaded)
+#' @param prefix whether to add a prefix or not to the run folder name (by default, if set to NULL, will only add 'fold_' when type_of_run is set to alphafoldserver as AlphaFold server adds a "fold_" prefix to all files but only to the folder itself if results are individually downloaded)
 #' @param chains a named vector giving the order of chains used for AlphaFold3 modeling, expected names are "HC", "LC", "Ag" in any given order and not needing to start at A if a fourth protein was used.
 #' @param Ag_start_num option to start numbering of AA in Ag chain somewhere else than 1 if part of the protein was truncated
 #' @param Af3_model which of the 5 outputted AlphaFold3 models to use, by default model 0 is the best one.
-#' @param type_of_run which implementation of AlphaFold3 was used: one of "local" or "alphafoldserver". Naming and organisation of folders and files changes between both.  
+#' @param seed seed number used (for OpenDDE if you want a particular seed)
+#' @param chains_aa to provide your own aa sequences for each chains
+#' @param type_of_run which implementation of AlphaFold3/OpenDDE was used: one of "alphafoldlocal", "alphafoldserver" or "OpenDDE". Naming and organisation of folders and files changes between each.  
+#' @param verbose whether to print choosen seed and best ipTM for OpenDDE predictions
 #' @return
 #' a list with QC scores, predicted HC contacts and predicted LC contacts. 
 #'
 #' @keywords internal
 
-extractSingleAF3contacts <- function(main_folder,
-                                     run_folder,
-                                     prefix = "fold_",
-                                     chains = c(A = "Ag", B = "HC", C = "LC"),
-                                     Ag_start_num = 1,
-                                     AF3_model = NULL,
-                                     type_of_run = c("alphafoldserver", "local")
-                                     ){
+extractSingleContacts <- function(main_folder,
+                                  run_folder,
+                                  prefix = NULL,
+                                  chains = c(A = "Ag", B = "HC", C = "LC"),
+                                  Ag_start_num = 1,
+                                  AF3_model = NULL,
+                                  seed = NULL,
+                                  chains_aa = NULL,
+                                  type_of_run = c("alphafoldserver", "alphafoldlocal", "OpenDDE"),
+                                  verbose = FALSE
+                                  ){
                                       
   #check if folder exists:
   full_run_folder <- paste0(main_folder, "/", run_folder)
@@ -404,12 +481,24 @@ extractSingleAF3contacts <- function(main_folder,
     return(NULL)
   }
   
-  #define model to use based on the type of run (alphafold server vs local install:
+  #define model to use based on the type of run (alphafold server vs local install or OpenDDE are supproted for now):
+  if(any(type_of_run == "local")){
+    warning("type_of_run argument has been changed from 'local' to 'alphafoldlocal' as of 09/10/2027")
+    type_of_run <- "alphafoldlocal"
+  }
   type_of_run <- match.arg(type_of_run)
-  if(!type_of_run %in% c("alphafoldserver", "local")){
-    stop("type_of_run should be one of 'alphafoldserver' or 'local'")
+  if(!type_of_run %in% c("alphafoldserver", "alphafoldlocal", "OpenDDE")){
+    stop("type_of_run should be one of 'alphafoldserver', 'alphafoldlocal' or 'OpenDDE'")
   }
     
+  if(is.null(prefix)){
+    if(type_of_run == "alphafoldserver"){
+      prefix = "fold_"
+    } else {
+      prefix = ""
+    }
+  }
+  
   if(type_of_run == "alphafoldserver"){
     if(is.null(AF3_model)){
       #using by default model zero
@@ -417,7 +506,7 @@ extractSingleAF3contacts <- function(main_folder,
       #TODO scan summary confidence json and select the best ranking score?
       } else { AF3_model <- paste0("_", AF3_model) }
   } else {
-    if(!is.null(AF3_model)){
+    if(!is.null(AF3_model) & type_of_run == "alphafoldlocal"){
       #TODO open "run_folder_ranking_scores.csv", get seed (column 1) and redefine folder to use using seed-"795906"seed nb"_sample-"AF3_model" 
     }
   }
@@ -425,12 +514,36 @@ extractSingleAF3contacts <- function(main_folder,
   #define file name and check if they exist:
   if(type_of_run == "alphafoldserver") {
     json_confidence_filename <- paste0(full_run_folder, "/", prefix, run_folder, "_summary_confidences", AF3_model,".json")
+    if(!file.exists(json_confidence_filename)) {
+      if(prefix == "fold_"){
+        #test whether it is needed to remove the "fold_" prefix from filename
+        json_confidence_filename2 <- paste0(full_run_folder, "/", run_folder, "_summary_confidences", AF3_model,".json")
+        if(file.exists(json_confidence_filename2)) {
+          prefix = ""
+          json_confidence_filename <- json_confidence_filename2}
+      } else if(prefix == ""){
+        #test whether it is needed to add the "fold_" prefix to filename
+        json_confidence_filename2 <- paste0(full_run_folder, "/fold_", run_folder, "_summary_confidences", AF3_model,".json")
+        if(file.exists(json_confidence_filename2)) {
+          prefix = "fold_"
+          json_confidence_filename <- json_confidence_filename2}
+        } 
+    }
     data_filename <- paste0(full_run_folder, "/", prefix, run_folder, "_full_data", AF3_model,".json")
     request_filename <- paste0(full_run_folder,"/", prefix, run_folder, "_job_request.json")
-  } else if(type_of_run == "local") {
+  } else if(type_of_run == "alphafoldlocal") {
     json_confidence_filename <- paste0(full_run_folder, "/", run_folder, "_summary_confidences", AF3_model,".json")
     data_filename <- paste0(full_run_folder, "/", run_folder, "_confidences", AF3_model,".json")
     request_filename <- paste0(full_run_folder,"/", run_folder, "_data", AF3_model,".json")
+  } else if(type_of_run == "OpenDDE") {
+    if(is.null(seed)){
+      seed <- extract_best_OpenDDE_seed(main_folder = main_folder,
+                                        run_folder = run_folder,
+                                        verbose = verbose)
+    } 
+    json_confidence_filename <- paste0(full_run_folder, "/seed_", seed, "/predictions/", run_folder, "_summary_confidence_sample_0.json")
+    data_filename <- paste0(full_run_folder, "/", "seed_", seed, "/predictions/", run_folder, "_full_data_sample_0.json")
+    cif_filename <- paste0(full_run_folder, "/", "seed_", seed, "/predictions/", run_folder, "_sample_0.cif")
   }
   
   json_confidence <- jsonlite::fromJSON(txt = json_confidence_filename, flatten = TRUE)
@@ -448,27 +561,77 @@ extractSingleAF3contacts <- function(main_folder,
   
   ipTMs <- c(global_ipTM = global_ipTM, local_ipTMs["ag_local_ipTMs", c("hc_local_ipTMs", "lc_local_ipTMs")])
     
-  #extract contacts:
+  #extract contact matrix with proper annotation (renumbered AA based on request and provided informations)
+  if(is.null(chains_aa)){
+    #if the antigen AA sequence is not provided by the user, it can be extracted from the output files
+    #for OpenDDE, this requires the bio3d package as it is not included in the output json files and can only be retrieved from the .cif file 
+    if(type_of_run == "alphafoldserver") {
+      chains_aa <- list()
+      request <- jsonlite::fromJSON(txt = request_filename, flatten = FALSE)
+      for (i in seq_along(chains)){
+        chains_aa[[i]] <- request$sequences[[1]]$proteinChain[i,1]
+      }
+      names(chains_aa) <- chains
+    } else if(type_of_run == "alphafoldlocal") {
+      chains_aa <- list()
+      request <- jsonlite::fromJSON(txt = request_filename, flatten = TRUE)
+      for (i in seq_along(chains)){
+        chains_aa[[i]] <- request$sequences$protein.sequence[i]
+      }
+      names(chains_aa) <- chains
+    } else if(type_of_run == "OpenDDE") {
+      if (!requireNamespace("bio3d", quietly = TRUE)) {
+        message("Optional: 'bio3d' not installed — wont be able to return named contact residue matrix for OpenDDE predictions, please install or provide full AA sequences of each chains")
+        return(list(QC_scores = ipTMs, predicted_HC_contacts = NULL, predicted_LC_contacts = NULL))
+      }
+      aa_map <- c("ALA"="A", "ARG"="R", "ASN"="N", "ASP"="D", "CYS"="C", 
+                  "GLU"="E", "GLN"="Q", "GLY"="G", "HIS"="H", "ILE"="I", 
+                  "LYS"="K", "LEU"="L", "MET"="M", "PHE"="F", "PRO"="P", 
+                  "SER"="S", "THR"="T", "TRP"="W", "TYR"="Y", "VAL"="V")
+      suppressWarnings(
+        residues <- bio3d::read.cif(cif_filename, maxlines = -1, multi = FALSE, rm.insert = FALSE, rm.alt = TRUE, verbose = TRUE)$atom %>%
+          dplyr::group_by(chain, resno) %>% 
+          dplyr::slice(1) %>%
+          dplyr::ungroup() %>%
+          dplyr::select(all_of(c("chain", "resid", "resno"))) %>%
+          dplyr::mutate(
+            resid_aa = aa_map[resid]
+          )
+      )
+      
+      json_data$token_chain_ids <- residues$chain
+      json_data$token_res_ids <- residues$resno
+      
+      chains_aa <- list()
+      for(i in seq_along(chains)){
+        chains_aa[[i]] <- residues %>%
+          dplyr::filter(chain == names(chains)[i]) %>%
+          dplyr::pull(resid_aa) %>%
+          paste(collapse = "")
+      }
+      names(chains_aa) <- chains
+    }
+  } else {
+    #option to provide chains AA residues externatly as character strings
+    #should be in the format of c(A= "XXX", B="YYY", C="ZZZ",...)
+    token_chain_ids <- c()
+    token_res_ids <- c()
+    for(chain in chains){
+      token_chain_ids <- c(token_chain_ids, rep(chain, times = length(chains_aa[chain])))
+      token_res_ids <- c(token_res_ids, c(1:length(chains_aa[chain])))
+    }
+    if(!length(token_chain_ids) == nrow(json_data$contact_probs)){
+      warning(run_folder, ": total length of chain AA sequences provided (",length(token_chain_ids),") does not match the contact_probs matrix number of columns and rows (",nrow(json_data$contact_probs),"); only QC scores will be returned")
+      return(list(QC_scores = ipTMs, predicted_HC_contacts = NULL, predicted_LC_contacts = NULL))
+    }
+    json_data$token_chain_ids <- token_chain_ids
+    json_data$token_res_ids <- token_res_ids
+  }
+  
   contact_mat <- as.data.frame(json_data$contact_probs)
-    
   colnames(contact_mat) <- paste0(json_data$token_chain_ids, json_data$token_res_ids)
   rownames(contact_mat) <- paste0(json_data$token_chain_ids, json_data$token_res_ids)
-    
-  chains_aa <- list()
-  if(type_of_run == "alphafoldserver") {
-    request <- jsonlite::fromJSON(txt = request_filename, flatten = FALSE)
-    for (i in seq_along(chains)){
-      chains_aa[[i]] <- request$sequences[[1]]$proteinChain[i,1]
-    }
-    names(chains_aa) <- chains
-  } else if(type_of_run == "local") {
-    request <- jsonlite::fromJSON(txt = request_filename, flatten = TRUE)
-    for (i in seq_along(chains)){
-      chains_aa[[i]] <- request$sequences$protein.sequence[i]
-    }
-    names(chains_aa) <- chains
-  }
-    
+  
   Ag_aa_seq <- unlist(strsplit(chains_aa[["Ag"]], split = ""))
   Ag_numbered_aa_seq <- paste0(Ag_aa_seq, (seq_along(Ag_aa_seq)+Ag_start_num-1))
   
@@ -481,6 +644,78 @@ extractSingleAF3contacts <- function(main_folder,
   names(predicted_LC_contacts) <- Ag_numbered_aa_seq
   
   return(list(QC_scores = ipTMs, predicted_HC_contacts = predicted_HC_contacts, predicted_LC_contacts = predicted_LC_contacts))
+}
+
+extractSingleAF3contacts <- function(...){
+  warning("extractSingleAF3contacts is deprecated, use extractSingleContacts instead")
+  extractSingleContacts(...)
+}
+
+#### Function to extract a single Ag-mAb result from AlphaFold3 ####
+#' extract seed number for best prediction from OpenDDE; OpenDDE store multiple predictions inside "seed_XXX" folders under the main run_id folder, just scanning all of them and picking the best one based on global ipTM. 
+#'
+#' \code{extract_best_OpenDDE_seed} extract seed number which gave the best global ipTM score
+#' @param main_folder path to the root directory were individual OpenDDE result folders are stored (not including the AF3 folder itself)
+#' @param run_folder name of the OpenDDE run folder
+#' @param verbose whether to print the best seed and ipTM score
+#' @return
+#' a seed number
+#'
+#' @keywords internal
+
+extract_best_OpenDDE_seed <- function(main_folder, 
+                                      run_folder, 
+                                      verbose = TRUE){
+  # 1. Get a list of all subdirectories that start with "seed_"
+  seed_folders <- list.dirs(file.path(main_folder, run_folder), recursive = FALSE, full.names = TRUE)
+  seed_folders <- seed_folders[grep("seed_", basename(seed_folders))]
+  
+  # Create a data frame to store the results
+  results <- data.frame(seed = character(), iptm = numeric(), stringsAsFactors = FALSE)
+  
+  # 2. Loop through folders to extract ipTM
+  for (folder in seed_folders) {
+    # Construct the path to the specific JSON file
+    # Path logic: root/seed_X/prediction/summary_confidence_sample_0.json
+    json_path <- file.path(folder, "predictions", paste0(run_folder, "_summary_confidence_sample_0.json"))
+    
+    if (file.exists(json_path)) {
+      tryCatch({
+        # Import JSON
+        json_confidence <- jsonlite::fromJSON(txt = json_path, flatten = TRUE)
+        
+        # Extract global ipTM
+        global_iptm <- json_confidence$iptm
+        
+        # Extract seed number from folder name (e.g., "seed_12" -> "12")
+        seed_id <- str_extract(basename(folder), "\\d+")
+        
+        # Store in data frame
+        results <- rbind(results, data.frame(seed = seed_id, iptm = global_iptm))
+      }, error = function(e) {
+        message(paste("Error reading file in folder:", folder, "-", e$message))
+      })
+    } else {
+      message(paste("File not found in:", folder))
+    }
+  }
+  
+  # 3. Rank and find the best seed
+  if (nrow(results) > 0) {
+    # Sort by ipTM descending
+    ranked_results <- results[order(-results$iptm), ]
+    
+    best_seed <- ranked_results$seed[1]
+    best_val  <- ranked_results$iptm[1]
+    
+    if(verbose){cat("The best seed for ", run_folder," is:", best_seed, "with an ipTM of:", best_val, "\n")}
+    
+    # Return only the seed number
+    return(best_seed)
+  } else {
+    warning("No valid confidence files were found.")
+    return(NULL)
+  }
 }
 
 #### Function to plot an enriched Heatmap for AlphaFold3 predicted contacts on a given antigen ####
