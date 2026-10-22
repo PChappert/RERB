@@ -1867,8 +1867,10 @@ resolveLightChains2 <- function(data, nproc=1, minseq=1,locus="locus",heavy="IGH
 #' @param assay         name of column containing assay values.
 #' @param scRNAseq.tech vector with names of scRNA-seq technologies used in the assay column, i.e. those from which we have data so far.
 #' @param variable_cutoff whether to use variable cutoffs [default = TRUE, cutoffs are automatically calculated based on summary counts in the database to account for potential sequencing bias (1st quartile and max of 10 or 1/10 of median).].
-#' @param low_cutoff    cut_off for low probability heavy chain doublets (only used if variable_cutoff = FALSE).
-#' @param high_cutoff   cut_off for high probability heavy chain doublets (only used if variable_cutoff = FALSE).
+#' @param minimal_variable_upper_cutoff minimal upper value to use for variable cutoff
+#' @param minimal_variable_lower_cutoff minimal lower value to use for variable cutoff
+#' @param fixed_low_cutoff    fixed cut_off for low probability heavy chain doublets (only used if variable_cutoff = FALSE).
+#' @param fixed_high_cutoff   fixed cut_off for high probability heavy chain doublets (only used if variable_cutoff = FALSE).
 #' @param output        whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. Can be set to none, partial (only pdf + log file with QC parameters) or total (pdf + log file with QC parameters + tsv file with sequences).
 #' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
 #' @param cell_id       name of the column containing cell identifier.
@@ -1899,9 +1901,11 @@ homotypicVDJdoublets <- function(db,
                                  light = NULL, 
                                  assay = "assay",
                                  scRNAseq.tech = c("10X", "BD"),
+                                 fixed_low_cutoff = 10, 
+                                 fixed_high_cutoff = 250,
                                  variable_cutoff = TRUE, 
-                                 low_cutoff = 10, 
-                                 high_cutoff = 250,
+                                 minimal_variable_upper_cutoff = 3,
+                                 minimal_variable_lower_cutoff = 2,
                                  output = TRUE, 
                                  output_folder = "VDJ_QC",
                                  cell_id = "cell_id", 
@@ -1993,19 +1997,19 @@ homotypicVDJdoublets <- function(db,
   # update cutoffs if needed:
   if(variable_cutoff){
     # learn dataset (split.by) and locus specific cutoffs (adapted to library depth):
-    # 1st quartile of dominant VDJ umi_count (in 75% of doublets the second VDJ should be above this value) and minimum of 10 and 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
+    # 1st quartile of dominant VDJ umi_count removing values of 1 as these are likely not cells (in 75% of doublets the second VDJ should be above this value) and minimum of 2 or 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
     flagged_db <- flagged_db %>%
       dplyr::group_by(locus_simplified, !!rlang::sym(split.by)) %>%
       dplyr::mutate(
-        upper_cutoff = quantile(!!rlang::sym(umi_count), 0.25, na.rm = TRUE),
-        lower_cutoff = ceiling(median(!!rlang::sym(umi_count), na.rm = TRUE)/10)
+        upper_cutoff = max(na.omit(c(quantile(.data[[umi_count]][.data[[umi_count]] != 1], 0.25, na.rm = TRUE), minimal_variable_upper_cutoff))),
+        lower_cutoff = max(na.omit(c(ceiling(median(.data[[umi_count]][.data[[umi_count]] != 1], na.rm = TRUE)/10), minimal_variable_lower_cutoff)))
       ) %>%
       dplyr::ungroup()
   } else { # otherwise, use provided cutoffs
     flagged_db <- flagged_db %>%
       dplyr::mutate(
-        upper_cutoff = high_cutoff,
-        lower_cutoff = low_cutoff
+        upper_cutoff = fixed_high_cutoff,
+        lower_cutoff = fixed_low_cutoff
       )
   }
 
@@ -2079,9 +2083,9 @@ homotypicVDJdoublets <- function(db,
   db <- db %>%
     dplyr::left_join(flagged_db, by = join_by(cell_id)) %>%
     dplyr::mutate(
-      upper_cutoff_doublets = ifelse(locus_simplified == "heavy", upper_cutoff_heavy, 
+      upper_cutoff_B_doublets = ifelse(locus_simplified == "heavy", upper_cutoff_heavy, 
                               ifelse(locus_simplified == "light", upper_cutoff_light, NA)),
-      lower_cutoff_doublets = ifelse(locus_simplified == "heavy", lower_cutoff_heavy, 
+      lower_cutoff_B_doublets = ifelse(locus_simplified == "heavy", lower_cutoff_heavy, 
                                                       ifelse(locus_simplified == "light", lower_cutoff_light, NA))
     )
   
@@ -2111,10 +2115,10 @@ homotypicVDJdoublets <- function(db,
       dplyr::filter(!!rlang::sym(split.by) == group, !!rlang::sym(locus) %in% heavy)
     cells_in_group <- nrow(group_db)
     doublets <- nrow(dplyr::filter(group_db, is.VDJ_doublet))
-    upper_group_cutoff_heavy <- group_db[["upper_cutoff_heavy"]][1]
-    upper_group_cutoff_light <- group_db[["upper_cutoff_light"]][1]
-    lower_group_cutoff_heavy <- group_db[["lower_cutoff_heavy"]][1]
-    lower_group_cutoff_light <- group_db[["lower_cutoff_light"]][1]
+    upper_group_cutoff_heavy <- na.omit(group_db[["upper_cutoff_heavy"]])[1]
+    upper_group_cutoff_light <- na.omit(group_db[["upper_cutoff_light"]])[1]
+    lower_group_cutoff_heavy <- na.omit(group_db[["lower_cutoff_heavy"]])[1]
+    lower_group_cutoff_light <- na.omit(group_db[["lower_cutoff_light"]])[1]
     group_log_message <- paste0(group, ": out of ", cells_in_group," cells:\n",
                                 doublets/cells_in_group*100,"% cells (n = ",doublets,") identified as high probability doublets, using ", paste(unlist(mget(chains)), collapse = "-")," contigs;\n",
                                 "upper cutoff used:", upper_group_cutoff_heavy, " for ", paste(heavy, collapse = "-"), " and ",upper_group_cutoff_light, " for ", paste(light, collapse = "-"),"\n",
@@ -2148,16 +2152,19 @@ homotypicVDJdoublets <- function(db,
 #' @param light         light chains to be used. if set to NULL, will default to IGL/IGK for Ig and TRA/TRG for TCR.
 #' @param assay         name of column containing assay values.
 #' @param scRNAseq.tech vector with names of scRNA-seq technologies used in the assay column, i.e. those from which we have data so far.
-#' @param variable_cutoff whether to use variable cutoffs [default = TRUE, cutoffs are automatically calculated based on summary counts in the database to account for potential sequencing bias (1st quartile and max of 10 or 1/10 of median).].
-#' @param low_cutoff    cut_off for low probability heavy chain doublets (only used if variable_cutoff = FALSE).
-#' @param high_cutoff   cut_off for high probability heavy chain doublets (only used if variable_cutoff = FALSE).
+#' @param variable_cutoff whether to use variable cutoffs [default = TRUE, cutoffs are automatically calculated based on summary counts in the database to account for potential sequencing bias (1st quartile and max of 2 or 1/10 of median).].
+#' @param minimal_variable_upper_cutoff minimal upper value to use for variable cutoff
+#' @param minimal_variable_lower_cutoff minimal lower value to use for variable cutoff
+#' @param reuse_homotypic_cutoffs whether to reuse cutoffs defined through homotypicVDJdoublets()
+#' @param fixed_low_cutoff    fixed cut_off for low probability heavy chain doublets (only used if variable_cutoff = FALSE).
+#' @param fixed_high_cutoff   fixed cut_off for high probability heavy chain doublets (only used if variable_cutoff = FALSE).
 #' @param output        whether to output graphs with umi_counts for dominant versus second IGH VDJ contig and the recap excel workbook. Can be set to none, partial (only pdf + log file with QC parameters) or total (pdf + log file with QC parameters + tsv file with sequences).
 #' @param output_folder name of the folder in which graph and recap excel workbooks will be saved [default = "VDJ_QC"].
 #' @param ref           which ref was used for mapping of scRNA-seq dataset: one of "azimuth.pbmcref", "azimuth.tonsilref", "azimuth.bonemarrowref" [default azimuth datasets as of June 2025] or "internal", if using your own clustering information [TODO: add gut dataset?]; 
 #'                      to add you own clustering info, set ref = "internal", provide the clustering column name in ref.column and corresponding B or T cell clusters in ref.Bcelltypes = c("C1", "C3"...) or ref.Tcelltypes = c("C4", "C5"...)...
 #' @param ref.column    which output column to use for cluster information [default azimuth values provided as of June 2025]
-#' @param ref.Bcelltypes which clusters in the azimuth output correspond to B/PC cells populations likely to carry a BCR [default values provided as of June 2025].
-#' @param ref.Tcelltypes which clusters in the azimuth output correspond to T cells populations likely to carry a TCR [default values provided as of June 2025].
+#' @param ref.Bcelltypes which clusters in the ref.column correspond to B/PC cells populations likely to carry a BCR [default values provided as of June 2025].
+#' @param ref.Tcelltypes which clusters in the ref.column correspond to T cells populations likely to carry a TCR [default values provided as of June 2025].
 #' @param cell_id       name of the column containing cell identifier.
 #' @param umi_count     name of the column containing the number of unique molecules (UMI) for this contig. Previously called "duplicate_count" in an earlier AIRR standard
 #' @param save_plot     format to save the final ggplot2 object. "pdf" or "png". if set to any other value, no plot will be saved.
@@ -2192,9 +2199,12 @@ heterotypicVDJdoublets <- function(db,
                                    scRNAseq.tech = c("10X", "BD"),
                                    output = TRUE,
                                    output_folder = "VDJ_QC/",
-                                   variable_cutoff =TRUE,
-                                   low_cutoff = 10,
-                                   high_cutoff = 250,
+                                   fixed_low_cutoff = 10,
+                                   fixed_high_cutoff = 250,
+                                   variable_cutoff = TRUE,
+                                   minimal_variable_upper_cutoff = 3,
+                                   minimal_variable_lower_cutoff = 2,
+                                   reuse_homotypic_cutoffs = FALSE,
                                    ref = NULL,
                                    ref.column = NULL,
                                    ref.Bcelltypes = NULL,
@@ -2324,33 +2334,63 @@ heterotypicVDJdoublets <- function(db,
   # update cutoffs if needed:
   if(variable_cutoff){
     # learn dataset (split.by) and locus specific cutoffs (adapted to library depth):
-    # 1st quartile of dominant VDJ umi_count (in 75% of doublets the second VDJ should be above this value) and 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
-    # if homotypicVDJdoublets was run before, we reuse the calculated cutoffs
+    # 1st quartile of dominant VDJ umi_count removing values of 1 as these are likely not cells (in 75% of doublets the second VDJ should be above this value) and minimum of 2 or 1/10 of Median (below could be considered ambient RNA, i.e; 1/10 of an average cell).
+    # if upper_cutoff or lower_cutoff columns are provided we reuse them
+    if(reuse_homotypic_cutoffs){
+      if(all(c("upper_cutoff_B_doublets", "lower_cutoff_B_doublets") %in% colnames(flagged_db))){
+        flagged_db <- flagged_db %>%
+          dplyr::mutate(
+            upper_cutoff = upper_cutoff_B_doublets,
+            lower_cutoff = lower_cutoff_B_doublets
+          )
+      } else {
+        warning("missing one of the upper_cutoff_B_doublets or lower_cutoff_B_doublets, will recalculate variable cutoffs based on libraries distributions")
+      }
+    }
     if(!(all(c("upper_cutoff", "lower_cutoff") %in% colnames(flagged_db)))){
       flagged_db <- flagged_db %>%
         dplyr::group_by(locus_simplified, !!rlang::sym(split.by)) %>%
         dplyr::mutate(
-          upper_cutoff = quantile(!!rlang::sym(umi_count), 0.25, na.rm = TRUE),
-          lower_cutoff = ceiling(median(!!rlang::sym(umi_count), na.rm = TRUE)/10)
+          upper_cutoff = max(na.omit(c(quantile(.data[[umi_count]][.data[[umi_count]] != 1], 0.25, na.rm = TRUE), minimal_variable_upper_cutoff))),
+          lower_cutoff = max(na.omit(c(ceiling(median(.data[[umi_count]][.data[[umi_count]] != 1], na.rm = TRUE)/10), minimal_variable_lower_cutoff)))
         ) %>%
         dplyr::ungroup()
     }
   } else { # otherwise, use provided cutoffs
     flagged_db <- flagged_db %>%
       dplyr::mutate(
-        upper_cutoff = high_cutoff,
-        lower_cutoff = low_cutoff
+        upper_cutoff = fixed_high_cutoff,
+        lower_cutoff = fixed_low_cutoff
       )
   }
   
   cutoffs <- flagged_db %>%
+    dplyr::select(all_of(c(split.by, "locus_simplified", "upper_cutoff", "lower_cutoff"))) %>%
     dplyr::group_by(!!rlang::sym(split.by), locus_simplified) %>%
-    dplyr::summarise(dplyr::across(
-      dplyr::starts_with("upper_cutoff") | dplyr::starts_with("lower_cutoff"),
-      ~ max(.x, na.rm = TRUE),
-      .names = "{.col}"
-    ), .groups = "drop") %>%
+    dplyr::summarise(
+      dplyr::across(
+        dplyr::starts_with("upper_cutoff"),
+        ~ max(na.omit(max(.x, na.rm = TRUE)), minimal_variable_upper_cutoff),
+        .names = "{.col}"
+      ),
+      dplyr::across(
+        dplyr::starts_with("lower_cutoff"),
+        ~ max(na.omit(max(.x, na.rm = TRUE)), minimal_variable_lower_cutoff),
+        .names = "{.col}"
+      ),
+      .groups = "drop"
+      ) %>%
     tidyr::pivot_wider(names_from = locus_simplified, values_from = c(upper_cutoff, lower_cutoff)) %>%
+    dplyr::mutate(
+      dplyr::across(
+        dplyr::starts_with("upper_cutoff"),
+        ~ tidyr::replace_na(.x, minimal_variable_upper_cutoff)
+      ),
+      dplyr::across(
+        dplyr::starts_with("lower_cutoff"),
+        ~ tidyr::replace_na(.x, minimal_variable_lower_cutoff)
+      )
+    ) %>%
     dplyr::rename_with(.fn = ~ paste0(.x, "_max"), .cols = starts_with("upper_cutoff")) %>%
     dplyr::rename_with(.fn = ~ paste0(.x, "_max"), .cols = starts_with("lower_cutoff"))
 
@@ -2422,7 +2462,13 @@ heterotypicVDJdoublets <- function(db,
   flagged_db <- dplyr::bind_rows(non_VDJcelltype_db, VDJcelltype_db)
   
   db <- db %>%
-    dplyr::left_join(flagged_db, by = join_by(!!rlang::sym(cell_id)))
+    dplyr::left_join(flagged_db, by = join_by(!!rlang::sym(cell_id))) %>%
+    dplyr::mutate(
+      upper_cutoff_nonB_doublets = ifelse(locus_simplified == "heavy", upper_cutoff_heavy, 
+                                       ifelse(locus_simplified == "light", upper_cutoff_light, NA)),
+      lower_cutoff_nonB_doublets = ifelse(locus_simplified == "heavy", lower_cutoff_heavy, 
+                                       ifelse(locus_simplified == "light", lower_cutoff_light, NA))
+    )
   
   if(output){
     # export QC graph (one by part of the dataframe:
@@ -2453,10 +2499,10 @@ heterotypicVDJdoublets <- function(db,
     high_doublets <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "high"))
     low_doublets <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "low"))
     ambient_RNA <- nrow(dplyr::filter(non_VDJ_group_db, !!rlang::sym(paste0("is.non", cell_type,"_VDJ_doublet.confidence")) == "ambient RNA"))
-    upper_group_cutoff_heavy <- group_db[["upper_cutoff_heavy"]][1]
-    upper_group_cutoff_light <- group_db[["upper_cutoff_light"]][1]
-    lower_group_cutoff_heavy <- group_db[["lower_cutoff_heavy"]][1]
-    lower_group_cutoff_light <- group_db[["lower_cutoff_light"]][1]
+    upper_group_cutoff_heavy <- na.omit(group_db[["upper_cutoff_heavy"]])[1]
+    upper_group_cutoff_light <- na.omit(group_db[["upper_cutoff_light"]])[1]
+    lower_group_cutoff_heavy <- na.omit(group_db[["lower_cutoff_heavy"]])[1]
+    lower_group_cutoff_light <- na.omit(group_db[["lower_cutoff_light"]])[1]
     group_log_message <- paste0(group, ": out of ", cells_in_group," cells:\n",
                                 non_VDJ_cell_in_group/cells_in_group*100,"% cells (n = ",non_VDJ_cell_in_group,") identified as non-",cell_type, " cells\n",
                                 high_doublets/cells_in_group*100,"% cells (n = ",high_doublets,") identified as high probability non-",cell_type ,"/",cell_type," doublets, using ", paste(unlist(mget(chains)), collapse = "-")," contigs;\n",
@@ -4003,9 +4049,10 @@ scImportVDJ <- function(vdj_files,
     if(length(missing_collumns)>0){warning(paste0("missing the following collumns in the provided seurat object: ", missing_collumns))}
     import_from_seurat <- intersect(import_from_seurat, colnames(meta))
     meta <- meta %>%
-      dplyr::select(all_of(c("cell_id", import_from_seurat)))
+      dplyr::select(all_of(unique(c("cell_id", import_from_seurat))))
 
     already_present <- intersect(import_from_seurat,colnames(VDJ_db))
+    already_present <- already_present[already_present == "cell_id"]
     if(length(already_present)>0){warning(paste0("the following collumns are alreading present in the AIRR dataframe: ", already_present, ". They will be replaced"))}
     VDJ_db <- VDJ_db %>%
       dplyr::select(-all_of(already_present)) %>%
