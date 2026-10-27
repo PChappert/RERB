@@ -1003,7 +1003,7 @@ SingleDonutPlotClonotypes <- function(db,
       if (save_as == "png") {
         img_raster <- png::readPNG(filename)
       }
-      if (tmp_file_only){
+      if (!save_plot){
         unlink(filename)
       }
       grob <- grid::rasterGrob(img_raster, interpolate = TRUE)
