@@ -29,17 +29,3 @@ and keep only the last as split.by argument of the SingleDonutPlotClonotypes fun
 \description{
 \code{DonutPlotClonotypes} Plots multiple donut plots and save them as pdf
 }
-\details{
-db should be an AIRR formated database with a defined "clone_id" column
-Defines clones to plot and colors based on clones properties:
-Expanded clone = clone size >1 in one donor
-Shared clone = clone found in at least two donors
-Persisting clone = clone found in at least two time points and/or pop
-Color choice:
-Single Greys scale based on clone size in that donor (to account for sampling): "white" = singlets, "black"= biggest clone in all donors
-Color for shared clones between donors
-highlight = c("expanded", "top5")
-Consistent color throughout time-points for persisting-expanded clones
-Grey for non-persisting expanded clones
-White for non expanded clones and regroup all sequences found only once in the dataset (non-persisting/non-expanded)
-}
