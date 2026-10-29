@@ -58,7 +58,7 @@ safe_kaleido <- function(scope = "auto") {
 #'
 #' @param list a list of data frames
 #' 
-#' @keywords internal
+#' @export
 
 safe_bind_rows <- function(list,
                            airr_col_types = c(
