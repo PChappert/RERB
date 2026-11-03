@@ -2582,7 +2582,7 @@ SingleCircosClonotypes <- function(db,
   }
   
   if (any(!layers %in% colnames(db))) {
-    stop("layers not properly defined : ", paste(layers[!layers %in% colnames(db)], collapse = " ;")," not in the profided data")
+    stop("layers not properly defined : ", paste(layers[!layers %in% colnames(db)], collapse = " ;")," not in the provided dataframe")
   }
   
   layers <- rev(layers)
@@ -2594,8 +2594,8 @@ SingleCircosClonotypes <- function(db,
   Plot_db <- db %>%
     dplyr::filter(!!rlang::sym(locus) %in% use_chain) %>%
     dplyr::mutate(
-      across(
-        all_of(layers),
+      dplyr::across(
+        tidyselect::all_of(layers),
         ~ factor(.x, levels = levels(as.factor(.x))),
         .names = "{.col}"
       )
@@ -2604,9 +2604,9 @@ SingleCircosClonotypes <- function(db,
   #reorder layers levels:
   if(!is.null(reorder)){
     Plot_db <- Plot_db %>%
-      mutate(
-        across(
-          any_of(names(reorder)),
+      dplyr::mutate(
+        dplyr::across(
+          tidyselect::any_of(names(reorder)),
           ~ if (!is.null(reorder[[cur_column()]])) {
             forcats::fct_relevel(.x, reorder[[cur_column()]])
           } else {
@@ -2725,7 +2725,7 @@ SingleCircosClonotypes <- function(db,
   ## update layers columns to reflect future sectors in circosplot
   for (i in seq_along(layers)) {
     Plot_db <- Plot_db %>%
-      mutate(
+      dplyr::mutate(
         !!rlang::sym(paste0("layer", i)) :=
           interaction(!!!rlang::syms(rev(layers[i:length(layers)])), sep = "_", lex.order = TRUE)
       )
@@ -2733,14 +2733,14 @@ SingleCircosClonotypes <- function(db,
   
   ## create full recap for each sectors to be plotted and respective colors to use
   groups_infos <- Plot_db %>%
-    dplyr::distinct(!!!rlang::syms(paste0("layer", (1:length(layers))))) %>%
+    dplyr::distinct(!!!rlang::syms(c(layers, paste0("layer", (1:length(layers)))))) %>%
     dplyr::arrange(!!!rlang::syms(rev(paste0("layer", (1:length(layers)))))) 
   
   for(i in 1:length(layers)){
     groups_infos <- groups_infos %>%
       dplyr::rowwise() %>%
       dplyr::mutate(
-        !!rlang::sym(paste0("layer", i, "_col")) := layers_col[[layers[[i]]]][dplyr::last(stringr::str_split(!!rlang::sym(paste0("layer", i)), "_")[[1]])]
+        !!rlang::sym(paste0("layer", i, "_col")) := layers_col[[layers[[i]]]][!!!rlang::sym(layers[[i]])]
       )
   }
   
@@ -3119,7 +3119,7 @@ SingleCircosClonotypes <- function(db,
 
 
 #### Function to plot a heatmap highlighting shared and discordant mutations between members of a clone ####
-#' Extract mutations and plot shared versus private mutations based on defined groups (split_by argument) 
+#' Extract mutations and plot shared versus private mutations based on defined groups (group.by argument) 
 #'
 #' \code{sharedMutationsPlot} plot aligned sequences highlighting only mutations 
 #' @param clone     an AIRR formatted dataframe containing bcr (heavy and light chains) sequences from sequences belonging to a unique clone.
@@ -3127,14 +3127,16 @@ SingleCircosClonotypes <- function(db,
 #' @param cell_id   name of the column containing unique cell identifier.
 #' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain. Only use if cell_id is not set to NULL
 #' @param locus     name of column containing locus values.
-#' @param split_by  name of the column containing groups information (if NULL all sequences are considered as part of the same group).
+#' @param group.by  name of the column containing groups information (if NULL all sequences are considered as part of the same group).
 #' @param order_by_tree whether to perform lineage analysis using dowser igphyml implementation and order sequences accordingly
+#' @param use_tree  lineage tree to use for ordering (in the igphyml format), if NULL will attempt to use igphyml to built one
+#' @param igphyml_dir directory where igphyml is installed 
 #' @param plots_folder name for export folder [default: "SHM_plots"]
 #' @param prefix    prefix to use for saved files
 #' @param imgt_dir  path to imgt-gapped database [default = path suggested on installation: https://changeo.readthedocs.io/en/stable/examples/igblast.html]
 #' @param organism  organism (any of "human", "mouse", "rhesus_monkey; for other see https://changeo.readthedocs.io/en/stable/examples/igblast.html)
 #' @param align     type of alignment to perform. one of "d_masked" (all V(D)J without Ns and D regions of CDR3), "d_included" (all V(D)J without Ns regions of CDR3), "cdr3" (only the CDR3 region)
-#' @param focus_on_mutation = FALSE,
+#' @param focus_on_mutation whether to only show mutated residues or show the full V(D)J alignment
 #' @param sequence_alignment name of the column containing the aligned sequence.
 #' @param germline_alignment name of the column containing the aligned germline.
 #' @param germline_alignment_d_mask name of the column containing the d-masked aligned germline.
@@ -3156,10 +3158,18 @@ SingleCircosClonotypes <- function(db,
 sharedMutationsPlot <- function(clone,
                                 sequence_id = "sequence_id",
                                 cell_id = "cell_id",
+                                clone_id = "clone_id",
+                                v_call = "v_call",
+                                d_call = "d_call",
+                                j_call = "j_call",
+                                junc_len = "junction_length",
+                                trim_lengths = TRUE,
+                                force_trim = TRUE,
                                 use_chain = "IGH",
                                 locus = "locus",
-                                split_by = NULL, 
+                                group.by = NULL, 
                                 order_by_tree = FALSE,
+                                use_tree = NULL,
                                 tree_model = "igphyml",
                                 igphyml_dir = "~/igphyml/src/igphyml",
                                 plots_folder = "SHM_plots",
@@ -3203,13 +3213,13 @@ sharedMutationsPlot <- function(clone,
       dplyr::filter(locus %in% use_chain)
   }
   
-  if(is.null(split_by)){
-    split_by = "groups"
+  if(is.null(group.by)){
+    group.by = "groups"
     clone <- clone %>%
       mutate(groups = "all")
   }
-  if (!split_by %in% colnames(clone)) {
-    stop(paste0("missing", split_by, "collumn"))
+  if (!group.by %in% colnames(clone)) {
+    stop(paste0("missing", group.by, "collumn"))
   }
   
   if (save_plot) {
@@ -3233,18 +3243,40 @@ sharedMutationsPlot <- function(clone,
   #check and correct for multiple germline alignment sequences in the clone (can occur for convergent/public clones)
   if(align %in% c("d_masked", "d_included")){
     if(align == "d_masked"){
-      reference_seq = germline_alignment_d_mask
+      reference_alignment = germline_alignment_d_mask
     } else {
-      reference_seq = germline_alignment
+      reference_alignment = germline_alignment
     }
     #check for case with different germline alignments
-    if(length(unique(clone[reference_seq])) > 1){
-      warning("different ", reference,", will rerun dowser::createGermlines() to select a common germline")
+    if(length(unique(clone[[reference_alignment]])) > 1){
+      message("different ", reference_alignment," for clone ", paste(unique(clone[[clone_id]]), collapse = "|"),", will rerun dowser::createGermlines() to select a common germline")
       imgt_reference <- dowser::readIMGT(paste0(imgt_dir, organism, "/vdj/"))
       clone <- dowser::createGermlines(clone, 
                                        references = imgt_reference, 
-                                       trim_lengths = TRUE,
-                                       force_trim = TRUE,
+                                       trim_lengths = trim_lengths,
+                                       force_trim = force_trim,
+                                       v_call = v_call,
+                                       d_call = d_call,
+                                       j_call = j_call,
+                                       amino_acid = FALSE,
+                                       id = sequence_id,
+                                       clone = clone_id, 
+                                       na.rm = FALSE)
+    }
+  }
+  if(align == "cdr3" & order_by_tree){
+    reference_alignment = germline_alignment
+    #check for case with different germline alignments
+    if(length(unique(clone[[reference_alignment]])) > 1){
+      message("different ", reference_alignment," for clone ", paste(unique(clone[[clone_id]]), collapse = "|"),", will rerun dowser::createGermlines() to select a common germline")
+      imgt_reference <- dowser::readIMGT(paste0(imgt_dir, organism, "/vdj/"))
+      clone <- dowser::createGermlines(clone, 
+                                       references = imgt_reference, 
+                                       trim_lengths = trim_lengths,
+                                       force_trim = force_trim,
+                                       v_call = v_call,
+                                       d_call = d_call,
+                                       j_call = j_call,
                                        amino_acid = FALSE,
                                        id = sequence_id,
                                        clone = clone_id, 
@@ -3254,16 +3286,29 @@ sharedMutationsPlot <- function(clone,
   
   #create lineage tree and reorder sequence_id based on tree tips and duplicated sequences
   if(order_by_tree){
-    #generate tree on collapse clone db
+    #check the number of unique sequences
     collapsed_clone <- alakazam::collapseDuplicates(clone, id = sequence_id, seq = sequence_alignment, add_count = FALSE)
     
     if(length(collapsed_clone[[sequence_id]]) > 1){
-      dowser_clone <- dowser::formatClones(collapsed_clone, text_fields=sequence_id, mask_char = ".", max_mask = 0, minseq=2)
-      tree <- dowser::getTrees(dowser_clone, build=tree_model, exec=igphyml_dir, collapse = FALSE, nproc=10)
+      #generate tree on collapse clone db
+      if(is.null(use_tree)){
+        message("building tree")
+        dowser_clone <- dowser::formatClones(collapsed_clone, 
+                                             clone = clone_id,
+                                             germ = germline_alignment_d_mask,
+                                             v_call = v_call,
+                                             j_call = j_call,
+                                             junc_len = junc_len,
+                                             text_fields=sequence_id, mask_char = ".", max_mask = 0, minseq=2)
+        tree <- dowser::getTrees(dowser_clone, build=tree_model, exec=igphyml_dir, collapse = FALSE, nproc=10)
+        tree_tips <- tree$trees[[1]]$tip.label
+        tree_tips <- tree_tips[!tree_tips == "Germline"]
+      } else {
+        tree_tips <- use_tree$tip.label
+        tree_tips <- tree_tips[!tree_tips == "Germline"]
+      }
       
-      tree_tips <- tree$trees[[1]]$tip.label
-      tree_tips <- tree_tips[!tree_tips == "Germline"]
-      
+      #reintroduce identical sequences in the alignment
       duplicate_seqs <- alakazam::collapseDuplicates(clone, id = sequence_id, seq = sequence_alignment, add_count = FALSE, dry=TRUE)
       
       ordered_seqs <- list()
@@ -3290,7 +3335,7 @@ sharedMutationsPlot <- function(clone,
         #find mutations
         muts = purrr::map2(
           !!rlang::sym(sequence_alignment),
-          !!rlang::sym(reference_seq),
+          !!rlang::sym(reference_alignment),
           \(x, y) get_mutations(x, y, filter_query = FALSE, return = "tibble")
         )
       )
@@ -3318,7 +3363,7 @@ sharedMutationsPlot <- function(clone,
         levels = rev(seqs)
       )
     ) %>%
-    dplyr::select(sequence_id, !!rlang::sym(split_by), muts) %>%
+    dplyr::select(sequence_id, !!rlang::sym(group.by), muts) %>%
     tidyr::unnest(muts) %>%
     dplyr::mutate(
       mutation = paste0(position, mutant)
@@ -3329,7 +3374,7 @@ sharedMutationsPlot <- function(clone,
       sharing_class = dplyr::case_when(
         mutant %in% c(".", "-", "N") ~ "Missing info",
         n_seq == 1 ~ "Private",
-        n_distinct(!!rlang::sym(split_by)) > 1 ~ "Shared between groups",
+        n_distinct(!!rlang::sym(group.by)) > 1 ~ "Shared between groups",
         .default = "Shared inside group"
       )
     ) %>%
