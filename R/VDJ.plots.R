@@ -1557,9 +1557,17 @@ SingleHexmapClonotypes <- function(db,
         
         #artificially order singleton clone_id based on order.by infos
         clones_meta <- Plot_db[Plot_db[[clone_id]] %in% clone_ids, , drop = FALSE] %>%
-          dplyr::distinct(!!rlang::sym(clone_id), .keep_all = TRUE) %>%
-          dplyr::select(!!rlang::sym(clone_id), !!rlang::sym(order.by)) %>%
-          dplyr::arrange(!!rlang::sym(order.by), !!rlang::sym(clone_id))
+          dplyr::distinct(!!rlang::sym(clone_id), .keep_all = TRUE)
+        
+        if (!is.null(order.by)) {
+          clones_meta <- clones_meta %>%
+            dplyr::select(!!rlang::sym(clone_id), !!rlang::sym(order.by)) %>%
+            dplyr::arrange(!!rlang::sym(order.by), !!rlang::sym(clone_id))
+        } else {
+          clones_meta <- clones_meta %>%
+            dplyr::select(!!rlang::sym(clone_id)) %>%
+            dplyr::arrange(!!rlang::sym(clone_id))
+        }
         
         ordered_clones[[clone_id]] <- clones_meta[[clone_id]]
         
@@ -1597,6 +1605,7 @@ SingleHexmapClonotypes <- function(db,
     }
     coords <- packed_clones[[i]]$coords
     coords[[cell_id]] <- subset[[cell_id]]
+    coords[[clone_id]] <- clone
     coords$x <- coords$dx + centroid_layout$x_c[i]
     coords$y <- coords$dy + centroid_layout$y_c[i]
     #coords[[color.by]] <- subset[[color.by]]
@@ -1771,10 +1780,178 @@ SingleHexmapClonotypes <- function(db,
   }
   
   if (return_coords) {
-    return(list(plot = p, coords = plot_data, centroids = centroid_layout))
+    return(list(plot = p, coords = plot_data, centroids = centroid_layout, palette = colors))
   } else {
     return(p)
   }
+}
+
+#### Function to plot interactive hexmaps from repertoire data ####
+#' Plots an interactive hexmap plots using plotly
+#'
+#' \code{iHexmapClonotypes} Plots individual interactive hexmap plots using plotly
+#' @param db         an AIRR formatted dataframe containing bcr (heavy and light chains) or tcr (TCRA, TCRB, TCRG or TCRD) sequences. Should contain only one chain for each type per cell_id, if not run resolveMultiHC() first.
+#' @param order_type whether to order clones radially ("pie" chart style) or as concentric circle ("circle")
+#' @param order.by  name of the column use to order each clone.
+#' @param color.by  name of the column use to color each clone [default: order.by].
+#' @param palette   a named color palette to use for plotting (should be the same size as the number of levels in color.by)
+#' @param show_info which additional info to show in the hover text besides cell_id, clone_id, clone_size and color.by group
+#' @param title     title for plot [default: "All sequences"]
+#' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
+#' @param locus     name of column containing locus values.
+#' @param cell_id   name of the column containing cell identifier.
+#' @param clone_id  name of the column containing cell identifier.
+#' @param productive  name of column containing productive calls.
+#' @param productive_only whether to exclude non productive sequences [default: TRUE]
+#' @param radius    radius size, passed to packcircles
+#' @param padding   padding, passed to packcircles
+#' @param cell_shape shape to use for cells inside clones [default: hex]
+#' @param clone_shape shape to use for clones [default: circle]
+#' @param seed      random seed for plotting
+#' @param return_coords whether to return the plots coordinates [default: FALSE]
+#'
+#' @return an interactive hexmap plot
+#'
+#' @export
+#' 
+
+iHexmapClonotypes <- function(db,
+                              order_type = c("pie", "circle"),
+                              order.by = NULL,
+                              color.by = NULL,
+                              palette = NULL,
+                              show_info = NULL, # New argument: vector of column names
+                              title = "Interactive Clonotype Map",
+                              cell_id = "cell_id",
+                              clone_id = "clone_id",
+                              use_chain = "IGH",
+                              locus = "locus",
+                              productive = "productive",
+                              productive_only = TRUE,
+                              radius = 1,
+                              padding = 0.2,
+                              seed = 42,
+                              use_webgl = TRUE) {
+  
+  if (!requireNamespace("plotly", quietly = TRUE)) {
+    stop("Package 'plotly' is required for interactive plots.")
+  }
+  
+  # 1. Get the coordinates from the original function
+  results <- SingleHexmapClonotypes(
+    db = db,
+    order_type = match.arg(order_type),
+    order.by = order.by,
+    color.by = color.by,
+    palette = palette,
+    cell_id = cell_id,
+    clone_id = clone_id,
+    use_chain = use_chain,
+    locus = locus,
+    productive = productive,
+    productive_only = productive_only,
+    radius = radius,
+    padding = padding,
+    seed = seed,
+    cell_shape = "circle",
+    highlight_sizes = NULL,
+    return_coords = TRUE
+  )
+  
+  plot_coords <- results$coords
+  centroids   <- results$centroids
+  # Use the palette generated inside SingleHexmapClonotypes
+  final_palette <- results$palette 
+  
+  # 2. BUILD THE MASTER DATA FRAME
+  
+  # Start with coordinates (which now contain: x, y, cell_id, clone_id)
+  plot_df <- plot_coords 
+  
+  # Import additional informations to pass to hover text
+  if(!is.null(show_info)){
+    show_info <- show_info[!show_info %in% c(cell_id, clone_id, color.by)]
+    missing_info <- setdiff(show_info, colnames(db))
+    if(length(missing_info)>0){warning("missing the following columns in the provided dataframe to show all requested info: ", paste(missing_info, collapse="; "))}
+    if(length(show_info)>0){
+      plot_df <- plot_df %>%
+        dplyr::left_join(
+          db %>% dplyr::select(!!!rlang::syms(c(show_info, cell_id))), 
+          by = dplyr::join_by(!!rlang::sym(cell_id))
+        )
+    }
+  }
+  # Join the size 'n' from centroids using the clone_id
+  plot_df <- plot_df %>%
+    dplyr::left_join(
+      centroids %>% dplyr::select(!!rlang::sym(clone_id), n), 
+      by = dplyr::join_by(!!rlang::sym(clone_id))
+    )
+  
+  # 3. PRE-CALCULATE VECTORS (Avoids all Formula/Symbol errors)
+  # Extract values directly into vectors
+  group_vector <- as.character(plot_df[[color.by]])
+  clone_vector <- as.character(plot_df[[clone_id]])
+  size_vector  <- as.character(plot_df$n)
+  cell_vector  <- as.character(plot_df[[cell_id]])
+  
+  # Check if group_vector is empty
+  if (all(is.na(group_vector))) {
+    warning("Coloring column not found in joined data. Plot will be monochrome.")
+    group_vector <- rep("Default", length(group_vector))
+  }
+  
+  # Create the hover text vector
+  hover_text <- paste0(
+    "<b>cell_id:</b> ", cell_vector, "<br>",
+    "<b>clone_id:</b> ", clone_vector, "<br>",
+    "<b>clone Size:</b> ", size_vector, "<br>",
+    "<b>group:</b> ", group_vector
+  )
+  
+  # Append any additional requested info
+  if (!is.null(show_info)) {
+    if (length(show_info)>0) {
+      for (info in show_info) {
+        if (info %in% colnames(plot_df)) {
+          # Format as <b>ColumnName:</b> Value
+          hover_text <- paste0(hover_text, "<br><b a>", info, ":</b> ", as.character(plot_df[[info]]))
+        }
+      }
+    }
+  }
+  
+  # 4. BUILD PLOTLY
+  p <- plotly::plot_ly(
+    data = plot_df,
+    x = ~x, 
+    y = ~y,
+    type = 'scatter', 
+    mode = 'markers',
+    color = group_vector, 
+    colors = final_palette,
+    text = hover_text, 
+    hoverinfo = 'text',
+    marker = list(
+      size = radius * 10,
+      opacity = 0.8,
+      line = list(width = 0.5, color = 'white')
+    )
+  ) %>%
+    plotly::layout(
+      title = title,
+      xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+      yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+      showlegend = TRUE,
+      plot_bgcolor = 'rgba(0,0,0,0)',
+      paper_bgcolor = 'rgba(0,0,0,0)'
+    )
+  
+  if (use_webgl && nrow(plot_df) > 5000) {
+    p <- plotly::toWebGL(p)
+  }
+  
+  return(p)
 }
 
 #### Function to plot CDR3 logos from repertoire data ####
