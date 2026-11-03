@@ -1268,7 +1268,7 @@ HexmapClonotypes <- function(db,
 #' @param radius    radius size, passed to packcircles
 #' @param padding   padding, passed to packcircles
 #' @param cell_shape shape to use for cells inside clones [default: hex]
-#' @param clone_shape shape to use for clones [default: circle]
+#' @param clone_shape shape to use for clones [default: hex]
 #' @param seed      random seed for plotting
 #' @param return_coords whether to return the plots coordinates [default: FALSE]
 #'
@@ -1796,19 +1796,19 @@ SingleHexmapClonotypes <- function(db,
 #' @param color.by  name of the column use to color each clone [default: order.by].
 #' @param palette   a named color palette to use for plotting (should be the same size as the number of levels in color.by)
 #' @param show_info which additional info to show in the hover text besides cell_id, clone_id, clone_size and color.by group
-#' @param title     title for plot [default: "All sequences"]
+#' @param title     title for plot [default: "Interactive Clonotype Map"]
 #' @param use_chain which chain to use [default: "IGH"], each cell should only have one contig for this chain
 #' @param locus     name of column containing locus values.
 #' @param cell_id   name of the column containing cell identifier.
 #' @param clone_id  name of the column containing cell identifier.
 #' @param productive  name of column containing productive calls.
 #' @param productive_only whether to exclude non productive sequences [default: TRUE]
+#' @param clone_shape shape to use for clones 
 #' @param radius    radius size, passed to packcircles
 #' @param padding   padding, passed to packcircles
-#' @param cell_shape shape to use for cells inside clones [default: hex]
-#' @param clone_shape shape to use for clones [default: circle]
+#' @param cell_size size of individual circles
 #' @param seed      random seed for plotting
-#' @param return_coords whether to return the plots coordinates [default: FALSE]
+#' @param use_webgl whether to use plotly::toWebGL() for plotting, defaults to TRUE for big datasets (>2000 cell_ids)
 #'
 #' @return an interactive hexmap plot
 #'
@@ -1820,7 +1820,7 @@ iHexmapClonotypes <- function(db,
                               order.by = NULL,
                               color.by = NULL,
                               palette = NULL,
-                              show_info = NULL, # New argument: vector of column names
+                              show_info = NULL, 
                               title = "Interactive Clonotype Map",
                               cell_id = "cell_id",
                               clone_id = "clone_id",
@@ -1828,8 +1828,10 @@ iHexmapClonotypes <- function(db,
                               locus = "locus",
                               productive = "productive",
                               productive_only = TRUE,
+                              clone_shape = c("hex", "circle", "square"),
                               radius = 1,
                               padding = 0.2,
+                              cell_size = 5,
                               seed = 42,
                               use_webgl = TRUE) {
   
@@ -1853,7 +1855,8 @@ iHexmapClonotypes <- function(db,
     radius = radius,
     padding = padding,
     seed = seed,
-    cell_shape = "circle",
+    cell_shape = "circle", # fixed for optimal compatibility with plotly
+    clone_shape = clone_shape,
     highlight_sizes = NULL,
     return_coords = TRUE
   )
@@ -1933,21 +1936,38 @@ iHexmapClonotypes <- function(db,
     text = hover_text, 
     hoverinfo = 'text',
     marker = list(
-      size = radius * 10,
-      opacity = 0.8,
-      line = list(width = 0.5, color = 'white')
+      size = cell_size,     
+      opacity = 0.6,             
+      line = list(width = 0, color = 'white') 
     )
   ) %>%
     plotly::layout(
       title = title,
-      xaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
-      yaxis = list(showgrid = FALSE, zeroline = FALSE, showticklabels = FALSE),
+      xaxis = list(
+        title = "",
+        showgrid = FALSE, 
+        zeroline = FALSE, 
+        showticklabels = FALSE,
+        fixedrange = FALSE # allows zooming
+      ),
+      yaxis = list(
+        title = "",
+        showgrid = FALSE, 
+        zeroline = FALSE, 
+        showticklabels = FALSE,
+        scaleanchor = "x", # This locks the Y axis to the X axis
+        scaleratio = 1     # This ensures 1 unit on Y = 1 unit on X
+      ),
+      legend = list(
+        title = list(text = color.by), 
+        orientation = "v"             
+      ),
       showlegend = TRUE,
       plot_bgcolor = 'rgba(0,0,0,0)',
       paper_bgcolor = 'rgba(0,0,0,0)'
     )
   
-  if (use_webgl && nrow(plot_df) > 5000) {
+  if (use_webgl && nrow(plot_df) > 2000) {
     p <- plotly::toWebGL(p)
   }
   
