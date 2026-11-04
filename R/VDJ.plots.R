@@ -562,8 +562,8 @@ DonutPlotClonotypes <- function(db,
 #' @param groups_to_plot which groups to plot
 #' @param col.line  color for lines in donut plot
 #' @param plots_folder name for export folder [default: "Donut_plots"]
-#' @param highlight whether to highlight shared clones or clones based on clone_size or clone_rank.
-#' @param highlight_col color scheme to use for highlighed clones
+#' @param highlight whether to highlight shared clones or clones based on clone_size or clone_rank or use a user_provided coloring scheme.
+#' @param highlight_col color scheme to use for highlighed clones (a color vector of the length of clones to color, needs to be named if using highlight = 'user_provided': c(clone1='color1', clone2='color2',...))
 #' @param external_bar whether to add an external bar for "expanded" or "top5" clones.
 #' @param productive  name of column containing productive calls.
 #' @param productive_only whether to exclude non productive sequences [default: TRUE]
@@ -589,7 +589,7 @@ SingleDonutPlotClonotypes <- function(db,
                                       groups_to_plot = "all",
                                       col.line = "black",
                                       plots_folder = "Donut_plots",
-                                      highlight = c("shared", "clone_size", "clone_rank"),
+                                      highlight = c("shared", "clone_size", "clone_rank", "user_provided"),
                                       highlight_col = NULL,
                                       external_bar = c("expanded", "top5", "none"),
                                       productive = "productive",
@@ -642,11 +642,14 @@ SingleDonutPlotClonotypes <- function(db,
   }
 
   highlight <- match.arg(highlight)
-  if (!highlight %in% c("shared", "clone_size", "clone_rank")) {
-    stop("highlight not properly defined :should be one of 'shared', 'clone_size', 'clone_rank' or a column in the dataframe with an associated named color vector in highlight_col")
+  if (!highlight %in% c("shared", "clone_size", "clone_rank", "user_provided")) {
+    stop("highlight not properly defined :should be one of 'shared', 'clone_size', 'clone_rank', 'user_provided'")
   }
   # default color scheme:
   if (is.null(highlight_col)) {
+    if (highlight == "user_provided") {
+      stop("when highlight is set to 'user_provided', highlight_col must be provided either as a named color vector c(clone1='color1', clone2='color2',...)")
+    } 
     if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
       message("'RColorBrewer' not installed — please provide your own palette using the 'highlight_col' argument.")
       return(invisible(NULL))
@@ -667,6 +670,7 @@ SingleDonutPlotClonotypes <- function(db,
       highlight_col <- RColorBrewer::brewer.pal(n = 9, name = "Paired")
     }
   }
+  
   external_bar <- match.arg(external_bar)
   if (!external_bar %in% c("expanded", "top5", "none")) {
     warning("external_bar parameter not properly defined, should be one of expanded, top5 or none, defaulting to none")
@@ -733,6 +737,22 @@ SingleDonutPlotClonotypes <- function(db,
     }
     names(col_shared) <- shared_clones
   }
+  
+  if (highlight == "user_provided") {
+    # color is here provided as a named vector c(clone1='color1', clone2='color2',...)
+    # we first update Clones_by_groups_to_plot to ensure all clones listed in highlight_col are labeled as "shared" for optimal plotting
+    # this way we can use the rest fo the "shared" code for plotting
+    Clones_by_groups_to_plot <- Clones_by_groups_to_plot %>%
+      dplyr::mutate(
+        shared = dplyr::case_when(
+          clone_id %in% names(highlight_col) ~ TRUE,
+          .default = FALSE
+        )
+      ) 
+    
+    # and since highlight_col is already named and of the correct length, the rest is easy
+    col_shared <- highlight_col
+  }
 
   ## create list of dataframes for plotting of circosplots for each time points:
   origins <- levels(droplevels(as.factor(Plot_db[[origin]])))
@@ -747,7 +767,7 @@ SingleDonutPlotClonotypes <- function(db,
         clone_rank = row_number()
       )
 
-    if (highlight == "shared") {
+    if (highlight %in% c("shared", "user_provided")) {
       n_unique_seq <- nrow(dplyr::filter(data, !expanded & !shared))
       if (n_unique_seq > 0) {
         data <- data %>%
@@ -766,7 +786,8 @@ SingleDonutPlotClonotypes <- function(db,
           )
         )
     }
-    if (highlight != "shared") {
+    
+    if (!highlight %in% c("shared", "user_provided")) {
       n_unique_seq <- nrow(dplyr::filter(data, !expanded))
       if (n_unique_seq > 0) {
         data <- data %>%
