@@ -3239,7 +3239,9 @@ SingleCircosClonotypes <- function(db,
     df_clones <- df3 %>%
       dplyr::filter(
         !!rlang::sym(clone_id) %in% clones_to_plot
-      )
+      ) %>%
+      dplyr::mutate(!!rlang::sym(clone_id) := factor(!!rlang::sym(clone_id), levels = clones_to_plot)) %>%
+      dplyr::arrange(!!rlang::sym(clone_id))
     
     if(any(!clones_to_plot %in% df_clones[[clone_id]])){
       message("the following clones are not shared between groups and won't be plotted: ", clones_to_plot[!clones_to_plot %in% df_clones[[clone_id]]])
