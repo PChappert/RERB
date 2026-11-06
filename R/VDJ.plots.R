@@ -1329,12 +1329,6 @@ SingleHexmapClonotypes <- function(db,
   }
   suppressMessages(library(ggplot2))
 
-  if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
-    message("Optional: 'RColorBrewer' not installed — skipping plot.")
-    return(invisible(NULL))
-  }
-  suppressMessages(library(RColorBrewer))
-
   if (!requireNamespace("ggforce", quietly = TRUE)) {
     message("Optional: 'ggforce' not installed — skipping plot.")
     return(invisible(NULL))
@@ -1345,10 +1339,10 @@ SingleHexmapClonotypes <- function(db,
     return(invisible(NULL))
   }
 
-  if (!requireNamespace("scales", quietly = TRUE)) {
-    message("Optional: 'scales' not installed — skipping plot.")
-    return(invisible(NULL))
-  }
+  #if (!requireNamespace("scales", quietly = TRUE)) {
+  #  message("Optional: 'scales' not installed — skipping plot.")
+  #  return(invisible(NULL))
+  #}
 
   cell_shape <- match.arg(cell_shape)
   clone_shape <- match.arg(clone_shape)
@@ -1671,7 +1665,21 @@ SingleHexmapClonotypes <- function(db,
   fill_levels <- levels(hex_df$fill)
   
   if (is.null(palette)) {
-    colors <- scales::hue_pal()(length(fill_levels))
+    #colors <- scales::hue_pal()(length(fill_levels))
+    if (!requireNamespace("RColorBrewer", quietly = TRUE)) {
+      message("'RColorBrewer' not installed — please provide you own color palette using the 'palette' argument")
+      return(invisible(NULL))
+    }
+    if (!requireNamespace("grDevices", quietly = TRUE)) {
+      if(length(levels) <= 12) {
+        colors <- RColorBrewer::brewer.pal(n = length(fill_levels), name = "Paired")
+      } else {
+        message("'grDevices' not installed — please provide you own color palette using the 'palette' argument to accomodate ",length(levels)," levels")
+        return(invisible(NULL))
+      }
+    } else {
+      colors <- grDevices::colorRampPalette(RColorBrewer::brewer.pal(n = 12, name = "Paired"))(length(fill_levels))
+    }
     names(colors) <- fill_levels
   } else {
     colors <- palette
@@ -1913,13 +1921,7 @@ iHexmapClonotypes <- function(db,
     )
   
   # 3. PRE-CALCULATE VECTORS (Avoids all Formula/Symbol errors)
-  # Extract values directly into vectors
   group_vector <- as.character(plot_df[[color.by]])
-  clone_vector <- as.character(plot_df[[clone_id]])
-  size_vector  <- as.character(plot_df$n)
-  cell_vector  <- as.character(plot_df[[cell_id]])
-  
-  # Check if group_vector is empty
   if (all(is.na(group_vector))) {
     warning("Coloring column not found in joined data. Plot will be monochrome.")
     group_vector <- rep("Default", length(group_vector))
@@ -1927,10 +1929,10 @@ iHexmapClonotypes <- function(db,
   
   # Create the hover text vector
   hover_text <- paste0(
-    "<b>cell_id:</b> ", cell_vector, "<br>",
-    "<b>clone_id:</b> ", clone_vector, "<br>",
-    "<b>clone Size:</b> ", size_vector, "<br>",
-    "<b>group:</b> ", group_vector
+    "<b>cell_id:</b> ", as.character(plot_df[[cell_id]]), "<br>",
+    "<b>clone_id:</b> ", as.character(plot_df[[clone_id]]), "<br>",
+    "<b>clone_size:</b> ", as.character(plot_df$n), "<br>",
+    "<b>", color.by, ":</b> ", group_vector, "<br>"
   )
   
   # Append any additional requested info
